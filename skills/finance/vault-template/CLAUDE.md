@@ -53,7 +53,7 @@ required on every file so anything can be dumped and still be findable:
 
 ```yaml
 ---
-type: account        # account | equity | policy | person | tax_year | goals | household | note
+type: account        # account | income | equity | policy | person | tax_year | goals | household | note
 date: 2026-01-31     # the as-of date of the facts below
 verified: 2026-01-31 # last time this was confirmed against a source
 source: documents/Assets/US/Ally/2026-01-31.statement.pdf   # or "live page", "interview"
