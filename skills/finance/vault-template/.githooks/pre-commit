@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Fail CLOSED: no scanner, no commit. Account numbers are last-4 only here.
+if [ "${SKIP_SECRET_SCAN:-0}" = "1" ]; then
+  echo "⚠️  SKIP_SECRET_SCAN=1 — committing WITHOUT a secret scan (you own this)."
+  exit 0
+fi
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "❌ commit blocked: gitleaks not installed — nothing can verify this commit"
+  echo "   is free of SSNs / full account numbers.   brew install gitleaks"
+  echo "   (emergency override: SKIP_SECRET_SCAN=1 git commit ...)"
+  exit 1
+fi
+gitleaks protect --staged --config .gitleaks.toml --no-banner --redact -v || {
+  echo "❌ commit blocked: possible SSN / full account number in the staged changes above."
+  exit 1
+}

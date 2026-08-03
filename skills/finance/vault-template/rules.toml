@@ -1,0 +1,89 @@
+# rules.toml — this household's categorization + routing brain.
+# Read by the finance tools (importers, reports, checks, recategorize) AND by
+# the agent before it categorizes anything by hand. Grow it every time a
+# category gets corrected: add a [[payee_rules]] entry, then run
+#   tools/run recategorize.py --write
+# so the fix applies to history too. Never fix the same thing twice.
+
+[household]
+# Positions in commodities whose symbol starts with any of these prefixes are
+# ILLIQUID paper wealth (private-company equity, unvested grants). They are
+# priced in the shadow currency below and NEVER counted in spendable net worth.
+illiquid_commodity_prefixes = []          # e.g. ["ACME"] for a private-stock ticker
+shadow_currency = "USD.EQ"
+
+# ---------------------------------------------------------------------------
+# Account routing — which ledger account an OFX/QFX <ACCTID> or a Chase CSV
+# belongs to. Matched on the TRAILING digits (last4), so no full account
+# number is ever stored. Add one [[accounts]] block per account as onboarded.
+#
+# [[accounts]]
+# last4 = "1234"
+# ledger_account = "Assets:US:Ally:Checking1234"
+# institution = "Ally"
+# owner = "sam"
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Payee rules — ORDERED, first match wins. Each rule may test the payee
+# string (regex, case-insensitive), the OFX transaction type, and the amount
+# (absolute value). Unmatched debits fall through to Expenses:Uncategorized
+# (the review queue); unmatched credits to Income:US:Other.
+#
+# fields:  match       regex against the payee/description (case-insensitive)
+#          ofx_type    exact OFX <TRNTYPE> (XFER, INT, ATM, DEBIT, CREDIT, CHECK, POS, ...)
+#          min_amount  |amount| must be >= this
+#          max_amount  |amount| must be <= this
+#          account     the counter-account to book to
+#          note        why the rule exists (for humans)
+# ---------------------------------------------------------------------------
+
+# Own-account movements are transfers, never spending or income.
+[[payee_rules]]
+ofx_type = "XFER"
+account = "Assets:US:Transfers"
+note = "own-account transfer"
+
+[[payee_rules]]
+match = "TRANSFER|PAYMENT THANK YOU|AUTOMATIC PAYMENT|PAYMENT TO CHASE|CHASE CREDIT CRD"
+account = "Assets:US:Transfers"
+note = "card autopay / internal transfers"
+
+[[payee_rules]]
+ofx_type = "INT"
+account = "Income:US:Interest"
+note = "bank interest"
+
+[[payee_rules]]
+ofx_type = "ATM"
+account = "Expenses:Cash"
+note = "cash withdrawals"
+
+# ---------------------------------------------------------------------------
+# Chase CSV category column -> account. Chase classifies the merchant; the
+# importer maps that classification. Merchant overrides above win first.
+# ---------------------------------------------------------------------------
+[chase_categories]
+"Food & Drink" = "Expenses:Food:Dining"
+"Groceries" = "Expenses:Food:Groceries"
+"Shopping" = "Expenses:Shopping"
+"Travel" = "Expenses:Travel"
+"Gas" = "Expenses:Transport"
+"Health & Wellness" = "Expenses:Health"
+"Entertainment" = "Expenses:Entertainment"
+"Personal" = "Expenses:Personal"
+"Gifts & Donations" = "Expenses:Gifts"
+"Home" = "Expenses:Home"
+"Bills & Utilities" = "Expenses:Utilities"
+"Education" = "Expenses:Education"
+"Automotive" = "Expenses:Transport"
+"Professional Services" = "Expenses:Services"
+"Fees & Adjustments" = "Expenses:Fees"
+
+# ---------------------------------------------------------------------------
+# Anomaly-check tuning (optional). Payee/account patterns to ignore when
+# hunting for surprising charges — bank-rail noise that isn't merchant spend.
+# ---------------------------------------------------------------------------
+[anomaly]
+ignore_payee_regex = "^(ATM |WITHDRAWAL|ZELLE|VENMO|CHECK )"
+ignore_account_regex = "Childcare|Cash|Uncategorized|Investment-Loss|Taxes|Insurance"

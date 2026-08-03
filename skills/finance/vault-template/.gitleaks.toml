@@ -1,0 +1,30 @@
+title = "household finance vault — leak rules"
+# The vault stores account numbers as LAST-4 ONLY. These rules block any
+# commit that would put an SSN or a full account/routing number into git.
+
+[extend]
+useDefault = true          # gitleaks' generic secret/token rules
+
+[[rules]]
+id = "us-ssn"
+description = "US Social Security Number"
+regex = '''\b\d{3}-\d{2}-\d{4}\b'''
+tags = ["pii"]
+
+[[rules]]
+id = "keyed-account-number"
+description = "Full account / policy / routing number in a keyed field"
+regex = '''(?i)\b(account|policy|routing|acct|dd)[a-z_ ]*(number|no|num|#|id)?\s*[:=#]\s*['"]?\d[\d -]{7,}'''
+tags = ["pii"]
+
+[[rules]]
+id = "bare-long-digits"
+description = "Bare 8+ digit run in facts/rules/notes/docs — almost always a full account number"
+regex = '''(?:^|[^.\d])(\d{8,})(?:[^\d]|$)'''
+secretGroup = 1
+path = '''^(facts/.*|notes/.*|rules\.toml|CLAUDE\.md|THESIS\.md)$'''
+tags = ["pii"]
+
+[allowlist]
+description = "ledger txns and generated reports legitimately carry bank reference ids / share counts"
+paths = ['''^ledger/.*\.beancount$''', '''^reports/''', '''^documents/''', '''^inbox/''', '''^\.venv/''']

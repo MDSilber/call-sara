@@ -1,0 +1,7 @@
+# Sensitive source documents live on disk / a cloud drive, NEVER in git.
+documents/
+inbox/
+.venv/
+__pycache__/
+*.pyc
+.DS_Store

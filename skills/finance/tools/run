@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Run a finance tool under the vault's Python (which has beancount installed).
+#   tools/run query.py networth
+#   tools/run reports.py
+#   FINANCE_VAULT=~/other-vault tools/run run_checks.py
+set -e
+VAULT="${FINANCE_VAULT:-$HOME/Finance}"
+PY="$VAULT/.venv/bin/python"
+[ -x "$PY" ] || { echo "no vault venv at $PY — is FINANCE_VAULT right? did init_vault.sh run?" >&2; exit 1; }
+HERE="$(cd "$(dirname "$0")" && pwd)"
+TOOL="$1"; shift || { echo "usage: run <tool.py|importers/tool.py> [args...]" >&2; exit 1; }
+exec "$PY" "$HERE/$TOOL" "$@"

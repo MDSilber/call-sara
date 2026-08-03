@@ -1,0 +1,6 @@
+option "title" "Household Ledger"
+option "operating_currency" "USD"
+option "documents" "../documents"
+
+include "accounts.beancount"
+include "prices.beancount"

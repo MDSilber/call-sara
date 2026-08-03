@@ -1,0 +1,38 @@
+; Chart of accounts — every account is opened exactly once, here, grouped by kind.
+; Naming: Assets:US:<Institution>:<Name><last4> | Liabilities:US:<Institution>:Card<last4>
+;         Income:US:<Source> | Expenses:<Category>[:Subcategory]
+
+; --- Bank & cards (add as institutions are onboarded), e.g.
+; 2025-01-01 open Assets:US:<Bank>:Checking1234        USD  ; <owner>
+; 2025-01-01 open Liabilities:US:<Bank>:Card5678       USD  ; <owner>
+
+; --- Investments (add as institutions are onboarded) ---
+
+; --- Clearing & equity ---
+2000-01-01 open Equity:Opening-Balances
+2000-01-01 open Assets:US:Transfers            USD  ; own-account transfer clearing (should net to ~0)
+
+; --- Income ---
+2000-01-01 open Income:US:Interest              USD
+2000-01-01 open Income:US:Other                 USD  ; unmatched credits — reclassify via rules.toml
+
+; --- Expenses — the starter set the default rules.toml can produce. Grow it. ---
+2000-01-01 open Expenses:Uncategorized         USD  ; the review queue — should trend to zero
+2000-01-01 open Expenses:Cash                  USD  ; ATM / cash withdrawals
+2000-01-01 open Expenses:Food:Dining           USD
+2000-01-01 open Expenses:Food:Groceries        USD
+2000-01-01 open Expenses:Shopping              USD
+2000-01-01 open Expenses:Travel                USD
+2000-01-01 open Expenses:Transport             USD
+2000-01-01 open Expenses:Health                USD
+2000-01-01 open Expenses:Entertainment         USD
+2000-01-01 open Expenses:Personal              USD
+2000-01-01 open Expenses:Gifts                 USD
+2000-01-01 open Expenses:Home                  USD
+2000-01-01 open Expenses:Utilities             USD
+2000-01-01 open Expenses:Education             USD
+2000-01-01 open Expenses:Services              USD
+2000-01-01 open Expenses:Fees                  USD
+2000-01-01 open Expenses:Insurance             USD
+2000-01-01 open Expenses:Housing               USD
+2000-01-01 open Expenses:Taxes                 USD
