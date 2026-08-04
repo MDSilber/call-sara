@@ -10,6 +10,13 @@ against them; anything that fires becomes a finding with a dollar figure.
 Precision beats coverage. A rule that fires wrong costs trust. When
 unsure, say what would confirm it and go check.
 
+## Contents
+- **Part 1 — Pattern-spotting rules** (IF data → FLAG): cash & flows · tax cliff map · retirement accounts · concentration & liquidity events · insurance & protection · estate ([state:XX] gated) · employer benefits · behavioral
+- **Part 2 — The service calendar** (what to raise, month by month)
+- **Part 3 — Life-event playbooks** (new child · IPO/liquidity · sudden wealth · job change · death of a spouse · moving states)
+- **Part 4 — Team, fees, and what to refuse**
+- **Part 5 — Behavioral craft** (money scripts; advise to the client's type)
+
 Two rules earned the hard way, before any of the below:
 - **Load the complete picture before prescribing** (statements, paystubs,
   plan docs, the return). A generic high-earner playbook misfires on a
