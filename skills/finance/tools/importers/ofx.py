@@ -9,8 +9,10 @@ The ledger account is looked up from the file's <ACCTID> via rules.toml
 Each transaction's counter-account comes from rules.toml [[payee_rules]];
 unmatched debits land in Expenses:Uncategorized (the review queue).
 
-By default, transactions whose (date, amount) already exist on the account
-are skipped so re-importing an overlapping export is safe. --all disables it.
+By default a transaction is skipped when the ledger already has one with the
+same amount and payee within ±5 days (transaction vs post dates differ across
+export formats); rows inside this file are compared exactly. Every skip is
+listed on stderr; --all disables dedupe entirely.
 Prints Beancount to stdout — review, then append to ledger/<year>.beancount.
 """
 import sys
@@ -18,7 +20,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from rules import categorize, route_by_acctid  # noqa: E402
-from importers.common import bank_statements, bank_transactions, emit, existing_keys, payee_key, read_ofx  # noqa: E402
+from importers.common import (bank_statements, bank_transactions, emit,  # noqa: E402
+                              existing_index, is_duplicate, read_ofx, seen_in_file)
 
 
 def main():
@@ -37,16 +40,16 @@ def main():
             print(f"; skipping account ending {acct_id[-4:]!r}: no [[accounts]] entry in "
                   f"rules.toml — add one (or pass the ledger account explicitly)", file=sys.stderr)
             continue
-        seen = existing_keys(account) if dedupe else set()
+        idx = existing_index(account) if dedupe else {}
+        fileset = set()
         txns = sorted(bank_transactions(text), key=lambda t: t["date"])
         kept = 0
         skipped = []
         for t in txns:
-            key = (t["date"].isoformat(), round(t["amount"], 2), payee_key(t["payee"]))
-            if key in seen:
+            if dedupe and (seen_in_file(fileset, t["date"], t["amount"], t["payee"])
+                           or is_duplicate(idx, t["date"], t["amount"], t["payee"])):
                 skipped.append(t)
                 continue
-            seen.add(key)
             counter = categorize(t["payee"], t["type"], t["amount"], account)
             emit(t["date"], t["payee"], {"ofx-type": t["type"]}, account, t["amount"], counter)
             kept += 1

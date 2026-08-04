@@ -35,6 +35,10 @@ awards table; watch for a **blackout banner** and note its end date.
   schedules, double-trigger RSU language) — always worth downloading; the
   summary table hides schedule details that change advice.
 - A certificate / transaction-report CSV also exports from Documents.
+- **Activity → Reports → Account Summary** generates a statement for ANY date
+  range (choose PDF + "Full" + Adjusted cost basis) — the fastest way to get
+  realized-gain/sale detail for a tax year; sale breakdowns include gross
+  proceeds, fees, and per-lot wash-sale-adjusted gains.
 - File PDFs to `documents/Assets/US/Shareworks/<Owner>/`; facts to
   `facts/equity/<issuer>-<owner>/index.md`.
 
@@ -98,6 +102,11 @@ awards table; watch for a **blackout banner** and note its end date.
 - File to `documents/Assets/US/Vanguard/<Owner>/YYYY-MM-DD.holdings-18mo.qfx`.
 - Aggregators sync poorly here (site blocks daytime hours); the export is
   the source of truth.
+- Automation quirk: the mutual-fund Trade/Exchange pages' ACCOUNT dropdown
+  ignores synthetic clicks (old `personal.vanguard.com` widgets) — if a picker
+  won't respond, hand that one selection to the user rather than fighting it.
+  The "Buy & sell" hub → "Trade mutual funds" → Exchange offers a
+  "full exchange page" fallback that renders plain HTML checkboxes/inputs.
 
 ## Fidelity NetBenefits (employer 401k)
 - Login `nb.fidelity.com`; lands on
@@ -143,3 +152,27 @@ awards table; watch for a **blackout banner** and note its end date.
 ## Private-fund / SPV platforms (AngelList and similar)
 _(document on first pull)_ — capital-call notices, annual tax report / K-1;
 typically all manual downloads.
+
+## State unclaimed-property databases (found-money sweeps)
+- **NY: `ouf.osc.ny.gov/app/claim-search`** (the old `ouf.osc.state.ny.us` URL 404s).
+  SPA — the form CLEARS on each page load; re-enter fields after navigation.
+  Exact name matches sort first; a broad fallback list follows (result counts in
+  the hundreds are normal — only the top exact matches matter).
+- **Search every name variant separately**: nickname vs legal first name return
+  DIFFERENT result sets (e.g. a short form finds items the legal name misses),
+  plus maiden names, middle initials, old addresses, parents' names, and family
+  BUSINESS names. This is the single highest-yield trick.
+- NY hides dollar amounts until a claim is started; Connecticut
+  (`ctbiglist.gov`) shows amounts in results. NJ: `unclaimedfunds.nj.gov`;
+  multi-state: `missingmoney.com`.
+- Each NY row has a **Property ID** — pasting it into the search page's
+  Property ID box jumps straight to that item (best way to hand someone their
+  claim; there are no per-item URLs).
+- Claiming: select CLAIM on each row → Continue to File Claim → relationship
+  ("Owner (Self)" for own property; joint accounts still = Owner (Self);
+  deceased owners = Surviving Spouse / Estate Representative / Other Heir,
+  needing death cert + heirship proof) → SSN + ID upload. Multiple properties
+  bundle into ONE claim; extra same-name items often auto-surface in the claim
+  flow. Simple claims pay in ~2-8 weeks. Free — never a "finder" fee.
+  THE OWNER files (SSN/ID step is theirs alone); the agent only finds and
+  preps the list.

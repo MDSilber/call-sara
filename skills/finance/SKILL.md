@@ -85,6 +85,11 @@ precedent, propose a line for THESIS.md so it's decided once.
 `references/querying.md`: reports first, then `tools/run query.py`, then
 grep facts/. Cite the as-of date with every figure.
 
+**Hunt** ("find me savings / deals / am I overpaying / free money") →
+`references/savings-hunt.md`: mine the ledger, fan out research by genre,
+verify, log a ranked checklist in the vault's `notes/`, calendar the annual
+re-negotiation. Findings come with $/yr and the exact fix.
+
 **Report** ("make me an assessment / update the report") →
 `references/report.md`: regenerate the household assessment as a
 published artifact from the vault's real numbers, plain language,
@@ -105,6 +110,7 @@ session starts already knowing them.
 - `references/playbook.md` — the advisor's brain: trigger rules, calendar,
   life-event playbooks, team/fee guidance, behavioral craft.
 - `references/querying.md` — how to pull any number correctly.
+- `references/savings-hunt.md` — the deal/waste/found-money hunting method.
 - `references/report.md` — how to generate the assessment artifact.
 - `references/fetching.md` — the browser-driven document-pull playbook.
 - `references/institutions.md` — how each institution's site behaves

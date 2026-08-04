@@ -66,24 +66,50 @@ def payee_key(payee):
     return re.sub(r"[^A-Z0-9]", "", (payee or "").upper())[:12]
 
 
-def existing_keys(account):
-    """(date, amount, payee-prefix) triples already in the ledger — for dedupe.
+def existing_index(account):
+    """(amount, payee-prefix) -> set of dates already in the ledger for an account.
 
-    Including the payee keeps two same-day, same-amount charges at different
-    merchants distinct; identical twins at ONE merchant still collide, so the
-    importers list what they skip and the user can force with --all.
+    Transaction date vs post date differ between export formats (Chase CSV
+    uses transaction date; QFX uses DTPOSTED), so dedupe against the LEDGER
+    matches amount + payee within a date WINDOW. The window applies ONLY to
+    ledger-sourced dates — rows within one export are deduped exactly (a bank
+    never emits the same transaction twice, and two real same-amount charges
+    days apart at one merchant are legitimate). Ledger-side twins inside the
+    window still collide, so importers list every skip and --all forces it.
     """
+    idx = {}
     try:
         rows = query(f"SELECT date, number, payee WHERE account = '{account}'")
     except (RuntimeError, SystemExit):
-        return set()
-    keys = set()
+        return idx
     for r in rows:
         try:
-            keys.add((r["date"], round(float(r["number"]), 2), payee_key(r["payee"])))
+            key = (round(float(r["number"]), 2), payee_key(r["payee"]))
+            idx.setdefault(key, set()).add(datetime.strptime(r["date"], "%Y-%m-%d").date())
         except (TypeError, ValueError):
             continue
-    return keys
+    return idx
+
+
+def is_duplicate(idx, date, amount, payee, window=5):
+    """True if (amount, payee) already exists in the LEDGER within ±window days.
+
+    window=5 covers weekend/holiday posting lag between transaction date and
+    post date.
+    """
+    dates = idx.get((round(amount, 2), payee_key(payee)))
+    if not dates:
+        return False
+    return any(abs((d - date).days) <= window for d in dates)
+
+
+def seen_in_file(fileset, date, amount, payee):
+    """Exact intra-file duplicate check + record (banks don't emit true dupes)."""
+    key = (date, round(amount, 2), payee_key(payee))
+    if key in fileset:
+        return True
+    fileset.add(key)
+    return False
 
 
 def emit(date, payee, meta, account, amount, counter):
