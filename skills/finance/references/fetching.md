@@ -118,7 +118,7 @@ statement closing balance → dated balance assertion (give it `statement:`
 metadata naming the filed document) → delta investigated — a missing
 transaction, a duplicate, posting-date lag, an uncaptured fee, a truncated
 export, ledger drift. Find the cause; never paper it over.
-`--allow-discrepancy` overrides once the cause is understood; a delta that
+A discrepancy LARGER than the export window usually means the account missed the vault's opening snapshot — seed a dated opening-balance entry (`Equity:Opening-Balances`) sized so ledger + import = statement, rather than trawling deep history the snapshot already nets out. `--allow-discrepancy` overrides once the cause is understood; a delta that
 can't be explained becomes a flagged adjusting entry plus a finding. An
 account is never called reconciled with a nonzero delta. Uncategorizable
 rows never block: they land in Expenses:Uncategorized and show up in

@@ -4,7 +4,11 @@
 #   tools/run reports.py
 #   FINANCE_VAULT=~/other-vault tools/run run_checks.py
 set -e
-VAULT="${FINANCE_VAULT:-$HOME/Finance}"
+VAULT="${FINANCE_VAULT:-}"
+if [ -z "$VAULT" ] && [ -f "$HOME/.finance-vault" ]; then
+  VAULT="$(head -1 "$HOME/.finance-vault")"
+fi
+VAULT="${VAULT:-$HOME/Finance}"
 PY="$VAULT/.venv/bin/python"
 [ -x "$PY" ] || { echo "no vault venv at $PY — is FINANCE_VAULT right? did init_vault.sh run?" >&2; exit 1; }
 HERE="$(cd "$(dirname "$0")" && pwd)"

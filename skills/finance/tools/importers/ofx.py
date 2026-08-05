@@ -96,12 +96,14 @@ def main():
             print(f";   skipped ({why}) {t['date']} {t['amount']:.2f} {t['payee']}", file=sys.stderr)
         if tag == DISCREPANCY and not allow:
             blocked.append(account)
-    if blocked:
-        sys.exit(f"BLOCKED: balance continuity DISCREPANCY for {', '.join(blocked)} — "
-                 f"nothing {'written' if write else 'imported'}. Fix the export or the "
-                 f"ledger, or re-run with --allow-discrepancy.")
     for _, e in entries:
         print(e)
+    sys.stdout.flush()  # entries must be visible before any write-failure exit
+    if blocked:
+        sys.exit(f"BLOCKED: balance continuity DISCREPANCY for {', '.join(blocked)} — "
+                 f"nothing {'written' if write else 'imported'}. The entries above show "
+                 f"what WOULD import. Fix the export or the ledger, or re-run with "
+                 f"--allow-discrepancy.")
     if write:
         if not entries:
             print("; nothing new to write", file=sys.stderr)

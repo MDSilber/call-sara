@@ -487,6 +487,17 @@ def _newest_assertions():
     return newest
 
 
+
+
+def _closed_accounts():
+    """Accounts with a `close` directive — reconciliation/coverage skip them."""
+    import re as _re
+    out = set()
+    for f in (VAULT / "ledger").glob("*.beancount"):
+        out.update(_re.findall(r"^\d{4}-\d{2}-\d{2}\s+close\s+(\S+)", f.read_text(), _re.M))
+    return out
+
+
 def reconciliation():
     """Balance-assertion staleness — is the ledger still anchored to reality?
 
@@ -496,10 +507,13 @@ def reconciliation():
     """
     today = date.today()
     anchors = _newest_assertions()
+    closed = _closed_accounts()
     out = []
     for account, dates in sorted(_posting_dates(currency="USD").items()):
         if _matches_segments(account, RECON_SKIP_SEGMENTS):
             continue
+        if account in closed:
+            continue  # a closed account needs no anchor going forward
         if (today - dates[-1]).days > RECON_ACTIVE_TXN_DAYS:
             continue
         anchor = anchors.get(account)
