@@ -93,6 +93,13 @@ if [ "$DEMO" = 1 ]; then
   echo "✓ demo reports generated"
 fi
 
+# --- remember a custom location (pointer file; env var still wins) -------
+# Real vaults only: a demo vault must never capture the default lookup.
+if [ "$DEMO" != 1 ] && [ "$VAULT" != "$HOME/Finance" ]; then
+  printf '%s\n' "$VAULT" > "$HOME/.finance-vault"
+  echo "✓ recorded vault location in ~/.finance-vault (tools find it without FINANCE_VAULT)"
+fi
+
 # --- git, with the secret scanner armed BEFORE any commit ---------------
 git init -q
 git config core.hooksPath .githooks

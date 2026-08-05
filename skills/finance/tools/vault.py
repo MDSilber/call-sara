@@ -11,7 +11,22 @@ import subprocess
 import tomllib
 from pathlib import Path
 
-VAULT = Path(os.environ.get("FINANCE_VAULT", str(Path.home() / "Finance"))).expanduser()
+def _resolve_vault() -> Path:
+    """$FINANCE_VAULT wins; else the ~/.finance-vault pointer file (written by
+    init_vault.sh for custom locations, so the path survives shell-profile
+    loss); else ~/Finance."""
+    env = os.environ.get("FINANCE_VAULT")
+    if env:
+        return Path(env).expanduser()
+    pointer = Path.home() / ".finance-vault"
+    if pointer.is_file():
+        target = pointer.read_text().strip()
+        if target and (Path(target).expanduser() / "ledger").is_dir():
+            return Path(target).expanduser()
+    return Path.home() / "Finance"
+
+
+VAULT = _resolve_vault()
 LEDGER = VAULT / "ledger" / "main.beancount"
 FACTS = VAULT / "facts"
 REPORTS = VAULT / "reports"

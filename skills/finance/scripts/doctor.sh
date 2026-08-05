@@ -6,7 +6,11 @@ set -uo pipefail   # no -e: a failing check must report, not abort the doctor
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SKILL_DIR="$(cd "$HERE/.." && pwd)"
-VAULT="${FINANCE_VAULT:-$HOME/Finance}"
+VAULT="${FINANCE_VAULT:-}"
+if [ -z "$VAULT" ] && [ -f "$HOME/.finance-vault" ]; then
+  VAULT="$(head -1 "$HOME/.finance-vault")"
+fi
+VAULT="${VAULT:-$HOME/Finance}"
 if [ "${1:-}" = "--vault" ]; then
   [ -n "${2:-}" ] || { echo "usage: doctor.sh [--vault <dir>]" >&2; exit 2; }
   VAULT="$2"

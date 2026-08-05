@@ -12,7 +12,8 @@ accounts, or numbers into this skill — those belong in the vault (and its
 `rules.toml`).
 
 ## Where things are
-- **Vault:** `$FINANCE_VAULT`, else `~/Finance`. Missing, no
+- **Vault:** `$FINANCE_VAULT`, else the path in `~/.finance-vault`
+  (written by init for custom locations), else `~/Finance`. Missing, no
   `CLAUDE.md`/`THESIS.md`, or THESIS.md still the unfilled template? You
   are ONBOARDING — `references/onboarding.md`. Do not improvise a
   structure. If the vault's CLAUDE.md carries the DEMO banner, it's

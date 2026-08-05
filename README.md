@@ -28,7 +28,7 @@ your account.
 
 ## Where your data goes
 Everything about *you* lives in your vault — plain text on your own disk
-(default `~/Finance`; set `FINANCE_VAULT=/path` in your shell profile to
+(default `~/Finance`; for a custom location, `init_vault.sh <path>` records it in `~/.finance-vault` so the tools find it; `FINANCE_VAULT=/path` overrides everything and can live in your shell profile to
 relocate it) plus whatever **private** git remote you give it. This repo
 holds only the method and the code; share it freely, never share your
 vault. Beyond your disk and your remote, exactly four things leave your
