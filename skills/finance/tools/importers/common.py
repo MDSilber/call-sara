@@ -207,7 +207,7 @@ def check_continuity_ledger(account, closing, asof, kept):
     return DISCREPANCY, (f"ledger {prior:.2f} through {asof} + this import "
                          f"{predicted - prior:+.2f} = {predicted:.2f}, but the statement "
                          f"closes at {closing:.2f} (off by {closing - predicted:+.2f} — "
-                         f"truncated export, missed rows, or ledger drift)")
+                         f"truncated export, missed rows, ledger drift — or, if this account predates the vault and has no Opening-Balances entry, seed one for exactly this delta)")
 
 
 def check_continuity_rows(rows):
