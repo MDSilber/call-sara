@@ -26,7 +26,7 @@ ledger reconciled to the penny, runs monthly reviews (we call it the
 cheshbon), forecasts your next 60 days, hunts for wasted money like
 it's a sport, and writes it all down so next session she still knows
 you. Setting her up on my own house surfaced a six-figure account
-nobody was tracking. I'm still not over it.
+nobody was tracking. Honestly a bit embarrassing. I'm still not over it.
 
 ![the dashboard](docs/dashboard.png)
 
@@ -51,8 +51,8 @@ If anything's weird, `skills/finance/scripts/doctor.sh` tells you what.
 
 macOS + Python 3.11+ (install.sh handles python). The Claude in Chrome
 extension makes statement-pulling magical but is optional. Fair warning:
-driving a logged-in bank session may bug your bank's terms of use. Your
-call, your account.
+driving a logged-in bank session may not be kosher with your bank's
+terms of use. Your call, your account.
 
 ## Where your data actually goes
 
