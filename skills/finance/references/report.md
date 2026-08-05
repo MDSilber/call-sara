@@ -52,6 +52,10 @@ to the SAME URL by writing to the same file path.
   plain terms with the after-tax reality and a stat sidebar.
 - **Where the money sits** — proportional bars per account, invested vs.
   cash distinguished.
+- **The next 60 days** (only when `tools/run forecast.py` shows a projected
+  minimum near $0 or a `[fixed_balances]` floor) — the crunch date, its
+  driving flows, and the fix, every figure explicitly labeled a projection;
+  a clean runway is one reassurance line in the footer, not a section.
 - **The money moves** — the centerpiece. Grouped (cut taxes / beat the
   estate tax / protect it / small free wins); within each group, order
   moves by (annual $ ÷ owner-hours) and show both numbers. Each is a

@@ -35,6 +35,10 @@ option "operating_currency" "USD"
 2000-01-01 open Assets:US:Transfers               USD
 2000-01-01 open Assets:US:TestBank:Checking9123   USD
 2000-01-01 open Liabilities:US:TestBank:Card7777  USD
+2000-01-01 open Assets:US:TestBroker:Brokerage8642  "FIFO"  ; units + cash; FIFO so {} sells book
+2000-01-01 open Income:US:Dividends               USD
+2000-01-01 open Income:US:CapGainsDistributions   USD
+2000-01-01 open Income:US:Gains                   USD
 2000-01-01 open Income:US:Other                   USD
 2000-01-01 open Income:US:Interest                USD
 2000-01-01 open Expenses:Uncategorized            USD
@@ -55,6 +59,10 @@ ledger_account = "Assets:US:TestBroker:Brokerage8642"
 [[payee_rules]]
 ofx_type = "ATM"
 account = "Expenses:Cash"
+
+[[payee_rules]]
+match = "TRANSFER"
+account = "Assets:US:Transfers"
 
 [[payee_rules]]
 match = "BLUE BOTTLE"
@@ -207,6 +215,44 @@ def main():
         else:
             print("\n(skipped 3 venv-only tests: fuzzy fallback, anchored discrepancy, "
                   "run_checks — set FINANCE_TEST_VENV to run them)")
+
+        # 12. invest OFX: golden entries, all 7 kept, positions tag
+        r = run(vault, "importers/invest_ofx.py", str(FIX / "vanguard.qfx"))
+        golden("invest clean import (golden)", "vanguard_qfx.beancount",
+               normalize(r.stdout), regen)
+        check("invest clean import: 7 kept, exit 0",
+              r.returncode == 0 and "imported 7 transactions" in r.stderr, r.stderr)
+        check("invest positions " + ("MATCH" if has_venv else "UNVERIFIABLE"),
+              ("2026-06-30 MATCH \u2014" if has_venv else "positions UNVERIFIABLE")
+              in r.stderr, r.stderr)
+
+        # 13. (venv) --since creates a history gap -> positions MISMATCH + seed recipe
+        if has_venv:
+            r = run(vault, "importers/invest_ofx.py", str(FIX / "vanguard.qfx"),
+                    "--since", "2026-05-01")
+            check("invest --since gap: positions MISMATCH, never blocks",
+                  r.returncode == 0 and "2026-06-30 MISMATCH \u2014" in r.stderr, r.stderr)
+            check("invest MISMATCH suggests seeding the opening position",
+                  "seed an opening position of 10.500 TIF, 4.000 TWC" in r.stderr, r.stderr)
+
+        # 14. invest --write appends (venv: bean-check validates the lot dialect
+        # end-to-end — {cost} buys, {{total}} commission buy, {} sell under FIFO)
+        r = run(vault, "importers/invest_ofx.py", str(FIX / "vanguard.qfx"), "--write")
+        year_txt = year.read_text()
+        check("invest --write appends buys/sell/income to the year file",
+              r.returncode == 0 and "wrote" in r.stderr
+              and year_txt.count("import-hash:") == 11
+              and "-3.000 TIF {} @ 42.00 USD" in year_txt
+              and "4.000 TWC {{401.00 USD}}" in year_txt, r.stderr)
+
+        # 15. invest re-import: hash dedupe to zero; (venv) positions still MATCH
+        r = run(vault, "importers/invest_ofx.py", str(FIX / "vanguard.qfx"))
+        check("invest re-import dedupes to zero (hash-exact)",
+              r.returncode == 0 and "imported 0 transactions" in r.stderr
+              and r.stderr.count("(hash)") == 7 and normalize(r.stdout) == "", r.stderr)
+        if has_venv:
+            check("invest re-import: positions still MATCH",
+                  "2026-06-30 MATCH \u2014" in r.stderr, r.stderr)
 
         # escape() hardening: statement text can never break out of a
         # Beancount string (quotes, backslash-escape tricks, newline injection)

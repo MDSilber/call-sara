@@ -93,12 +93,30 @@ awards table; watch for a **blackout banner** and note its end date.
      radio). Yields a `.qfx` (OFX): holdings + prices + 18mo transactions +
      account IDs in one machine-readable file. Skipping the radio = "A valid
      option is required" and no download.
-  2. Step 2 date range — **18 months**.
+  2. Step 2 date range — **18 months** (the max per pull; older activity
+     needs archived statements instead).
   3. Step 3 — check the **checkAll** box atop the account table.
   Then Download. File lands as `~/Downloads/OfxDownload.qfx`.
-- Parse with `importers/holdings_ofx.py` — it maps `<INVSTMTRS>` accounts
-  by the trailing digits of `<ACCTID>` (rules.toml `[[accounts]]`), emits
-  price directives, and prints a per-account holdings table to file as facts.
+- **One `.qfx`, two importers** — the same download carries BOTH the
+  positions snapshot and up to 18 months of activity (`INVSTMTMSGSRS`);
+  there is no separate activity export. Both route accounts by the trailing
+  digits of `<ACCTID>` (rules.toml `[[accounts]]`).
+  - `importers/holdings_ofx.py` — price directives + a per-account holdings
+    table to file as facts.
+  - `importers/invest_ofx.py` — books the ACTIVITY into the ledger: buys and
+    sells with lots, reinvestments, dividend / capital-gain distributions,
+    and bank transfers (contributions/withdrawals via `[[payee_rules]]`).
+    Dry-run first, `--write` to append; `import-hash:` dedupe makes
+    overlapping 18-month pulls safe. At import it reconciles ledger units
+    per commodity against the file's `<INVPOSLIST>` — MATCH gets a balance
+    assertion, MISMATCH means the position predates the vault: seed the
+    suggested opening lot, nothing blocks.
+- **Booking**: buys land as `{cost}` lots and coexist with snapshot-seeded
+  no-cost units under Beancount's default STRICT booking — no migration to
+  start importing. The first sell facing several lots needs `"FIFO"` added
+  to that account's `open` directive, and sells can never consume no-cost
+  snapshot units — convert the snapshot into a costed opening lot first
+  (full recipe in `invest_ofx.py`'s docstring).
 - File to `documents/Assets/US/Vanguard/<Owner>/YYYY-MM-DD.holdings-18mo.qfx`.
 - Aggregators sync poorly here (site blocks daytime hours); the export is
   the source of truth.

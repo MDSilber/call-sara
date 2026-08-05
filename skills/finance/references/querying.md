@@ -44,6 +44,27 @@ $VAULT/facts`, then read the file. Every fact carries `verified:` and
 `source:` — quote both when the number matters ("$1M liability, verified
 2026-07-24 against the evidence-of-insurance PDF").
 
+## Forecast — the next 60 days of known flows
+
+`tools/run forecast.py [days]` projects each cash account forward: starting
+balance from the ledger, every cadence-detected recurring flow (payroll,
+rent, utilities, subscriptions, autopays, standing transfers), dated facts
+bullets that carry a $ amount, the running balance, per-account projected
+minimums, and the household's uncommitted surplus. `run_checks.py` raises a
+`projected-shortfall` finding when a minimum crosses $0 (alert) or a
+`[fixed_balances]` floor (watch).
+
+**Trust it for:** "does rent clear before payday", the crunch date and its
+drivers, sizing the committed flows ahead. **Don't trust it for:** totals —
+irregular spend (groceries, dining, travel) is deliberately NOT projected;
+anything just set up — a stream needs 3+ ledger occurrences, so a new
+autobuy is invisible until it has history (bridge with a dated `$` bullet in
+facts/); card payoff paths — an autopay projects from the paying account
+even when the card side is too irregular to project. Every line it prints is
+a `~` estimate from cadence patterns — quote it only with the projection
+label attached, and re-run after importing (a `†` flags flows projected
+before today because the feed lags; a stale ledger makes a stale forecast).
+
 ## Habits
 - **Cite the as-of date** with every figure. A balance is a snapshot; say
   when it was snapped.
@@ -70,6 +91,7 @@ $VAULT/facts`, then read the file. Every fact carries `verified:` and
 | "Savings find $X/yr" | Price/terms verified live today, source URL kept | A research agent's summary |
 | "The 2026 limit is $X" | A `current-figures.md` row with a fresh stamp | Model memory, however confident |
 | "Import done" | `bean-check` pass + ending balance reconciled + uncategorized triaged | The importer exiting 0 |
+| "Balance will be ~$X on <date>" | `forecast.py` against a fresh import, quoted WITH the projection label | Yesterday's forecast; a projected figure stated as a balance |
 
 ## Rationalizations — the excuse and the reality
 

@@ -653,6 +653,41 @@ def fixed_balances():
     return out
 
 
+# --------------------------------------------------------- projected shortfall
+def projected_shortfall():
+    """Any account whose projected minimum (forecast.py's default horizon)
+    crosses below $0 (alert) or below its rules.toml [fixed_balances] floor
+    (watch), with the crunch date and the flows that cause it.
+
+    The projection is forecast.py's: cadence-detected recurring streams only,
+    so every number here is an ESTIMATE — the finding is a reason to look,
+    not a statement. Accounts already under the line today are the
+    fixed-balance / reconciliation checks' business, not this one's.
+    """
+    from forecast import DEFAULT_DAYS, build_forecast  # deferred: forecast
+    # imports this module's helpers, so a top-level import would be circular
+    warns = build_forecast()["household"]["warns"]
+    out = []
+    for w in warns:
+        if w["kind"] == "below_zero":
+            out.append(finding(
+                "projected-shortfall", "alert",
+                f"{w['account']} projected to hit ~{money(w['min'])} around {w['date']}",
+                f"{DEFAULT_DAYS}-day cash-flow projection (cadence patterns — estimates, "
+                f"not a statement) crosses below $0. Largest projected outflows before "
+                f"the crunch: {w['drivers']}. Verify with `tools/run forecast.py`, then "
+                f"move money or a payment date before it lands."))
+        else:
+            out.append(finding(
+                "projected-shortfall", "watch",
+                f"{w['account']} projected under its {money(w['floor'])} floor "
+                f"(~{money(w['min'])} around {w['date']})",
+                f"THESIS.md holds this account at a fixed level; the {DEFAULT_DAYS}-day "
+                f"projection (estimates from cadence patterns) dips below it. Drivers: "
+                f"{w['drivers']}. Re-time the outflow or pre-position a top-up."))
+    return out
+
+
 def milestones():
     """Fire once when liquid net worth first crosses a configured milestone.
 
@@ -704,7 +739,7 @@ def _record_crossed(key, values):
 
 
 ALL = [concentration, deadlines, anomaly, subscriptions, reconciliation, coverage,
-       review_queue, goals_status, milestones, fixed_balances]
+       review_queue, goals_status, milestones, fixed_balances, projected_shortfall]
 
 
 def run_all():
