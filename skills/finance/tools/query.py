@@ -23,6 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from vault import amount, illiquid_currency_regex, money, query, shadow_currency  # noqa: E402
+from checks import goals  # noqa: E402
 
 
 def bql_str(s):
@@ -134,6 +135,27 @@ def cmd_accounts(_):
         print(f"{r['account']}")
 
 
+def cmd_project(args):
+    """Project envelope: everything tagged #<slug>, category breakdown, and
+    budget-vs-actual when facts/goals sets project_budget_<slug>."""
+    if not args:
+        sys.exit("usage: project <tag-slug> (transactions tagged #<slug>)")
+    tag = bql_str(args[0])
+    rows = query(f"SELECT account, sum(convert(position,'USD')) AS v, count(*) AS n "
+                 f"WHERE '{tag}' IN tags AND account ~ '^Expenses' GROUP BY account")
+    if not rows:
+        sys.exit(f"no postings tagged #{args[0]} — tag entries like: 2026-08-12 * \"...\" \"...\" #{args[0]}")
+    rows.sort(key=lambda r: -amount(r["v"]))
+    total = sum(amount(r["v"]) for r in rows)
+    print(f"#{args[0]} — {money(total)} spent")
+    for r in rows:
+        print(f"{money(amount(r['v'])):>12}  x{int(float(r['n'])):<4} {r['account']}")
+    budget = goals().get(f"project_budget_{args[0].replace('-', '_')}")
+    if budget:
+        left = float(budget) - total
+        print(f"\nbudget {money(float(budget))} — {money(abs(left))} {'left' if left >= 0 else 'OVER'}")
+
+
 def cmd_sql(args):
     if not args:
         sys.exit('usage: sql "<beancount query>"')
@@ -146,7 +168,7 @@ def cmd_sql(args):
 
 COMMANDS = {"networth": cmd_networth, "balances": cmd_balances, "positions": cmd_positions,
             "spend": cmd_spend, "cashflow": cmd_cashflow, "payee": cmd_payee,
-            "uncategorized": cmd_uncategorized, "accounts": cmd_accounts, "sql": cmd_sql}
+            "uncategorized": cmd_uncategorized, "accounts": cmd_accounts, "project": cmd_project, "sql": cmd_sql}
 
 if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:

@@ -128,3 +128,18 @@ hedge-word is an invented number wearing a disguise.
 | Two sources disagree | Reconcile before presenting EITHER. |
 | Three failed reconcile attempts | Stop — show the user both figures and the gap; never pick one silently. |
 | A stale-`verified:` facts figure is load-bearing | Re-verify at the source, update the stamp. |
+
+## Project envelopes (weddings, trips, renovations)
+
+Bounded undertakings get a beancount TAG, not a category: tag entries
+`#trip-israel-2026` at import or by hand, set an optional budget in
+facts/goals (`project_budget_trip_israel_2026: 12000`), and
+`tools/run query.py project trip-israel-2026` shows spend by category and
+budget-vs-actual. Tags cross categories (flights are Travel, gifts are
+Gifts — the PROJECT is the lens); one transaction can carry several.
+
+For households that SPLIT costs (roommates, unmarried couples): a
+per-person liability subaccount (`Liabilities:Shared:<Name>`) plus a split
+posting per share tracks who-owes-whom, and a settlement payment simply
+zeroes the subaccount. Convention only — the joint-household default
+needs none of it.
