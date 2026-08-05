@@ -48,7 +48,26 @@ anything that moves money or changes an account** — read/download only.
 Downloads need their OK once per session.
 
 ## 1. Scaffold the vault (2 min)
-Run `scripts/init_vault.sh [path]` (default `~/Finance`). It copies
+**Decide where it lives FIRST — as a picker, not a paragraph.** Use
+AskUserQuestion (arrow-key TUI) with two questions, so the choice feels
+like an installer, not homework:
+- *"Where should the vault folder live?"* — `~/Finance (Recommended)`
+  (default; every tool finds it with zero config) · `Somewhere else`
+  (any path; init records it in `~/.finance-vault` so tools still find
+  it) · `A cloud-synced folder` (works, but warn: file-sync services
+  fight git — fine for solo use, prefer a git remote for real backup).
+- *"Where should it be backed up?"* — `Private GitHub repo (Recommended)`
+  (versioned, reachable anywhere; created in one command below) ·
+  `Another private git host` (GitLab/Codeberg/self-hosted — same
+  commands, their URL) · `Local only for now` (fine to start; set a
+  deferred item to revisit — one disk is one bad day from zero).
+Put the tradeoff in each option's description, keep labels short, and
+respect the pick without relitigating. Google Drive/Dropbox/iCloud is a
+*location* answer (synced folder), not a *backup* answer — git history
+inside a sync folder can corrupt under concurrent sync; say so plainly
+if they pick it, then proceed.
+
+Then run `scripts/init_vault.sh [path]` (default `~/Finance`). It copies
 `vault-template/` — `CLAUDE.md` (the data contract), an empty `THESIS.md`,
 `rules.toml`, the ledger skeleton, the facts tree — then builds a Python
 venv with beancount, `git init`s, arms the gitleaks pre-commit hook, and
