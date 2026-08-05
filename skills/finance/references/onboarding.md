@@ -237,6 +237,10 @@ now compounds: every future session starts by reading the thesis and the
 facts instead of starting cold.
 
 ## What "done" means for onboarding
+End with the victory lap: launch `scripts/dashboard.sh` and let them SEE
+their whole financial life as a page — the moment the vault stops being
+homework and starts being theirs.
+
 Vault scaffolded and private-repo hosted (or explicitly deferred);
 institution map complete; THESIS.md written and confirmed by the user;
 household profile + people files; at least the top 2–3 accounts pulled

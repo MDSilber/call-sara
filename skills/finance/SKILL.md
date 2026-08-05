@@ -177,4 +177,7 @@ session starts already knowing them.
 - `scripts/init_vault.sh` — scaffold a new vault from `vault-template/`.
 - `scripts/doctor.sh` — install/vault health check; run it when anything
   misbehaves.
+- `scripts/dashboard.sh` — local-only visual dashboard (fava) over the
+  ledger: net worth, drill-downs, query console. Offer it when the user
+  wants to SEE their money, not just hear numbers.
 - `scripts/file_downloads.py` — identify / dedupe / rename / file downloaded PDFs.

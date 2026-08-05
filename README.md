@@ -61,6 +61,9 @@ The parts you won't find elsewhere:
 - **Browser statement fetching** — drives your logged-in bank/broker
   sites to pull statements; you handle passwords and anything that moves
   money.
+- **A visual dashboard** — `skills/finance/scripts/dashboard.sh` serves
+  your whole financial picture as a local-only web page (fava): net-worth
+  curve, spending drill-downs, a query console. Nothing leaves your machine.
 - **Sara** — an advisor voice that opens with the number, notices what
   you didn't ask about, and never scolds.
 

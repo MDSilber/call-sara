@@ -75,7 +75,7 @@ cd "$VAULT"
 # Uses whatever package index this machine is configured for; if that index
 # can't serve the packages, fix or request them there — no side-channel install.
 python3 -m venv .venv
-./.venv/bin/pip install -q beancount beanquery || {
+./.venv/bin/pip install -q beancount beanquery fava || {
   echo "❌ beancount install failed via this machine's configured package index." >&2
   echo "   If that index is corporate or broken, retry against the public one:" >&2
   echo "   rm -rf $VAULT && PIP_INDEX_URL=https://pypi.org/simple $0 $VAULT" >&2
