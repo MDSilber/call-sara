@@ -85,7 +85,10 @@ def nice_ticks(lo, hi, n=4):
         if t >= lo - 1e-9:
             ticks.append(round(t, 6))
         t += step
-    return ticks[:n + 2]
+    ticks = ticks[:n + 2]
+    if len(ticks) >= 2 and ticks[-1] - hi > 0.6 * step:
+        ticks.pop()  # a top gridline far above the data is dead air
+    return ticks
 
 
 # ------------------------------------------------------------------- data
@@ -293,9 +296,10 @@ def svg_line_chart(points):
     for i, (d, _) in enumerate(points):
         if i % step == 0 or i == len(points) - 1:
             anchor = "end" if i == len(points) - 1 else "middle"
+            lbl = MONTH_ABBR[d.month] + (f" ’{str(d.year)[2:]}"
+                                         if d.month == 1 or i == 0 else "")
             xlab.append(f"<text x='{X(xs[i]):.1f}' y='{H - 10}' class='tick' "
-                        f"text-anchor='{anchor}'>{esc(MONTH_ABBR[d.month])}&#8202;"
-                        f"{esc(str(d.year)[2:] if d.month == 1 or i == 0 else '')}</text>")
+                        f"text-anchor='{anchor}'>{esc(lbl)}</text>")
     pts = [(X(o), Y(v)) for o, v in zip(xs, vs)]
     path = "M" + " L".join(f"{x:.1f} {y:.1f}" for x, y in pts)
     area = path + f" L{pts[-1][0]:.1f} {H - MB} L{pts[0][0]:.1f} {H - MB} Z"
@@ -732,7 +736,9 @@ def build_page():
         [(esc(month_label(d.year, d.month)), esc(money(v))) for d, v in series])
     curve_card = f"""<section class="card">
   <h2>Net worth over time</h2>
-  <p class="sub">Liquid only — illiquid paper stays out of this curve, same as the headline.</p>
+  <p class="sub">Liquid only — illiquid paper stays out of this curve, same as the headline.
+  Months are valued at their latest dated price on file, else cost basis, so the curve
+  steps up where price history begins.</p>
   {svg_line_chart(series)}{nw_table if series else ''}
 </section>"""
 
@@ -806,11 +812,13 @@ def build_page():
           esc(str(a["min_date"])), "~" + esc(money(a["end_balance"])),
           esc(money(a["floor"])) if a["floor"] is not None else "—")
          for a in fc["accounts"]])
+    tdir = "out" if h["transfer_net"] <= 0 else "in"
     chips = (f"<div class='chips'><span>income <b>~{esc(money(h['income']))}</b></span>"
-             f"<span>expenses <b>~{esc(money(h['expense']))}</b></span>"
-             f"<span>transfers out <b>~{esc(money(h['transfer_net']))}</b></span>"
-             f"<span>one-offs <b>~{esc(money(h['oneoff_total']))}</b></span>"
-             f"<span>uncommitted surplus <b>~{esc(money(h['surplus']))}</b></span></div>")
+             f"<span>expenses <b>~{esc(money(abs(h['expense'])))}</b></span>"
+             f"<span>transfers {tdir} <b>~{esc(money(abs(h['transfer_net'])))}</b></span>"
+             + (f"<span>one-offs <b>~{esc(money(h['oneoff_total']))}</b></span>"
+                if h["oneoffs"] else "")
+             + f"<span>uncommitted surplus <b>~{esc(money(h['surplus']))}</b></span></div>")
     fc_body = (chips + "".join(banners)
                + f"<div class='fcgrid'>{''.join(fcards)}</div>" + fc_table
                if fc["accounts"] else
