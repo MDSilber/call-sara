@@ -185,7 +185,17 @@ def positions(stmt, sec):
 
 # ---------------------------------------------------------------- emitting
 def _fmt_units(x):
-    return f"{x:.4f}".rstrip("0").rstrip(".") if abs(x - round(x, 3)) > 1e-9 else f"{x:.3f}"
+    # Preserve the file's full unit precision (Vanguard MF units carry 5
+    # decimals): a truncated posting re-multiplies against per-unit cost to a
+    # DIFFERENT total and bean-check rejects the batch by fractions of a cent.
+    return f"{x:.6f}".rstrip("0").rstrip(".") if abs(x - round(x, 3)) > 1e-9 else f"{x:.3f}"
+
+
+def _fmt_price(price):
+    """Full precision, but never fewer than 2 decimals (price conventions)."""
+    t = f"{price:.6f}".rstrip("0")
+    whole, _, frac = t.partition(".")
+    return f"{whole}.{frac.ljust(2, '0')}"
 
 
 def _cost(units, price, total):
@@ -193,7 +203,9 @@ def _cost(units, price, total):
     cash to the cent, else total-cost {{...}} so commissions land in basis
     and the entry always balances exactly."""
     if abs(units * price - abs(total)) < 0.005:
-        return "{" + f"{price:.2f} USD" + "}"
+        # Full price precision: printing a 4-decimal fund price at 2 decimals
+        # changes units*price and bean-check rejects by fractions of a cent.
+        return "{" + f"{_fmt_price(price)} USD" + "}"
     return "{{" + f"{abs(total):.2f} USD" + "}}"
 
 
@@ -210,7 +222,15 @@ def build(a, account):
     date, kind = a["date"], a["kind"]
     if kind == "INVBANKTRAN":
         t = a["txn"]
+        # Brokerage cash-ins often carry NO payee, so payee rules can't route
+        # them. rules.toml [accounts_invbanktran] maps the brokerage account
+        # to a default counter (e.g. Transfers when the bank twin is in the
+        # ledger, an Income bucket when the source is external); a payee rule
+        # still wins when one matches.
         counter = categorize(t["payee"], t["type"], t["amount"], account)
+        if counter in ("Income:US:Other", "Expenses:Uncategorized"):
+            from rules import rules as _rules
+            counter = _rules().get("accounts_invbanktran", {}).get(account, counter)
         entry = render(date, t["payee"], {"ofx-type": t["type"], "import-hash": a["hash"]},
                        [f"  {account}   {t['amount']:.2f} USD", f"  {counter}"])
         return entry, {}, {account, counter}
@@ -224,7 +244,7 @@ def build(a, account):
     if kind in SELL_KINDS:
         total = abs(a["total"] if a["total"] is not None else units * price)
         entry = render(date, a["payee"], {"ofx-type": kind, "import-hash": a["hash"]},
-                       [f"  {account}   -{_fmt_units(abs(units))} {ticker} {{}} @ {price:.2f} USD"
+                       [f"  {account}   -{_fmt_units(abs(units))} {ticker} {{}} @ {_fmt_price(price)} USD"
                         f"  ; whole lots (FIFO if set) — broker lot data governs at tax time",
                         f"  {account}   {total:.2f} USD",
                         f"  {GAINS}"])
