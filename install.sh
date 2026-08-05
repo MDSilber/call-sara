@@ -34,6 +34,6 @@ else
   echo "⚠️  Homebrew not found — install gitleaks + poppler yourself (the vault refuses to commit without gitleaks)"
 fi
 echo ""
-echo "✓ skill linked · secret scanner armed · helpers installed · python OK"
+echo "✓ skill linked · secret scanner armed · helpers present · python OK"
 echo "Start a NEW Claude Code session (skills register at session start), then say"
 echo "\"set up my finances\" to create a vault (or run skills/finance/scripts/init_vault.sh)."

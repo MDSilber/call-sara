@@ -37,17 +37,21 @@ nobody was tracking. Honestly a bit embarrassing. I'm still not over it.
    git clone <your-fork> ~/code/call-sara
    cd ~/code/call-sara && ./install.sh
    ```
-   install.sh does everything (deps, secret scanner, the works).
+   install.sh does everything: links the skill, arms the secret
+   scanner, checks every dependency.
 2. Open a NEW Claude Code session. Skills load at startup.
 3. Say **"set up my finances."** That's it! She takes it from there
    (~90 min, she's thorough).
 
 Not ready to hand over real data? Same, at first:
 ```bash
+cd ~/code/call-sara
 skills/finance/scripts/init_vault.sh --demo /tmp/demo-vault
-skills/finance/scripts/dashboard.sh --vault /tmp/demo-vault
+skills/finance/scripts/dashboard.sh --vault /tmp/demo-vault   # opens your browser, random local port
 ```
-If anything's weird, `skills/finance/scripts/doctor.sh` tells you what.
+If anything's weird, `skills/finance/scripts/doctor.sh --vault /tmp/demo-vault`
+tells you what. (Brand-new Mac? Set `git config --global user.email you@wherever.com`
+first, the vault is a git repo and will ask.)
 
 macOS + Python 3.11+ (install.sh handles python). The Claude in Chrome
 extension makes statement-pulling magical but is optional. Fair warning:
@@ -86,7 +90,7 @@ inspectable, starting at `skills/finance/SKILL.md`:
 | `skills/finance/SKILL.md` | The entry point, literally what the model reads |
 | `skills/finance/references/` | The method: onboarding, playbook, figures, site notes |
 | `skills/finance/tools/` | Importers, queries, checks, forecast. The math |
-| `skills/finance/vault-template/` | Vault skeleton, plus a demo one |
+| `skills/finance/vault-template/` | Vault skeleton (demo variant next door in `vault-template-demo/`) |
 | `skills/finance/scripts/` | init, doctor, prices, dashboard, filing |
 
 ## Make her yours
