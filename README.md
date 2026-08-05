@@ -1,4 +1,4 @@
-# finance-system
+# Call Sara
 
 I wanted a financial advisor that actually knows my numbers. Not a
 chatbot with amnesia, not another SaaS holding my bank logins. So I
@@ -24,6 +24,9 @@ Decision support, not a licensed advisor. Details below.
   moves money. Always.
 - **A dashboard.** One command serves your whole financial picture as
   a local-only web page: net worth curve, drill-downs, query console.
+  Add `--pretty` for the static beauty view — a single self-contained
+  HTML file (net worth curve, spend, 60-day forecast, findings) that
+  regenerates with the reports; fava stays the drill-down.
 - **The boring essentials, done right.** Monthly reviews, statement
   imports with dedupe and reconciliation, instant queries, a 60-day
   cash-flow forecast, a shareable household assessment.
@@ -48,8 +51,8 @@ pages?
 
 1. **Fork this repo** (so your tweaks have a home), then:
    ```bash
-   git clone <your-fork> ~/code/finance-system
-   cd ~/code/finance-system && ./install.sh
+   git clone <your-fork> ~/code/call-sara
+   cd ~/code/call-sara && ./install.sh
    ```
    (install.sh grabs its two small helpers, gitleaks and poppler, via
    brew if you don't have them.)

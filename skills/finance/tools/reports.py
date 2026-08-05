@@ -2,7 +2,8 @@
 """Generate the vault's reports/ from the ledger + facts. Deterministic — no judgment.
 
 Run:    tools/run reports.py
-Writes: reports/net-worth.md, reports/spend-by-month.md, reports/upcoming.md
+Writes: reports/net-worth.md, reports/spend-by-month.md, reports/upcoming.md,
+        reports/dashboard.html (via webview.py)
 Arithmetic is code; the agent reads these files and reasons about them.
 """
 import re
@@ -129,7 +130,8 @@ def upcoming():
 
 if __name__ == "__main__":
     REPORTS.mkdir(exist_ok=True)
-    for fn in (net_worth, spend_by_month, upcoming):
+    from webview import dashboard  # noqa: E402 — imported lazily: webview reuses this module's math
+    for fn in (net_worth, spend_by_month, upcoming, dashboard):
         try:
             fn()
             print(f"ok   {fn.__name__}")

@@ -226,7 +226,8 @@ when the money runs out. Gate every step on the household's thesis.
 
 ## Part 2 — The service calendar (what to raise, when)
 
-Monthly review covers: cash-flow reconciliation, concentration %,
+Monthly review — the household calls it **the cheshbon** (חשבון, "the
+reckoning"; a little cheshbon nefesh for your money) — covers: cash-flow reconciliation, concentration %,
 withholding-gap accumulation, drift vs. IPS, life-event check, and any
 NEW fact walked against Part 1. Alongside those judgment items runs the
 mechanical plumbing audit: logins still work (they feed the fetch

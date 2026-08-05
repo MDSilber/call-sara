@@ -183,7 +183,8 @@ session starts already knowing them.
 - `references/institutions.md` — how each institution's site behaves
   (shareable; no personal identifiers).
 - `tools/` — `run` (wrapper), `query.py`, `reports.py`, `run_checks.py`,
-  `checks.py`, `forecast.py`, `recategorize.py`, `rules.py`, `vault.py`,
+  `checks.py`, `forecast.py`, `webview.py` (renders the static
+  `reports/dashboard.html`), `recategorize.py`, `rules.py`, `vault.py`,
   `importers/{ofx,chase_csv,invest_ofx,holdings_ofx}.py`. The transaction
   importers take `--write` (append after dry-run), `--all` (disable
   dedupe), and `--since YYYY-MM-DD` (trim pre-snapshot history) —
@@ -195,5 +196,6 @@ session starts already knowing them.
   tagged with a `price:` source; run before reviews and dashboard sessions.
 - `scripts/dashboard.sh` — local-only visual dashboard (fava) over the
   ledger: net worth, drill-downs, query console. Offer it when the user
-  wants to SEE their money, not just hear numbers.
+  wants to SEE their money, not just hear numbers. `--pretty` skips the
+  server and opens the static glanceable page instead.
 - `scripts/file_downloads.py` — identify / dedupe / rename / file downloaded PDFs.
