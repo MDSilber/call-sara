@@ -36,3 +36,9 @@
 2000-01-01 open Expenses:Insurance             USD
 2000-01-01 open Expenses:Housing               USD
 2000-01-01 open Expenses:Taxes                 USD
+
+; Commodities you hold get declared once. Tag market-traded ones with a
+; price source and scripts/update_prices.sh keeps them current:
+;   2020-01-01 commodity VTSAX
+;     name: "Vanguard Total Stock Market Index Admiral"
+;     price: "USD:yahoo/VTSAX"

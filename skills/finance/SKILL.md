@@ -109,6 +109,7 @@ founding interview, inventory every institution, guide the first data pull,
 write the initial thesis. Ends with a first assessment.
 
 **Review** ("monthly", "how are we doing", "anything I should know") →
+`scripts/update_prices.sh` (holdings at market, not last-snapshot), then
 `tools/run run_checks.py` and `tools/run reports.py`, read
 `reports/findings.md`, walk NEW facts against playbook Part 1, then brief:
 what fired, what changed, the ONE open item to advance. Fifteen minutes,
@@ -177,6 +178,8 @@ session starts already knowing them.
 - `scripts/init_vault.sh` — scaffold a new vault from `vault-template/`.
 - `scripts/doctor.sh` — install/vault health check; run it when anything
   misbehaves.
+- `scripts/update_prices.sh` — refresh market prices for every commodity
+  tagged with a `price:` source; run before reviews and dashboard sessions.
 - `scripts/dashboard.sh` — local-only visual dashboard (fava) over the
   ledger: net worth, drill-downs, query console. Offer it when the user
   wants to SEE their money, not just hear numbers.
