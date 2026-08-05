@@ -158,7 +158,7 @@ def _rare_payee_charges():
                 "anomaly", "alert",
                 f"{money(n)} at rarely-seen payee: {payee[:48]} ({r['date']})",
                 f"Category {r['account'].replace('Expenses:', '')}. Seen "
-                f"{freq[payee.upper()]}x ever. Confirm it's yours."))
+                f"{freq[payee.upper()]}x ever. Confirm it's yours — once confirmed, append it to [anomaly] ignore_payee_regex in rules.toml so it never re-alerts."))
     return out[-8:]  # cap noise
 
 
