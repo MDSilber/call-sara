@@ -6,6 +6,15 @@ data flowing in, so every later session compounds. Budget ~90 minutes
 of working time — usually 2–3 sittings — and say so up front. Narrate
 progress; long silences read as stalls.
 
+**The whole flow runs on the arrow-key picker.** Every decision point —
+location, hosting, institutions, interview answers, what to pull first,
+what to defer — goes through AskUserQuestion: short labels, the tradeoff
+in each option's description, up to four related questions per batch,
+a recommended option marked. Typing is reserved for genuinely open
+answers (names, dollar amounts, stories). Onboarding should feel like a
+great installer, not a form: tap-tap-tap, with Sara reacting between
+batches.
+
 ## First act: write the progress file
 Before anything else, write `ONBOARDING.md` at the vault root (create
 the directory if the scaffold hasn't run yet) and keep it current:
@@ -196,6 +205,9 @@ faster and often deeper (multi-year history):
 For each thing found: file the source, extract facts, add transactions.
 Only THEN move to live pulls for what's missing or recent.
 
+Run the sweep as one multi-select picker ("which of these exist?") —
+checking boxes beats recalling.
+
 ## 4. First live data pull (30 min) — biggest and fastest first
 Order by (value × ease) — mirror the order in the progress file's
 pull-queue table and keep Status current as each pull lands. Typically:
@@ -209,6 +221,8 @@ source. Ask for the most recent **tax return** and **latest paystubs** to
 be dropped in; a filed return is the single most information-dense
 document a household has (income breakdown, marginal rates, carryovers,
 every account that generated income, payment/penalty history).
+Order the queue with the user via a picker — "which first?" with
+value-and-ease noted per option — rather than announcing an order.
 
 Record what each site taught you in `references/institutions.md` (site
 behavior only — no personal identifiers), so the next household's pull
