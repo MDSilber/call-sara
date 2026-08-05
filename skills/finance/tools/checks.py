@@ -624,6 +624,35 @@ def _yaml_number_list(v):
     return [float(x) for x in re.findall(r"-?\d+(?:\.\d+)?", str(v or ""))]
 
 
+FIXED_DRIFT_TOLERANCE = 2000  # a fixed-balance account may breathe this much
+                              # before a sweep/top-up is worth anyone's time
+
+
+def fixed_balances():
+    """Accounts the household holds at a FIXED dollar amount (rules.toml
+    [fixed_balances]: account -> amount). Above tolerance -> sweep the excess
+    to its destination; below -> top it up. The thesis decides the numbers;
+    this check just notices drift."""
+    conf = rules().get("fixed_balances", {})
+    if not conf:
+        return []
+    out = []
+    for account, target in conf.items():
+        rows = query(f"SELECT sum(number) as v WHERE account = '{account}' AND currency = 'USD'")
+        bal = amount(rows[0].get("v")) if rows else 0.0
+        drift = bal - float(target)
+        if abs(drift) <= FIXED_DRIFT_TOLERANCE:
+            continue
+        direction = "over" if drift > 0 else "under"
+        fix = ("sweep the excess to its thesis destination" if drift > 0
+               else "top it up from the operating buffer")
+        out.append(finding(
+            "fixed-balance", "watch",
+            f"{account} is ${abs(drift):,.0f} {direction} its fixed ${float(target):,.0f}",
+            f"THESIS.md sets this account at a fixed amount — {fix}."))
+    return out
+
+
 def milestones():
     """Fire once when liquid net worth first crosses a configured milestone.
 
@@ -675,7 +704,7 @@ def _record_crossed(key, values):
 
 
 ALL = [concentration, deadlines, anomaly, subscriptions, reconciliation, coverage,
-       review_queue, goals_status, milestones]
+       review_queue, goals_status, milestones, fixed_balances]
 
 
 def run_all():
