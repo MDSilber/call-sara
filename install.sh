@@ -14,6 +14,14 @@ for d in "$here"/skills/*/ ; do
 done
 chmod +x "$here"/skills/finance/scripts/init_vault.sh "$here"/skills/finance/tools/run 2>/dev/null || true
 git -C "$here" config core.hooksPath .githooks   # this repo scans its own commits too
-command -v gitleaks >/dev/null 2>&1 || echo "⚠️  brew install gitleaks — the vault (and this repo) refuse to commit without it"
+# Two helpers most people don't have: gitleaks (the scanner that blocks
+# account numbers from ever being committed) and poppler (pdftotext, for
+# reading PDF statements). Install them via brew if missing.
+if command -v brew >/dev/null 2>&1; then
+  command -v gitleaks  >/dev/null 2>&1 || { echo "installing gitleaks (commit-time secret scanner)…"; brew install -q gitleaks; }
+  command -v pdftotext >/dev/null 2>&1 || { echo "installing poppler (PDF statement reading)…"; brew install -q poppler; }
+else
+  echo "⚠️  Homebrew not found — install gitleaks + poppler yourself (the vault refuses to commit without gitleaks)"
+fi
 echo "Start a NEW Claude Code session (skills register at session start), then say"
 echo "\"set up my finances\" to create a vault (or run skills/finance/scripts/init_vault.sh)."

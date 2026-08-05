@@ -50,8 +50,9 @@ pages?
    ```bash
    git clone <your-fork> ~/code/finance-system
    cd ~/code/finance-system && ./install.sh
-   brew install gitleaks poppler
    ```
+   (install.sh grabs its two small helpers, gitleaks and poppler, via
+   brew if you don't have them.)
 2. **Start a NEW Claude Code session** (skills register at startup).
 3. Say **"set up my finances."** Sara interviews you, pulls your data,
    writes your thesis, and hands you a first assessment.
