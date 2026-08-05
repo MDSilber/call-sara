@@ -28,10 +28,13 @@ and skipped, never fatal. Income/gains accounts that are not yet opened in
 ledger/*.beancount are listed as paste-ready `open` directives on stderr.
 
 DRY-RUN BY DEFAULT; --write appends to ledger/<year>.beancount and bean-check
-rolls back a bad import. Dedupe is the bank importer's: every entry carries
-`import-hash:` (date | signed cash cents | action payee | account), so
-re-importing the same or an overlapping export is recognized exactly; the
-±5-day fuzzy fallback still catches pre-hash ledger entries. --all disables.
+rolls back a bad import. Dedupe is the bank importer's: (1) FITID-exact —
+every entry stores the broker's FITID as `fitid:` metadata, the primary
+identity; (2) hash-exact via `import-hash:` (date | signed cash cents |
+action payee | account), honored only when the recorded fitids don't
+disagree (identical same-day actions with different FITIDs BOTH import);
+(3) the ±5-day fuzzy fallback, applied only to legacy ledger entries that
+carry neither fitid nor hash. --all disables.
 
 POSITIONS RECONCILE (the investment analog of bank balance continuity): the
 statement's <INVPOSLIST> holds positions as of <DTASOF>. After parsing, the
@@ -78,9 +81,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from rules import categorize, route_by_acctid  # noqa: E402
 from vault import VAULT, query  # noqa: E402
 from importers.common import (append_to_ledger, assertion_date,  # noqa: E402
-                              bank_transactions, escape, existing_hashes,
-                              existing_index, import_hash, is_duplicate,
-                              read_ofx)
+                              bank_transactions, escape, existing_ids,
+                              existing_index, hash_is_duplicate, import_hash,
+                              is_duplicate, parse_ofx_amount, read_ofx,
+                              since_from_argv)
 
 FLAGS = {"--all", "--write", "--dry-run"}
 MATCH, MISMATCH, UNVERIFIABLE = "MATCH", "MISMATCH", "UNVERIFIABLE"
@@ -109,8 +113,17 @@ def _tag(block, tag, default=""):
 
 
 def _num(block, tag):
-    m = re.search(rf"<{tag}>([-+\d.]+)", block)
-    return float(m.group(1)) if m else None
+    """Numeric field, or None when absent OR malformed ('1.2.3', EU commas)
+    — the caller's missing-field handling then reports-and-skips the row
+    instead of importing a silently mangled amount."""
+    m = re.search(rf"<{tag}>([-+\d.,]+)", block)
+    if not m:
+        return None
+    val = parse_ofx_amount(m.group(1))
+    if val is None:
+        print(f";   malformed <{tag}> {m.group(1)!r} — treated as absent",
+              file=sys.stderr)
+    return val
 
 
 def _date(block, tag):
@@ -146,7 +159,8 @@ def actions(stmt, sec):
             # the embedded <STMTTRN> lacks the </BANKTRANLIST> terminator
             # bank_transactions() expects — supply one
             for t in bank_transactions(block + "</BANKTRANLIST>"):
-                yield {"kind": kind, "date": t["date"], "txn": t}
+                yield {"kind": kind, "date": t["date"], "txn": t,
+                       "fitid": t["fitid"]}
             continue
         date = _date(block, "DTTRADE") or _date(block, "DTPOSTED")
         ticker = sec.get(_tag(block, "UNIQUEID"), _tag(block, "UNIQUEID"))
@@ -159,8 +173,17 @@ def actions(stmt, sec):
             skipped.append((kind, f"{date}: security {ticker!r} has no usable "
                                   f"ticker — book this row by hand"))
             continue
+        if kind in BUY_KINDS + ("REINVEST",) and not price and total is None:
+            # No UNITPRICE and no TOTAL: the lot would book at {0.00 USD}
+            # basis — a phantom-zero cost that silently overstates every
+            # future gain. Report-and-skip; book by hand with the real basis.
+            skipped.append((kind, f"{date}: {ticker} carries neither UNITPRICE "
+                                  f"nor TOTAL — refusing to mint a {{0.00 USD}} "
+                                  f"basis lot; book this row by hand"))
+            continue
         yield {"kind": kind, "date": date, "ticker": ticker, "units": units,
-               "price": price or 0.0, "total": total, "income": income}
+               "price": price or 0.0, "total": total, "income": income,
+               "fitid": _tag(block, "FITID")}
     for kind, note in skipped:
         print(f";   skipped ({kind}) {note}", file=sys.stderr)
     unsupported = [k for k in UNSUPPORTED if re.search(rf"<{k}>", stmt)]
@@ -202,7 +225,7 @@ def _cost(units, price, total):
     """Cost braces for an acquiring posting: per-unit when it explains the
     cash to the cent, else total-cost {{...}} so commissions land in basis
     and the entry always balances exactly."""
-    if abs(units * price - abs(total)) < 0.005:
+    if abs(abs(units) * price - abs(total)) < 0.005:
         # Full price precision: printing a 4-decimal fund price at 2 decimals
         # changes units*price and bean-check rejects by fractions of a cent.
         return "{" + f"{_fmt_price(price)} USD" + "}"
@@ -231,19 +254,22 @@ def build(a, account):
         if counter in ("Income:US:Other", "Expenses:Uncategorized"):
             from rules import rules as _rules
             counter = _rules().get("accounts_invbanktran", {}).get(account, counter)
-        entry = render(date, t["payee"], {"ofx-type": t["type"], "import-hash": a["hash"]},
+        entry = render(date, t["payee"], {"ofx-type": t["type"], "import-hash": a["hash"],
+                                          "fitid": t["fitid"]},
                        [f"  {account}   {t['amount']:.2f} USD", f"  {counter}"])
         return entry, {}, {account, counter}
     ticker, units, price = a["ticker"], a["units"], a["price"]
     if kind in BUY_KINDS:
         total = -abs(a["total"] if a["total"] is not None else units * price)
-        entry = render(date, a["payee"], {"ofx-type": kind, "import-hash": a["hash"]},
+        entry = render(date, a["payee"], {"ofx-type": kind, "import-hash": a["hash"],
+                                          "fitid": a.get("fitid", "")},
                        [f"  {account}   {_fmt_units(units)} {ticker} {_cost(units, price, total)}",
                         f"  {account}   {total:.2f} USD"])
         return entry, {ticker: units}, {account}
     if kind in SELL_KINDS:
         total = abs(a["total"] if a["total"] is not None else units * price)
-        entry = render(date, a["payee"], {"ofx-type": kind, "import-hash": a["hash"]},
+        entry = render(date, a["payee"], {"ofx-type": kind, "import-hash": a["hash"],
+                                          "fitid": a.get("fitid", "")},
                        [f"  {account}   -{_fmt_units(abs(units))} {ticker} {{}} @ {_fmt_price(price)} USD"
                         f"  ; whole lots (FIFO if set) — broker lot data governs at tax time",
                         f"  {account}   {total:.2f} USD",
@@ -251,14 +277,21 @@ def build(a, account):
         return entry, {ticker: -abs(units)}, {account, GAINS}
     if kind == "REINVEST":
         income_acct = INCOME_ACCOUNTS.get(a["income"], INCOME_DEFAULT)
-        total = -abs(a["total"] if a["total"] is not None else units * price)
-        entry = render(date, a["payee"], {"ofx-type": kind, "import-hash": a["hash"]},
+        # Sign follows the ROW: a normal reinvest carries negative TOTAL
+        # (income leg negative = income earned) and positive units; a broker
+        # CORRECTION carries negative units and positive TOTAL — forcing
+        # -abs() there would book the reversal as a second income hit
+        # instead of backing the first one out.
+        total = a["total"] if a["total"] is not None else -(units * price)
+        entry = render(date, a["payee"], {"ofx-type": kind, "import-hash": a["hash"],
+                                          "fitid": a.get("fitid", "")},
                        [f"  {account}   {_fmt_units(units)} {ticker} {_cost(units, price, total)}",
                         f"  {income_acct}   {total:.2f} USD"])
         return entry, {ticker: units}, {account, income_acct}
     # INCOME (cash distribution)
     income_acct = INCOME_ACCOUNTS.get(a["income"], INCOME_DEFAULT)
-    entry = render(date, a["payee"], {"ofx-type": kind, "import-hash": a["hash"]},
+    entry = render(date, a["payee"], {"ofx-type": kind, "import-hash": a["hash"],
+                                      "fitid": a.get("fitid", "")},
                    [f"  {account}   {a['total']:.2f} USD", f"  {income_acct}"])
     return entry, {}, {account, income_acct}
 
@@ -282,7 +315,9 @@ def cash_amount(a):
         return a["txn"]["amount"]
     if a["total"] is not None:
         return a["total"]
-    sign = -1 if a["kind"] in BUY_KINDS + ("REINVEST",) else 1
+    if a["kind"] == "REINVEST":
+        return -(a["units"] * a["price"])  # direction follows the row (corrections)
+    sign = -1 if a["kind"] in BUY_KINDS else 1
     return sign * abs(a["units"] * a["price"])
 
 
@@ -364,14 +399,7 @@ def opened_accounts():
 # ------------------------------------------------------------------ main
 def main():
     argv = sys.argv[1:]
-    since = None
-    if "--since" in argv:
-        i = argv.index("--since")
-        try:
-            since = argv[i + 1]
-        except IndexError:
-            sys.exit("--since needs a YYYY-MM-DD date")
-        argv = argv[:i] + argv[i + 2:]
+    since, argv = since_from_argv(argv, __doc__)
     unknown = {a for a in argv if a.startswith("--")} - FLAGS
     if unknown:
         sys.exit(f"unknown flag(s): {', '.join(sorted(unknown))}\n\n{__doc__}")
@@ -389,7 +417,7 @@ def main():
     if len(args) > 1 and len(statements) > 1:
         sys.exit(f"{args[0]} holds {len(statements)} accounts — an explicit ledger "
                  f"account can't apply to all of them. Add [[accounts]] routing entries instead.")
-    ledger_hashes = existing_hashes() if dedupe else set()
+    ledger_hashes, ledger_fitids = existing_ids() if dedupe else ({}, {})
     entries, used_accounts = [], set()
     for acct_id, stmt in statements:
         account = args[1] if len(args) > 1 else route_by_acctid(acct_id)
@@ -397,8 +425,8 @@ def main():
             print(f"; skipping account ending {acct_id[-4:]!r}: no [[accounts]] entry in "
                   f"rules.toml — add one (or pass the ledger account explicitly)", file=sys.stderr)
             continue
-        idx = existing_index(account) if dedupe else {}
-        new_hashes = set()
+        idx = existing_index(account, set(ledger_hashes)) if dedupe else {}
+        new_hashes, new_fitids = {}, set()
         rows = sorted(actions(stmt, sec), key=lambda a: a["date"])
         if since:
             pre = len(rows)
@@ -411,13 +439,21 @@ def main():
             a["payee"] = payee_for(a)
             amt = cash_amount(a)
             a["hash"] = h = import_hash(a["date"], amt, a["payee"], account)
-            if dedupe and (h in ledger_hashes or h in new_hashes):
+            fid = a.get("fitid", "")
+            if dedupe and fid and (fid in ledger_fitids.get(account, ())
+                                   or fid in new_fitids):
+                skipped.append((a, amt, "fitid"))
+                continue
+            if dedupe and hash_is_duplicate(h, fid, ledger_hashes, new_hashes):
                 skipped.append((a, amt, "hash"))
                 continue
             if dedupe and is_duplicate(idx, a["date"], amt, a["payee"]):
                 skipped.append((a, amt, "±5d"))
                 continue
-            new_hashes.add(h)
+            new_hashes.setdefault(h, set())
+            if fid:
+                new_hashes[h].add(fid)
+                new_fitids.add(fid)
             entry, deltas, used = build(a, account)
             entries.append((a["date"], entry))
             used_accounts |= used

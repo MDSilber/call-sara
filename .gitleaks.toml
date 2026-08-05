@@ -13,8 +13,8 @@ tags = ["pii"]
 
 [[rules]]
 id = "keyed-account-number"
-description = "Full account / policy / routing number in a keyed field"
-regex = '''(?i)\b(account|policy|routing|acct|dd)[a-z_ ]*(number|no|num|#|id)?\s*[:=#]\s*['"]?\d[\d -]{7,}'''
+description = "Full account / card / policy / routing number in a keyed field"
+regex = '''(?i)\b(account|policy|routing|acct|dd|card|ssn|iban|member)[a-z_ ]*(number|no|num|#|id)?\s*[:=#]\s*['"]?\d[\d -]{7,}'''
 tags = ["pii"]
 
 [[rules]]
@@ -24,6 +24,24 @@ regex = '''(?:^|[^.\d])(\d{8,})(?:[^\d]|$)'''
 secretGroup = 1
 tags = ["pii"]
 
+[[rules]]
+id = "spaced-digit-run"
+description = "12+ digits split by single spaces/hyphens — card/account numbers written in groups (dashed phone numbers are 10-11 digits and pass)"
+regex = '''(?:\d[ -]?){11,}\d'''
+tags = ["pii"]
+
+[[rules]]
+id = "fullwidth-digit-run"
+description = "8+ fullwidth unicode digits (０-９) — homoglyph bypass of the ASCII digit rules"
+regex = '''(?:[０-９][ -]?){7,}[０-９]'''
+tags = ["pii"]
+
 [allowlist]
-description = "Synthetic importer test fixtures — invented account numbers/FITIDs, by design"
+description = "Synthetic importer test fixtures (invented numbers, by design) plus the machine-metadata LINES the importers emit — never whole directories"
 paths = ['''skills/finance/tools/importers/tests/fixtures/.*''']
+regexTarget = "line"
+regexes = [
+  '''^\s*import-hash:\s*"[0-9a-f]{8,64}"''',
+  '''^\s*fitid:\s*"[^"]{1,64}"''',
+  '''^\s*(statement|document):\s*"[^"]{1,200}"''',
+]

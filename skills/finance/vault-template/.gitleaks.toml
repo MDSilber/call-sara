@@ -1,6 +1,8 @@
 title = "household finance vault — leak rules"
 # The vault stores account numbers as LAST-4 ONLY. These rules block any
-# commit that would put an SSN or a full account/routing number into git.
+# commit that would put an SSN or a full account/card/routing number into
+# git — in ANY file, ledger and reports included. Only specific machine
+# metadata LINES are allowlisted, never whole directories.
 
 [extend]
 useDefault = true          # gitleaks' generic secret/token rules
@@ -13,8 +15,8 @@ tags = ["pii"]
 
 [[rules]]
 id = "keyed-account-number"
-description = "Full account / policy / routing number in a keyed field"
-regex = '''(?i)\b(account|policy|routing|acct|dd)[a-z_ ]*(number|no|num|#|id)?\s*[:=#]\s*['"]?\d[\d -]{7,}'''
+description = "Full account / card / policy / routing number in a keyed field"
+regex = '''(?i)\b(account|policy|routing|acct|dd|card|ssn|iban|member)[a-z_ ]*(number|no|num|#|id)?\s*[:=#]\s*['"]?\d[\d -]{7,}'''
 tags = ["pii"]
 
 [[rules]]
@@ -25,6 +27,24 @@ secretGroup = 1
 path = '''^(facts/.*|notes/.*|rules\.toml|CLAUDE\.md|THESIS\.md)$'''
 tags = ["pii"]
 
+[[rules]]
+id = "spaced-digit-run"
+description = "12+ digits split by single spaces/hyphens — card/account numbers written in groups (dashed phone numbers are 10-11 digits and pass)"
+regex = '''(?:\d[ -]?){11,}\d'''
+tags = ["pii"]
+
+[[rules]]
+id = "fullwidth-digit-run"
+description = "8+ fullwidth unicode digits (０-９) — homoglyph bypass of the ASCII digit rules"
+regex = '''(?:[０-９][ -]?){7,}[０-９]'''
+tags = ["pii"]
+
 [allowlist]
-description = "ledger txns and generated reports legitimately carry bank reference ids / share counts"
-paths = ['''^ledger/.*\.beancount$''', '''^reports/''', '''^documents/''', '''^inbox/''', '''^\.venv/''']
+description = "documents/ and inbox/ hold binary source docs (gitignored anyway); .venv is tooling. The regexes allowlist ONLY the machine-metadata lines the importers emit (hashes, bank row ids, filed-document paths) — matched per LINE, so ledger/ and reports/ are otherwise fully scanned."
+paths = ['''^documents/''', '''^inbox/''', '''^\.venv/''']
+regexTarget = "line"
+regexes = [
+  '''^\s*import-hash:\s*"[0-9a-f]{8,64}"''',
+  '''^\s*fitid:\s*"[^"]{1,64}"''',
+  '''^\s*(statement|document):\s*"[^"]{1,200}"''',
+]

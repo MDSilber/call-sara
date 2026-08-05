@@ -48,7 +48,7 @@ def paper_value():
         return 0.0
     rows = query(f"SELECT sum(convert(position, '{shadow_currency()}')) AS v "
                  f"WHERE account ~ '^Assets' AND currency ~ '{excl}'")
-    return amount(rows[0]["v"]) if rows and rows[0].get("v") else 0.0
+    return amount(rows[0]["v"], shadow_currency()) if rows and rows[0].get("v") else 0.0
 
 
 def net_worth():

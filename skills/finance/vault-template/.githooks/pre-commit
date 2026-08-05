@@ -7,10 +7,10 @@ fi
 if ! command -v gitleaks >/dev/null 2>&1; then
   echo "❌ commit blocked: gitleaks not installed — nothing can verify this commit"
   echo "   is free of SSNs / full account numbers.   brew install gitleaks"
-  echo "   (emergency override: SKIP_SECRET_SCAN=1 git commit ...)"
   exit 1
 fi
 gitleaks protect --staged --config .gitleaks.toml --no-banner --redact -v || {
   echo "❌ commit blocked: possible SSN / full account number in the staged changes above."
+  echo "   Fix the flagged line — the scan is the last line of defense."
   exit 1
 }

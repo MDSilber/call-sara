@@ -8,7 +8,15 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 SKILL_DIR="$(cd "$HERE/.." && pwd)"
 VAULT="${FINANCE_VAULT:-}"
 if [ -z "$VAULT" ] && [ -f "$HOME/.finance-vault" ]; then
-  VAULT="$(head -1 "$HOME/.finance-vault")"
+  P="$(head -1 "$HOME/.finance-vault")"
+  # Trust the pointer only if its target is a vault this user owns and
+  # nobody else can rewrite (guards against a planted/hijacked pointer).
+  if [ -d "$P" ] && [ -O "$P" ] && [ -f "$P/ledger/main.beancount" ] \
+     && [ -z "$(find "$P" -maxdepth 0 -perm -0002 2>/dev/null)" ]; then
+    VAULT="$P"
+  else
+    echo "ignoring ~/.finance-vault (failed validation)" >&2
+  fi
 fi
 VAULT="${VAULT:-$HOME/Finance}"
 if [ "${1:-}" = "--vault" ]; then
@@ -81,6 +89,18 @@ if [ -f "$VAULT/ledger/main.beancount" ] && [ -f "$VAULT/CLAUDE.md" ] && [ -f "$
   VENV_PY="$VAULT/.venv/bin/python"
   if [ -x "$VENV_PY" ] && "$VENV_PY" -c 'import beancount, beanquery' >/dev/null 2>&1; then
     pass "vault .venv has beancount + beanquery"
+    if "$VENV_PY" -c 'import beanprice' >/dev/null 2>&1; then
+      pass "vault .venv has beanprice (update_prices.sh)"
+    else
+      warn "beanprice not importable — update_prices.sh cannot fetch quotes" \
+           "$VAULT/.venv/bin/pip install beanprice"
+    fi
+    if "$VENV_PY" -c 'import fava' >/dev/null 2>&1; then
+      pass "vault .venv has fava (dashboard.sh)"
+    else
+      warn "fava not importable — dashboard.sh cannot launch" \
+           "$VAULT/.venv/bin/pip install fava"
+    fi
     if OUT="$(cd "$VAULT" && ./.venv/bin/bean-check ledger/main.beancount 2>&1)"; then
       pass "bean-check: ledger validates"
     else

@@ -88,12 +88,19 @@ def amount(cell, currency="USD"):
 
     '1,234.56 USD' -> 1234.56. A cell can hold a multi-currency inventory
     rendered as aligned columns (' , , 1,234.56 USD'), so prefer the number
-    tagged with `currency`; fall back to the first bare number; blank -> 0.0.
+    tagged with `currency`. A bare number (count(*), sum(number)) passes
+    through unchanged. A cell holding ONLY other commodities ('12.000
+    VTSAX') returns 0.0 for `currency` math — those are UNITS, and reading
+    them as dollars is how an unpriced holding used to leak into USD sums
+    (callers that want the shadow currency pass it explicitly).
     """
     cell = cell or ""
     m = re.search(rf"(-?\d[\d,]*(?:\.\d+)?)\s+{re.escape(currency)}(?![.\w])", cell)
-    if not m:
-        m = re.search(r"(-?\d[\d,]*(?:\.\d+)?)", cell)
+    if m:
+        return float(m.group(1).replace(",", ""))
+    if re.search(r"-?\d[\d,.]*\s*[A-Z]", cell):
+        return 0.0  # some commodity, none of it `currency` — never a dollar figure
+    m = re.search(r"(-?\d[\d,]*(?:\.\d+)?)", cell)
     return float(m.group(1).replace(",", "")) if m else 0.0
 
 

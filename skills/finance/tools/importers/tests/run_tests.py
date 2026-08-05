@@ -73,8 +73,8 @@ account = "Expenses:Food:Dining"
 """
 
 
-def make_vault(tmp):
-    vault = Path(tmp) / "vault"
+def make_vault(tmp, name="vault"):
+    vault = Path(tmp) / name
     (vault / "ledger").mkdir(parents=True)
     (vault / "ledger" / "main.beancount").write_text(MAIN_BEANCOUNT)
     (vault / "rules.toml").write_text(RULES_TOML)
@@ -180,11 +180,12 @@ def main():
         check("--write adds the year include to main.beancount",
               'include "2026.beancount"' in main_txt, main_txt)
 
-        # 7. re-import: hash-exact dedupe, zero new
+        # 7. re-import: FITID-exact dedupe, zero new (M1: overlapping
+        # re-import of the same file still fully dedupes)
         r = run(vault, "importers/ofx.py", str(FIX / "bank.qfx"))
-        check("re-import dedupes to zero (hash-exact)",
+        check("re-import dedupes to zero (fitid-exact)",
               r.returncode == 0 and "imported 0 transactions" in r.stderr
-              and r.stderr.count("(hash)") == 4 and normalize(r.stdout) == "", r.stderr)
+              and r.stderr.count("(fitid)") == 4 and normalize(r.stdout) == "", r.stderr)
 
         # 8. --all really disables dedupe (allow the discrepancy the dupes cause)
         r = run(vault, "importers/ofx.py", str(FIX / "bank.qfx"), "--all",
@@ -247,12 +248,155 @@ def main():
 
         # 15. invest re-import: hash dedupe to zero; (venv) positions still MATCH
         r = run(vault, "importers/invest_ofx.py", str(FIX / "vanguard.qfx"))
-        check("invest re-import dedupes to zero (hash-exact)",
+        check("invest re-import dedupes to zero (fitid-exact)",
               r.returncode == 0 and "imported 0 transactions" in r.stderr
-              and r.stderr.count("(hash)") == 7 and normalize(r.stdout) == "", r.stderr)
+              and r.stderr.count("(fitid)") == 7 and normalize(r.stdout) == "", r.stderr)
         if has_venv:
             check("invest re-import: positions still MATCH",
                   "2026-06-30 MATCH \u2014" in r.stderr, r.stderr)
+
+        # M1: same-day identical pair with DISTINCT FITIDs both import
+        r = run(vault, "importers/ofx.py", str(FIX / "twins.qfx"))
+        check("M1: same-day identical pair w/ distinct FITIDs both import",
+              r.returncode == 0 and "imported 2 transactions" in r.stderr
+              and r.stdout.count("GYM DROP-IN FEE") == 2, r.stderr + r.stdout)
+
+        # M2: comma amounts parse; ambiguous/corrupt shapes report-and-skip
+        r = run(vault, "importers/ofx.py", str(FIX / "commas.qfx"))
+        check("M2: '2,500.00' imports as 2500.00",
+              r.returncode == 0 and "2500.00 USD" in r.stdout
+              and "imported 1 transactions" in r.stderr, r.stderr + r.stdout)
+        check("M2: '1.2.3' and '-1.234,56' rows skipped with a message",
+              "'1.2.3'" in r.stderr and "'-1.234,56'" in r.stderr
+              and "1.2.3" not in r.stdout, r.stderr)
+
+        # M10: truncated export (no closing tags before EOF) still parses fully
+        r = run(vault, "importers/ofx.py", str(FIX / "truncated.qfx"))
+        check("M10: truncated export imports all rows (or warns loudly)",
+              r.returncode == 0 and ("imported 3 transactions" in r.stderr
+                                     or "WARNING" in r.stderr), r.stderr)
+        check("M10: nothing silently dropped from the truncated export",
+              "imported 3 transactions" in r.stderr and "NEWSSTAND KIOSK" in r.stdout,
+              r.stderr + r.stdout)
+
+        # M6a: triple re-import of one file yields exactly ONE assertion
+        r = run(vault, "importers/ofx.py", str(FIX / "bank.qfx"), "--write")
+        r2 = run(vault, "importers/ofx.py", str(FIX / "bank.qfx"), "--write")
+        year_txt = year.read_text()
+        check("M6a: triple re-import of one file yields exactly one assertion",
+              r.returncode == 0 and r2.returncode == 0
+              and year_txt.count("balance Assets:US:TestBank:Checking9123   2170.37 USD") == 1,
+              year_txt[-800:])
+
+        # M6b: a row after LEDGERBAL's DTASOF caps the assertion at asof+1,
+        # so the import can never write an assertion it itself breaks
+        r = run(vault, "importers/ofx.py", str(FIX / "bank_late_row.qfx"), "--write")
+        year_txt = year.read_text()
+        check("M6b: post-DTASOF row imports with the assertion capped at asof+1",
+              r.returncode == 0
+              and "2026-07-16 balance Assets:US:TestBank:Checking9123   2160.37 USD" in year_txt
+              and "2026-07-19 balance" not in year_txt, r.stderr + year_txt[-600:])
+        if has_venv:
+            check("M6b: capped assertion is VERIFIED and survives bean-check",
+                  "continuity VERIFIED" in r.stderr and "wrote" in r.stderr, r.stderr)
+
+        # M1: Monday+Thursday same-amount same-merchant rows in successive
+        # files both import — fuzzy no longer eats hash/fitid-bearing entries
+        if has_venv:
+            r = run(vault, "importers/ofx.py", str(FIX / "monday.qfx"), "--write")
+            check("M1: Monday parking row imports and writes",
+                  r.returncode == 0 and "imported 1 transactions" in r.stderr, r.stderr)
+            r = run(vault, "importers/ofx.py", str(FIX / "thursday.qfx"))
+            check("M1: Thursday same-amount same-merchant row still imports",
+                  r.returncode == 0 and "imported 1 transactions" in r.stderr
+                  and "(±5d)" not in r.stderr, r.stderr)
+
+        # M5: --since must be exactly YYYY-MM-DD, in every importer
+        for tool, extra in (("importers/ofx.py", ()),
+                            ("importers/chase_csv.py", ("Liabilities:US:TestBank:Card7777",)),
+                            ("importers/invest_ofx.py", ())):
+            src = FIX / ("card.csv" if "csv" in tool else
+                         "vanguard.qfx" if "invest" in tool else "bank.qfx")
+            r = run(vault, tool, str(src), *extra, "--since", "2026-6-1")
+            check(f"M5: {tool.split('/')[-1]} rejects --since 2026-6-1 with usage",
+                  r.returncode != 0 and "--since needs a YYYY-MM-DD" in r.stderr, r.stderr)
+
+        # M4: a BUY with neither UNITPRICE nor TOTAL must not mint {0.00} lots
+        r = run(vault, "importers/invest_ofx.py", str(FIX / "zero_basis.qfx"))
+        check("M4: zero-basis BUY (no UNITPRICE, no TOTAL) reports-and-skips",
+              r.returncode == 0 and "refusing to mint" in r.stderr
+              and "{0.00" not in r.stdout
+              and "imported 1 transactions" in r.stderr, r.stderr + r.stdout)
+
+        # M8: negative-unit REINVEST (correction) preserves direction
+        r = run(vault, "importers/invest_ofx.py", str(FIX / "reinvest_neg.qfx"))
+        check("M8: negative REINVEST books -units and a positive income leg",
+              r.returncode == 0 and "-0.500 TIF {40.00 USD}" in r.stdout
+              and "Income:US:Dividends   20.00 USD" in r.stdout, r.stdout)
+        if has_venv:
+            r = run(vault, "importers/invest_ofx.py", str(FIX / "reinvest_neg.qfx"), "--write")
+            check("M8: reinvest + its reversal balance through bean-check",
+                  r.returncode == 0 and "wrote" in r.stderr, r.stderr)
+
+        # M13: query.py spend with a malformed period exits with usage
+        r = run(vault, "query.py", "spend", "2026-07-01")
+        check("M13: query.py spend 2026-07-01 exits with usage, not a crash",
+              r.returncode != 0 and "usage: spend" in r.stderr
+              and "Traceback" not in r.stderr, r.stderr)
+
+        # --- M3/M7: recategorize on its own vault --------------------------
+        vault3, _ = make_vault(tmp, "vault3")
+        y3 = vault3 / "ledger" / "2026.beancount"
+        y3.write_text(
+            '2026-03-01 * "OFFICE SUPPLY STORE" ""\n'
+            "  Assets:US:TestBank:Checking9123  -120.00 USD\n"
+            "  Assets:US:Transfers                70.00 USD\n"
+            "  Expenses:Uncategorized\n"
+            "\n"
+            '2026-03-02 * "COFFEE CART" ""\n'
+            "  Assets:US:TestBank:Checking9123  -4.50 USD\n"
+            "  Expenses:Uncategorized\n")
+        main3 = vault3 / "ledger" / "main.beancount"
+        main3.write_text(main3.read_text() + 'include "2026.beancount"\n')
+        r = run(vault3, "recategorize.py")
+        check("M3: three-leg split stays an expense (residual-keyed fallback)",
+              r.returncode == 0 and "Income:US:Other" not in r.stdout
+              and "nothing to change" in r.stdout, r.stdout)
+        r = run(vault3, "recategorize.py", "--target")
+        check("M7: --target without a value exits with usage",
+              r.returncode != 0 and "needs an account name" in (r.stderr + r.stdout),
+              r.stderr + r.stdout)
+        if has_venv:
+            (vault3 / "rules.toml").write_text(
+                (vault3 / "rules.toml").read_text()
+                + '\n[[payee_rules]]\nmatch = "COFFEE CART"\n'
+                  'account = "Expenses:DoesNotExist:Yet"\n')
+            before = y3.read_text()
+            r = run(vault3, "recategorize.py", "--write")
+            check("M7: rule at an unopened account rolls back cleanly",
+                  r.returncode != 0 and "rolled back" in (r.stderr + r.stdout)
+                  and y3.read_text() == before, r.stderr + r.stdout)
+
+        # --- M9: a commented ;include must not satisfy the include check ---
+        vault4, _ = make_vault(tmp, "vault4")
+        main4 = vault4 / "ledger" / "main.beancount"
+        main4.write_text(main4.read_text() + ';include "2026.beancount"\n')
+        r = run(vault4, "importers/ofx.py", str(FIX / "bank.qfx"), "--write")
+        check("M9: commented ;include gets a real include added on --write",
+              r.returncode == 0
+              and re.search(r'^include "2026\.beancount"', main4.read_text(), re.M)
+              is not None, main4.read_text())
+
+        # --- M11: update_prices harvests only ACTIVE price: tags -----------
+        (vault4 / "ledger" / "prices.beancount").write_text("")
+        main4.write_text(main4.read_text()
+                         + '\n; 2000-01-01 commodity FAKE\n;   price: "USD:yahoo/FAKE"\n')
+        r = subprocess.run(["bash", str(TOOLS.parent / "scripts" / "update_prices.sh")],
+                           capture_output=True, text=True,
+                           env={**os.environ, "FINANCE_VAULT": str(vault4)})
+        check("M11: update_prices ignores commented price: tags, exits informatively",
+              r.returncode == 0 and "no price: metadata" in r.stdout,
+              r.stdout + r.stderr)
 
         # escape() hardening: statement text can never break out of a
         # Beancount string (quotes, backslash-escape tricks, newline injection)
@@ -262,6 +406,19 @@ def main():
         evil = 'EVIL"\n2026-01-01 open Assets:Oops\\'
         check("escape() neutralizes quote/newline/backslash injection",
               escape(evil) == "EVIL' 2026-01-01 open Assets:Oops/", escape(evil))
+
+        # M12: amount() never reads non-USD units as dollars
+        from vault import amount  # noqa: E402
+        table = [(("1,234.56 USD",), 1234.56),
+                 (("12.000 VTSAX",), 0.0),
+                 (("1,234.56 USD, 12.000 VTSAX",), 1234.56),
+                 (("-42.5",), -42.5),
+                 (("123,456.78 USD.EQ",), 0.0),
+                 (("123,456.78 USD.EQ", "USD.EQ"), 123456.78),
+                 (("",), 0.0)]
+        bad = [(a, amount(*a), want) for a, want in table if amount(*a) != want]
+        check("M12: amount() USD-math table (units are never dollars)",
+              not bad, bad)
 
     print(f"\n{'ALL PASS' if not FAILS else f'{len(FAILS)} FAILED: ' + ', '.join(FAILS)}")
     sys.exit(1 if FAILS else 0)

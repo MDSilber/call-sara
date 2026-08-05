@@ -1,42 +1,49 @@
 2026-04-01 * "ELECTRONIC BANK TRANSFER ACH IN" ""
   ofx-type: "CREDIT"
   import-hash: "cdc39ffd752bf648"
+  fitid: "V20260401A"
   Assets:US:TestBroker:Brokerage8642   2000.00 USD
   Assets:US:Transfers
 
 2026-04-05 * "BUY 10.500 TIF @ 40.00" ""
   ofx-type: "BUYMF"
   import-hash: "42f4d0571d5ef318"
+  fitid: "V20260405B"
   Assets:US:TestBroker:Brokerage8642   10.500 TIF {40.00 USD}
   Assets:US:TestBroker:Brokerage8642   -420.00 USD
 
 2026-04-20 * "BUY 4.000 TWC @ 100.00" ""
   ofx-type: "BUYSTOCK"
   import-hash: "4571d55fbc3518eb"
+  fitid: "V20260420C"
   Assets:US:TestBroker:Brokerage8642   4.000 TWC {{401.00 USD}}
   Assets:US:TestBroker:Brokerage8642   -401.00 USD
 
 2026-05-15 * "DIV TWC" ""
   ofx-type: "INCOME"
   import-hash: "43bee15be2048c71"
+  fitid: "V20260515D"
   Assets:US:TestBroker:Brokerage8642   6.00 USD
   Income:US:Dividends
 
 2026-06-20 * "REINVEST DIV 0.310 TIF @ 40.00" ""
   ofx-type: "REINVEST"
   import-hash: "3207a54a0899d450"
+  fitid: "V20260620E"
   Assets:US:TestBroker:Brokerage8642   0.310 TIF {40.00 USD}
   Income:US:Dividends   -12.40 USD
 
 2026-06-21 * "CGLONG TIF" ""
   ofx-type: "INCOME"
   import-hash: "912420d2b401be35"
+  fitid: "V20260621F"
   Assets:US:TestBroker:Brokerage8642   5.00 USD
   Income:US:CapGainsDistributions
 
 2026-06-25 * "SELL 3.000 TIF @ 42.00" ""
   ofx-type: "SELLMF"
   import-hash: "4222997fac510b30"
+  fitid: "V20260625G"
   Assets:US:TestBroker:Brokerage8642   -3.000 TIF {} @ 42.00 USD  ; whole lots (FIFO if set) — broker lot data governs at tax time
   Assets:US:TestBroker:Brokerage8642   126.00 USD
   Income:US:Gains

@@ -6,19 +6,37 @@ description: How to verify changes to the finance skill's tools end-to-end — s
 # Verifying finance-system changes
 
 The runtime surface is the CLI tools under `skills/finance/tools/` (run via
-the `tools/run` wrapper) and `skills/finance/scripts/init_vault.sh`. There is
-no test suite — verification is driving those against a scratch vault.
+the `tools/run` wrapper) and the shell scripts under `skills/finance/scripts/`.
+
+**First verification step — the importer test suite** (hermetic, plain
+python3, builds its own scratch vault; set `FINANCE_TEST_VENV` to any
+vault's `.venv` to also run the bean-query-backed paths):
+
+```bash
+python3 skills/finance/tools/importers/tests/run_tests.py            # must end ALL PASS
+FINANCE_TEST_VENV=~/Finance/.venv \
+python3 skills/finance/tools/importers/tests/run_tests.py            # venv paths too
+```
+
+Then drive the surfaces against a scratch vault:
 
 ```bash
 V=$(mktemp -d)/vault
 bash skills/finance/scripts/init_vault.sh "$V"          # scaffolds template + venv + git + gitleaks hook
+# (init writes the ~/.finance-vault pointer only with an explicit --remember,
+#  so scratch vaults like this never capture the default vault lookup)
 export FINANCE_VAULT="$V"
 T=skills/finance/tools
 "$T/run" reports.py && "$T/run" run_checks.py           # must run clean on an EMPTY vault (no check errors)
 "$T/run" query.py networth | balances | spend | uncategorized
+"$T/run" forecast.py                                    # projections (informative "no streams" on an empty vault)
 "$T/run" importers/ofx.py <file.qfx> [ledger-account]   # routing by ACCTID last-4 via rules.toml [[accounts]]
 "$T/run" importers/chase_csv.py <activity.csv> <liability-account>
+"$T/run" importers/invest_ofx.py <file.qfx> [account]   # brokerage activity (INVSTMTMSGSRS)
+"$T/run" importers/holdings_ofx.py <file.qfx>           # positions -> price directives + holdings table
 "$T/run" recategorize.py [--write]                       # rules.toml -> ledger rewrite loop
+bash skills/finance/scripts/update_prices.sh --vault "$V"  # informative exit when nothing is tagged
+bash skills/finance/scripts/dashboard.sh --vault "$V"      # fava on 127.0.0.1 (Ctrl-C to stop)
 $V/.venv/bin/bean-check $V/ledger/main.beancount        # ledger must validate after any import
 ```
 

@@ -172,7 +172,9 @@ awards table; watch for a **blackout banner** and note its end date.
   rides along — the same `{cost}` on both legs. Every swap IS a
   disposition: `@ price` plus a gains income leg. Staking rewards are
   ordinary income at receipt FMV (the principal coming back is just a
-  transfer). Dust under $10: note it, skip the bookkeeping.
+  transfer). Dust under $10: immaterial for decisions but still
+  REPORTABLE income/dispositions — record in facts for tax season; skip
+  only the ledger mechanics.
 - **Verify any 1099-DA against own lot records** — exchange-reported
   acquisition dates and basis are routinely wrong.
 - **Filter scam tokens** (unicode look-alike tickers) before anything

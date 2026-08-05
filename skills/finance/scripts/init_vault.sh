@@ -1,25 +1,31 @@
 #!/usr/bin/env bash
 # init_vault.sh — scaffold a fresh household finance vault from vault-template/.
-# Usage: init_vault.sh [path]            (default: $FINANCE_VAULT or ~/Finance)
-#        init_vault.sh --demo <path>     (path REQUIRED — see below)
-#   --demo   seed the vault with the fictional Demo household from
-#            vault-template-demo/ — ~6 months of synthetic history, a filled
-#            thesis, and realistic rules. Safe to delete; never real data.
-#            Requires an explicit path so demo data can never land in the
-#            default real-vault location.
+# Usage: init_vault.sh [--remember] [path]   (default: $FINANCE_VAULT or ~/Finance)
+#        init_vault.sh --demo <path>         (path REQUIRED — see below)
+#   --demo      seed the vault with the fictional Demo household from
+#               vault-template-demo/ — ~6 months of synthetic history, a filled
+#               thesis, and realistic rules. Safe to delete; never real data.
+#               Requires an explicit path so demo data can never land in the
+#               default real-vault location.
+#   --remember  record a custom vault path in ~/.finance-vault so the tools
+#               find it without FINANCE_VAULT. Never written implicitly —
+#               scratch/test vaults must not capture the default lookup.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 TEMPLATE="$(cd "$HERE/../vault-template" && pwd)"
 DEMO=0
-if [ "${1:-}" = "--demo" ]; then
-  DEMO=1
-  shift
-  if [ -z "${1:-}" ]; then
-    echo "❌ --demo needs an explicit directory, e.g.:  init_vault.sh --demo ~/finance-demo" >&2
-    echo "   (refusing to seed synthetic data into the default real-vault location)" >&2
-    exit 1
-  fi
+REMEMBER=0
+while [ "${1:-}" = "--demo" ] || [ "${1:-}" = "--remember" ]; do
+  case "$1" in
+    --demo)     DEMO=1;     shift ;;
+    --remember) REMEMBER=1; shift ;;
+  esac
+done
+if [ "$DEMO" = 1 ] && [ -z "${1:-}" ]; then
+  echo "❌ --demo needs an explicit directory, e.g.:  init_vault.sh --demo ~/finance-demo" >&2
+  echo "   (refusing to seed synthetic data into the default real-vault location)" >&2
+  exit 1
 fi
 VAULT="${1:-${FINANCE_VAULT:-$HOME/Finance}}"
 
@@ -75,11 +81,11 @@ cd "$VAULT"
 # Uses whatever package index this machine is configured for; if that index
 # can't serve the packages, fix or request them there — no side-channel install.
 python3 -m venv .venv
-./.venv/bin/pip install -q beancount beanquery fava || {
+./.venv/bin/pip install -q beancount beanquery fava beanprice || {
   echo "❌ beancount install failed via this machine's configured package index." >&2
   echo "   If that index is corporate or broken, retry against the public one:" >&2
   echo "   rm -rf $VAULT && PIP_INDEX_URL=https://pypi.org/simple $0 $VAULT" >&2
-  echo "   (or install beancount + beanquery into $VAULT/.venv yourself, then re-run)." >&2
+  echo "   (or install beancount + beanquery + beanprice into $VAULT/.venv yourself, then re-run)." >&2
   exit 1
 }
 ./.venv/bin/bean-check ledger/main.beancount
@@ -94,10 +100,14 @@ if [ "$DEMO" = 1 ]; then
 fi
 
 # --- remember a custom location (pointer file; env var still wins) -------
-# Real vaults only: a demo vault must never capture the default lookup.
-if [ "$DEMO" != 1 ] && [ "$VAULT" != "$HOME/Finance" ]; then
+# Opt-in ONLY (--remember), real vaults only: writing the pointer as a side
+# effect would let any scratch/demo init silently redirect every future
+# session's default vault lookup.
+if [ "$REMEMBER" = 1 ] && [ "$DEMO" != 1 ] && [ "$VAULT" != "$HOME/Finance" ]; then
   printf '%s\n' "$VAULT" > "$HOME/.finance-vault"
   echo "✓ recorded vault location in ~/.finance-vault (tools find it without FINANCE_VAULT)"
+elif [ "$DEMO" != 1 ] && [ "$VAULT" != "$HOME/Finance" ]; then
+  echo "ℹ️  custom location NOT remembered — re-run with --remember (or set FINANCE_VAULT)"
 fi
 
 # --- git, with the secret scanner armed BEFORE any commit ---------------

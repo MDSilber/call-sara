@@ -20,12 +20,26 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from rules import route_by_acctid  # noqa: E402
 from vault import money  # noqa: E402
-from importers.common import read_ofx  # noqa: E402
+from importers.common import parse_ofx_amount, read_ofx  # noqa: E402
 
 
 def _tag(block, tag, default=""):
     m = re.search(rf"<{tag}>([^<\n]+)", block)
     return m.group(1).strip() if m else default
+
+
+def _numf(block, tag):
+    """Numeric field via the shared comma-aware parser; malformed values
+    ('1.2.3', EU-style commas) are reported and read as 0 rather than
+    silently mangled — this tool only DISPLAYS numbers, it never writes."""
+    raw = _tag(block, tag, "")
+    if not raw:
+        return 0.0
+    val = parse_ofx_amount(raw)
+    if val is None:
+        print(f"; malformed <{tag}> {raw!r} — shown as 0; check the export", file=sys.stderr)
+        return 0.0
+    return val
 
 
 def parse(text):
@@ -44,16 +58,16 @@ def parse(text):
             ticker, name = securities.get(uid, (uid, ""))
             positions.append({
                 "ticker": ticker, "name": name,
-                "units": float(_tag(pos, "UNITS", "0") or 0),
-                "price": float(_tag(pos, "UNITPRICE", "0") or 0),
-                "mktval": float(_tag(pos, "MKTVAL", "0") or 0),
+                "units": _numf(pos, "UNITS"),
+                "price": _numf(pos, "UNITPRICE"),
+                "mktval": _numf(pos, "MKTVAL"),
                 "priced": _tag(pos, "DTPRICEASOF")[:8],
             })
         accounts.append({
             "acctid": _tag(stmt, "ACCTID"),
             "asof": asof,
             "positions": positions,
-            "cash": float(_tag(stmt, "AVAILCASH", "0") or 0),
+            "cash": _numf(stmt, "AVAILCASH"),
         })
     return accounts
 

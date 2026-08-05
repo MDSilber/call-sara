@@ -49,6 +49,13 @@ def finding(check, severity, title, detail):
     return {"check": check, "severity": severity, "title": title, "detail": detail}
 
 
+def bql_str(s):
+    """Escape a value for interpolation inside a single-quoted BQL string —
+    beanquery understands SQL-style doubled quotes, so rules.toml-sourced
+    text can never break out of the '...' literal."""
+    return str(s).replace("'", "''")
+
+
 # ------------------------------------------------------------- concentration
 def concentration():
     """Flag any single holding above the ceiling, as % of total (liquid+paper)."""
@@ -69,8 +76,8 @@ def concentration():
     paper = {}
     if excl:
         prefixes = rules().get("household", {}).get("illiquid_commodity_prefixes", [])
-        for r in query(f"SELECT currency, sum(convert(position, '{shadow_currency()}')) AS v "
-                       f"WHERE account ~ '^Assets' AND currency ~ '{excl}' GROUP BY currency"):
+        for r in query(f"SELECT currency, sum(convert(position, '{bql_str(shadow_currency())}')) AS v "
+                       f"WHERE account ~ '^Assets' AND currency ~ '{bql_str(excl)}' GROUP BY currency"):
             v = amount(r["v"], shadow_currency())
             if v > 0:
                 issuer = next((px for px in prefixes if r["currency"].startswith(px)), r["currency"])
@@ -139,7 +146,7 @@ def _rare_payee_charges():
     ignore_acct = tune.get("ignore_account_regex", "Cash|Uncategorized")
     ignore_payee = tune.get("ignore_payee_regex", r"^(ATM |WITHDRAWAL|CHECK )")
     rows = query("SELECT date, payee, number, account "
-                 f"WHERE account ~ '^Expenses' AND NOT account ~ '{ignore_acct}' "
+                 f"WHERE account ~ '^Expenses' AND NOT account ~ '{bql_str(ignore_acct)}' "
                  "AND currency = 'USD' AND number > 0 ORDER BY date")
     rows = [r for r in rows if not re.match(ignore_payee, r["payee"] or "", re.I)]
     if not rows:
@@ -156,7 +163,7 @@ def _rare_payee_charges():
         if n >= floor_amt and freq[payee.upper()] <= 2 and "TRANSFER" not in payee.upper():
             out.append(finding(
                 "anomaly", "alert",
-                f"{money(n)} at rarely-seen payee: {payee[:48]} ({r['date']})",
+                f"{money(n)} at rarely-seen payee — merchant text: `{payee[:48]}` ({r['date']})",
                 f"Category {r['account'].replace('Expenses:', '')}. Seen "
                 f"{freq[payee.upper()]}x ever. Confirm it's yours — once confirmed, append it to [anomaly] ignore_payee_regex in rules.toml so it never re-alerts."))
     return out[-8:]  # cap noise
@@ -386,8 +393,10 @@ def subscriptions():
             cheap, other = twin
             out.append(finding(
                 "subscriptions", "alert",
-                f"Paying for {merchant} twice — cancel one and keep {money(cheap['monthly'] * 12)}/yr",
-                f"Two live {merchant} charges: {_cents(cheap['amount'])}/{cheap['cadence']} on "
+                f"Paying twice for merchant text `{merchant}` — cancel one and keep "
+                f"{money(cheap['monthly'] * 12)}/yr",
+                f"Two live charges (merchant text: `{merchant}`): "
+                f"{_cents(cheap['amount'])}/{cheap['cadence']} on "
                 f"`{cheap['funding'] or 'unknown account'}` and {_cents(other['amount'])}/"
                 f"{other['cadence']} on `{other['funding'] or 'unknown account'}`, overlapping "
                 f"since {max(cheap['first'], other['first'])}. Unless these are deliberate "
@@ -405,8 +414,8 @@ def subscriptions():
                     and overlap < SUB_TWIN_OVERLAP_DAYS):
                 out.append(finding(
                     "subscriptions", "watch",
-                    f"{merchant} crept {_cents(oldest['amount'])} → {_cents(newest['amount'])} "
-                    f"(+{money(delta_yr)}/yr)",
+                    f"Price creep at merchant text `{merchant}`: {_cents(oldest['amount'])} → "
+                    f"{_cents(newest['amount'])} (+{money(delta_yr)}/yr)",
                     f"Same merchant, new recurring price since {newest['first']} (was "
                     f"{_cents(oldest['amount'])} through {oldest['last']}). Price hikes ride on "
                     f"inertia — worth a downgrade/annual-billing/retention pass before renewal."))
@@ -418,7 +427,8 @@ def subscriptions():
             "subscriptions", "info",
             f"{len(active)} active recurring charges ≈ {money(total_mo)}/mo "
             f"({money(total_mo * 12)}/yr)",
-            "Largest: " + " · ".join(f"{s['merchant']} {_cents(s['monthly'])}/mo" for s in top)
+            "Largest (merchant text): "
+            + " · ".join(f"`{s['merchant']}` {_cents(s['monthly'])}/mo" for s in top)
             + ". The standing question for each: still used? right tier? annual billing "
               "cheaper? (See the savings-hunt reference for the full audit.)"))
     return out
@@ -588,10 +598,10 @@ def coverage():
         if silent > COV_STALE_FACTOR * expected:
             candidates.append((len(dates), finding(
                 "coverage", "watch",
-                f"{account}: stale feed — no data for {silent}d. Pull from {inst}.",
+                f"{account}: stale feed — no data for {silent}d. Pull from `{inst}`.",
                 f"Newest data {last_seen.isoformat()} vs a typical rhythm of ~{expected}d "
                 f"between postings. The feed has probably stopped — pull a fresh export "
-                f"from {inst} and import it."
+                f"from `{inst}` (institution text) and import it."
                 + (" (Rhythm set by rules.toml cadence.)" if "cadence" in acfg else ""))))
             continue
         hole_floor = max(COV_HOLE_DAYS, expected)
@@ -603,7 +613,7 @@ def coverage():
                 "coverage", "watch",
                 f"{account}: {(b - a).days}d hole in its history — a statement is missing",
                 f"No postings between {a.isoformat()} and {b.isoformat()} despite activity on "
-                f"both sides; that window looks never-imported. Re-pull it from {inst} — the "
+                f"both sides; that window looks never-imported. Re-pull it from `{inst}` — the "
                 f"importer dedupes, so overlapping exports are safe.")))
     candidates.sort(key=lambda t: -t[0])
     return [f for _, f in candidates[:COV_MAX_FINDINGS]]
@@ -614,7 +624,7 @@ def _liquid_net_worth():
     """Assets+Liabilities in USD, illiquid paper excluded — query.py's networth."""
     excl = illiquid_currency_regex()
     where = ("account ~ '^(Assets|Liabilities)'"
-             + (f" AND NOT currency ~ '{excl}'" if excl else ""))
+             + (f" AND NOT currency ~ '{bql_str(excl)}'" if excl else ""))
     rows = query(f"SELECT sum(convert(position,'USD')) AS v WHERE {where}")
     return amount(rows[0]["v"]) if rows and rows[0].get("v") else 0.0
 
@@ -638,7 +648,8 @@ def fixed_balances():
         return []
     out = []
     for account, target in conf.items():
-        rows = query(f"SELECT sum(number) as v WHERE account = '{account}' AND currency = 'USD'")
+        acct = str(account).replace("'", "")  # account names never contain quotes; strip so rules.toml text can't break out of the BQL string
+        rows = query(f"SELECT sum(number) as v WHERE account = '{acct}' AND currency = 'USD'")
         bal = amount(rows[0].get("v")) if rows else 0.0
         drift = bal - float(target)
         if abs(drift) <= FIXED_DRIFT_TOLERANCE:
@@ -675,7 +686,7 @@ def projected_shortfall():
                 f"{w['account']} projected to hit ~{money(w['min'])} around {w['date']}",
                 f"{DEFAULT_DAYS}-day cash-flow projection (cadence patterns — estimates, "
                 f"not a statement) crosses below $0. Largest projected outflows before "
-                f"the crunch: {w['drivers']}. Verify with `tools/run forecast.py`, then "
+                f"the crunch (merchant text): `{w['drivers']}`. Verify with tools/run forecast.py, then "
                 f"move money or a payment date before it lands."))
         else:
             out.append(finding(
@@ -683,8 +694,8 @@ def projected_shortfall():
                 f"{w['account']} projected under its {money(w['floor'])} floor "
                 f"(~{money(w['min'])} around {w['date']})",
                 f"THESIS.md holds this account at a fixed level; the {DEFAULT_DAYS}-day "
-                f"projection (estimates from cadence patterns) dips below it. Drivers: "
-                f"{w['drivers']}. Re-time the outflow or pre-position a top-up."))
+                f"projection (estimates from cadence patterns) dips below it. Drivers "
+                f"(merchant text): `{w['drivers']}`. Re-time the outflow or pre-position a top-up."))
     return out
 
 

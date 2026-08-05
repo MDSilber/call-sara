@@ -66,7 +66,9 @@ to the SAME URL by writing to the same file path.
 - **A few ideas that explain everything** — collapsible teaching cards,
   one concept per recommendation. The client learns the "why" and can
   re-derive the rules.
-- **Footer** — a reassurance line + the summary numbers table.
+- **Footer** — a reassurance line + the summary numbers table + the
+  mandatory one-liner (on EVERY published assessment): decision support,
+  not tax/investment/legal advice; figures as of <date>.
 
 ## Writing rules
 - Plain language, no jargon without a one-line gloss. If a section needs

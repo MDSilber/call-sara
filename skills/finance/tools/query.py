@@ -16,6 +16,7 @@ Usage:  tools/run query.py <command> [args]
 Arithmetic here; judgment stays with the agent. Prefer reports/*.md for the
 standing answers — reach for this for anything not precomputed.
 """
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -24,8 +25,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from vault import amount, illiquid_currency_regex, money, query, shadow_currency  # noqa: E402
 
 
+def bql_str(s):
+    """Escape a value for interpolation inside a single-quoted BQL string —
+    beanquery understands SQL-style doubled quotes, so text can never break
+    out of the '...' literal (payee regexes are user/bank-adjacent input)."""
+    return str(s).replace("'", "''")
+
+
 def cmd_networth(_):
-    excl = illiquid_currency_regex()
+    excl = bql_str(illiquid_currency_regex() or "") or None
     where = "account ~ '^(Assets|Liabilities)'" + (f" AND NOT currency ~ '{excl}'" if excl else "")
     rows = query(f"SELECT root(account,1) AS r, sum(convert(position,'USD')) AS v "
                  f"WHERE {where} GROUP BY r")
@@ -33,14 +41,16 @@ def cmd_networth(_):
     a, l = vals.get("Assets", 0.0), vals.get("Liabilities", 0.0)
     print(f"Liquid net worth: {money(a + l)}   (assets {money(a)} · liabilities {money(l)})")
     if excl:
-        p = query(f"SELECT sum(convert(position,'{shadow_currency()}')) AS v "
+        p = query(f"SELECT sum(convert(position,'{bql_str(shadow_currency())}')) AS v "
                   f"WHERE account ~ '^Assets' AND currency ~ '{excl}'")
-        pv = amount(p[0]["v"]) if p and p[0].get("v") else 0.0
+        # the cell is valued in the shadow currency — name it, or amount()
+        # rightly refuses to read the units as dollars
+        pv = amount(p[0]["v"], shadow_currency()) if p and p[0].get("v") else 0.0
         print(f"Illiquid paper (not counted): {money(pv)}   combined {money(a + l + pv)}")
 
 
 def cmd_balances(_):
-    excl = illiquid_currency_regex()
+    excl = bql_str(illiquid_currency_regex() or "") or None
     where = "account ~ '^(Assets|Liabilities)'" + (f" AND NOT currency ~ '{excl}'" if excl else "")
     for r in query(f"SELECT account, sum(convert(position,'USD')) AS v WHERE {where} "
                    f"GROUP BY account ORDER BY account"):
@@ -66,6 +76,8 @@ def cmd_positions(_):
 
 def cmd_spend(args):
     period = args[0] if args else str(date.today().year)
+    if not re.fullmatch(r"\d{4}(-\d{2})?", period):
+        sys.exit(f"usage: spend [YYYY|YYYY-MM]   (got {period!r})")
     if len(period) == 4:
         where = f"year = {int(period)}"
     else:
@@ -100,7 +112,7 @@ def cmd_cashflow(args):
 def cmd_payee(args):
     if not args:
         sys.exit("usage: payee <regex>")
-    for r in query(f"SELECT date, payee, account, number WHERE payee ~ '{args[0]}' "
+    for r in query(f"SELECT date, payee, account, number WHERE payee ~ '{bql_str(args[0])}' "
                    "ORDER BY date"):
         print(f"{r['date']}  {money(amount(r['number'])):>12}  {r['account']:<40} {r['payee']}")
 

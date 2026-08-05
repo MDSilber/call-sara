@@ -28,10 +28,10 @@ your account.
 
 ## Where your data goes
 Everything about *you* lives in your vault — plain text on your own disk
-(default `~/Finance`; for a custom location, `init_vault.sh <path>` records it in `~/.finance-vault` so the tools find it; `FINANCE_VAULT=/path` overrides everything and can live in your shell profile to
+(default `~/Finance`; for a custom location, `init_vault.sh --remember <path>` records it in `~/.finance-vault` so the tools find it (the pointer is only ever written with that explicit flag); `FINANCE_VAULT=/path` overrides everything and can live in your shell profile to
 relocate it) plus whatever **private** git remote you give it. This repo
 holds only the method and the code; share it freely, never share your
-vault. Beyond your disk and your remote, exactly four things leave your
+vault. Beyond your disk and your remote, exactly six things leave your
 machine:
 - Vault contents the agent reads during a session enter Claude's model
   context, like anything you'd paste into a chat.
@@ -40,6 +40,12 @@ machine:
   pages under your account.
 - With the Chrome extension, Claude reads the pages of financial sites
   you're logged into.
+- Price refreshes (`update_prices.sh`) send your ticker symbols — only the
+  commodities you tag with `price:` metadata, never balances or share
+  counts — to public quote APIs.
+- Savings-hunt research sends merchant and category terms from your
+  spending (never names, account details, or other identities) to web
+  search.
 
 Sensitive documents never enter git, account numbers are last-4 only, and
 a fail-closed `gitleaks` pre-commit scanner enforces it — in the vault
@@ -106,8 +112,9 @@ The money itself lives in a [Beancount](https://beancount.github.io/docs/)
 ledger — plain-text, double-entry: every transaction dated, categorized,
 balancing to zero, with `bean-check` validating the whole history on
 every change. You never hand-edit it; the importers write it and the
-agent maintains it. Importers ship for generic **OFX/QFX** and **Chase
-CSV**; anything else, the agent reads the document and writes the entries.
+agent maintains it. Importers ship for generic **OFX/QFX** (bank/card),
+**investment OFX/QFX** (brokerage activity + holdings), and **Chase CSV**;
+anything else, the agent reads the document and writes the entries.
 
 ## What's where
 - `skills/finance/SKILL.md` — the entry point: read exactly what the
@@ -120,6 +127,8 @@ CSV**; anything else, the agent reads the document and writes the entries.
 - `skills/finance/vault-template/` — the canonical vault skeleton.
 - `skills/finance/scripts/` — `init_vault.sh` (scaffold, `--demo` for a
   synthetic household), `doctor.sh` (install health check),
+  `update_prices.sh` (refresh market prices for tagged commodities),
+  `dashboard.sh` (local-only fava dashboard over the ledger),
   `file_downloads.py` (identify and file downloaded statements).
 
 ## Not a licensed advisor

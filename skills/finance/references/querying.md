@@ -48,9 +48,12 @@ $VAULT/facts`, then read the file. Every fact carries `verified:` and
 
 `tools/run forecast.py [days]` projects each cash account forward: starting
 balance from the ledger, every cadence-detected recurring flow (payroll,
-rent, utilities, subscriptions, autopays, standing transfers), dated facts
-bullets that carry a $ amount, the running balance, per-account projected
-minimums, and the household's uncommitted surplus. `run_checks.py` raises a
+rent, utilities, subscriptions, autopays, standing transfers), the running
+balance, per-account projected minimums, and the household's uncommitted
+surplus. Dated facts bullets that carry a $ amount enter the HOUSEHOLD
+roll-up only — a bullet doesn't say which account pays, so per-account
+minimums exclude them (the output says so itself: "household-level —
+per-account minimums above EXCLUDE these"). `run_checks.py` raises a
 `projected-shortfall` finding when a minimum crosses $0 (alert) or a
 `[fixed_balances]` floor (watch).
 

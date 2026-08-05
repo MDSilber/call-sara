@@ -198,8 +198,10 @@ faster and often deeper (multi-year history):
   "1099", "W-2", "confirmation", "your tax return"; forward or download.
 - **Tax software / CPA portal** — prior-year returns are the richest
   single document; get every year available.
-- **Prior tools** — Mint/Monarch/Personal Capital/YNAB exports (CSV), any
-  old spreadsheet they kept. Import as historical transactions.
+- **Prior tools** — Mint (defunct 2024 — old exports still importable) /
+  Monarch / Personal Capital (now Empower Personal Dashboard) / YNAB
+  exports (CSV), any old spreadsheet they kept. Import as historical
+  transactions.
 - **Equity portals** — grant agreements and vesting schedules are usually
   downloadable PDFs; pull them all once.
 For each thing found: file the source, extract facts, add transactions.

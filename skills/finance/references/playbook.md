@@ -65,15 +65,18 @@ Two rules earned the hard way, before any of the below:
   → never average it into a fake monthly; model it as a lump.
 
 ### Routing the next dollar (raise, vest, windfall, surplus)
-Starter cushion → employer match (a 100% return) → high-interest debt →
-HSA → IRA / 401(k) max → mega-backdoor → 529 → taxable. Debt-vs-invest
+Starter cushion → employer match (an instant 50–100% return depending on
+the match formula) → high-interest debt → HSA → IRA / 401(k) max →
+mega-backdoor → 529 → taxable. Debt-vs-invest
 tiebreak: guaranteed payoff wins above roughly the 10-yr Treasury + 3%;
 below that, investing in parallel is fine. Don't stop at a step — stop
 when the money runs out. Gate every step on the household's thesis.
 
 ### Tax — the cliff map (check projected AGI/MAGI against every line yearly)
-- IF MAGI > $250K MFJ → 3.8% NIIT on all investment income (permanently
-  true here) → shifts muni-vs-taxable and asset-location math.
+- IF MAGI > $250K MFJ → 3.8% NIIT on the LESSER of net investment income
+  or the MAGI excess over the threshold (thresholds are unindexed, so
+  high earners sit in it permanently) → shifts muni-vs-taxable and
+  asset-location math.
 - IF wages > $250K MFJ → 0.9% Additional Medicare; each employer only
   withholds vs. its own wages, so MFJ couples routinely under-withhold.
 - IF supplemental income (RSU/bonus) withheld at flat 22% but marginal is
@@ -91,8 +94,16 @@ when the money runs out. Gate every step on the household's thesis.
 - IF cap-loss carryforward exists → sequence future gains to consume it;
   BUT losses offset capital gains, NOT RSU/NQ ordinary income (only $3K/yr
   of that). RSU basis = FMV at settlement → immediate sale ≈ $0 gain.
+- IF harvesting a loss near equity comp → wash-sale guardrails: an RSU
+  vest or DRIP/auto-buy within 30 days of a loss sale of the same
+  security disallows the loss — and repurchasing in ANY account
+  including an IRA destroys it permanently (Rev. Rul. 2008-5). Pause
+  auto-buys/DRIP 30 days around loss sales; check the vest calendar
+  first.
 - IF charitable but hovering near the standard deduction → bunch years
-  into one via DAF; fund with the LOWEST-basis long-term lots (never cash).
+  into one via DAF; fund with the LOWEST-basis long-term lots (never
+  cash). OBBBA adds 2026 itemizer mechanics — a 0.5%-of-AGI floor on
+  charitable deductions and a 35% rate cap — verify at use.
 - IF non-itemizer (2026+) → $2,000 above-the-line CASH gift deduction
   (direct to charity, NOT to a DAF) in the off years.
 - IF Schedule B interest/dividends don't reconcile to known accounts →
@@ -151,15 +162,16 @@ when the money runs out. Gate every step on the household's thesis.
 
 ### Insurance & protection
 - IF liquid net worth ≥ ~$1M and no umbrella → immediate gap; coverage ≥
-  net worth (post-liquidity $5–10M+ via a HNW carrier and independent
-  broker — Chubb/PURE/Cincinnati/AIG).
+  net worth (post-liquidity $5–10M+ via the handful of HNW-specialist
+  carriers — ask an independent broker).
 - IF term life ends before youngest child's independence → coverage cliff.
 - IF net worth alone funds all survivor goals → household may be OVER-
   insured; but IF the wealth is CONTINGENT (unvested equity that dies with
   the earner) → term life sized to the contingency is the real need.
-- IF disability is group-LTD-only → 60% employer-paid = ~36% after tax,
-  monthly caps, maybe not own-occ → individual own-occ policy is the
-  biggest uninsured risk for a high-W-2 30-something.
+- IF disability is group-LTD-only → 60% employer-paid = ~36% after tax
+  (assuming a ~40% combined marginal rate), monthly caps, maybe not
+  own-occ → individual own-occ policy is the biggest uninsured risk for
+  a high-W-2 30-something.
 - IF household employs domestic staff → workers' comp / DBL/PFL /
   payroll compliance exposure (many states/cities mandate coverage at hour
   thresholds).
@@ -174,8 +186,9 @@ when the money runs out. Gate every step on the household's thesis.
 - IF minor children would inherit outright / at 18–21 → structure in
   discretionary trusts (staged or lifetime), separate guardian from trustee.
 - [state:NY] IF the NY taxable estate approaches 105% of the exclusion
-  (~$7.35M in 2026) → the CLIFF: crossing 105% taxes the ENTIRE estate from
-  dollar one; top rate 16%. NY has NO portability → credit-shelter /
+  (exclusion $7.35M in 2026; the 105% cliff sits at ~$7.72M) → the
+  CLIFF: crossing 105% taxes the ENTIRE estate from dollar one; top
+  rate 16%. NY has NO portability → credit-shelter /
   Clayton-QTIP language and a "Santa clause" charitable formula. Other
   states have their own exemptions and cliffs — look up the household's.
 - [state:NY] IF wealth is well above the state exclusion → lifetime gifting
@@ -186,7 +199,8 @@ when the money runs out. Gate every step on the household's thesis.
   pre-liquidity valuation freeze.
 - IF a 529 lump gift is desired → 5-year superfunding election (~$95K per
   donor per beneficiary in 2026); it's an estate tool, not an income-tax
-  accelerator. UTMA: avoid at this wealth (outright at 21, kiddie tax).
+  accelerator. UTMA: avoid at this wealth (outright at 18–25,
+  state-specific; kiddie tax).
 
 ### Employer benefits (open enrollment, every fall)
 - Compare plans; HSA/FSA/DCFSA elections (DCFSA limit $7,500 in 2026);
@@ -248,8 +262,10 @@ something fired. Beyond that:
   prep.
 - **Oct** — fall review: taxes + estate (odd) / insurance (even); enrollment
   decisions; Roth-conversion sizing while brackets are known.
-- **Nov** — loss/gain harvesting; DAF funding with appreciated stock;
-  annual-exclusion gifts; equity-comp year-end withholding true-up.
+- **Nov** — loss/gain harvesting (wash-sale guardrails in Part 1's tax
+  map — check the vest calendar and pause auto-buys first); DAF funding
+  with appreciated stock; annual-exclusion gifts; equity-comp year-end
+  withholding true-up.
 - **Dec** — execute every Dec-31 deadline: harvesting, conversions,
   charitable, gifts, FSA spend-down, backdoor Roth, 401(k) max check.
   And the non-tax sweep, first week of December: card calendar-year
@@ -300,15 +316,20 @@ months; park across FDIC/SIPC limits or in Treasuries; expect
 solicitations; build the decision filter.
 
 **Buying a home** (starter block — it expands when the event fires) —
-quote 3+ lenders inside one 45-day window (the pulls count as ONE credit
-inquiry) and make them bid with each other's loan estimates; ask each
+quote 3+ lenders — shop within 14 days to be safe on every scoring model
+(classic mortgage FICO dedupes at 14; only newer models allow 45) — and
+make them bid with each other's loan estimates; ask each
 about relationship pricing for moved assets; commission is negotiable
 (e.g. propose a lower total with a buyer credit where dual agency is
 legal); keep DTI under ~36%; negotiate earnest-money timing to keep
 due-diligence room.
 
-**Job change** — old 401(k) disposition; unvested equity forfeited (ISOs
-must be exercised within 3 months of termination); benefits gap; W-4.
+**Job change** — old 401(k) disposition; unvested equity forfeited; for
+vested options, check the grant's own post-termination exercise window
+FIRST (30 days to years — plan-specific; miss it and the options are
+gone); separately, exercising more than 3 months after termination
+forfeits ISO tax treatment even when the plan allows longer; benefits
+gap; W-4.
 
 **Death of a spouse** — 10+ certified death certificates; SSA; no rushed
 decisions; retitling; spousal IRA rollover vs inherited; federal
@@ -334,8 +355,9 @@ multi-family offices want $30–100M).
 
 **The fee arithmetic to state bluntly** (worked at $25M as the example):
 1% AUM = $250,000/year, every year, rising with the market, for advice whose complexity doesn't
-scale with the balance — and an AUM advisor is paid to oppose anything
-that shrinks the pot (mortgage payoff, gifting, real estate). Even the
+scale with the balance — and an AUM advisor has a structural incentive
+against anything that shrinks the pot (mortgage payoff, gifting, real
+estate). Even the
 discounted HNW rate (~66 bps) is $165K/yr. Flat-fee comprehensive planning
 runs ~$10–50K/yr for complex HNW. Directories: NAPFA, XY Planning
 Network, Advice-Only Network. This system IS the coordinator layer; it
@@ -364,8 +386,11 @@ literal call script, not advice: a numbers-to-have-in-front-of-you box
 lines, blanks to write down each answer, and a **GOLDEN RULE box** for
 the one expensive mistake. Canonical example: a direct-rollover check is
 payable to the receiving custodian FBO the owner, NEVER to the owner
-personally (that triggers 20% withholding and a 60-day redeposit clock) —
-and never into a traditional IRA when a backdoor Roth is in play. End
+personally (on an EMPLOYER-PLAN distribution that triggers 20%
+withholding and a 60-day redeposit clock; IRA-to-IRA transfers avoid it
+as trustee-to-trustee — the separate killer there is the
+one-60-day-rollover-per-12-months rule across ALL IRAs) — and never
+into a traditional IRA when a backdoor Roth is in play. End
 every script with "tell the advisor when it lands," so the vault gets
 updated and the old account marked closed.
 

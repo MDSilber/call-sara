@@ -2,6 +2,7 @@
 dedupe against what's already in the ledger, statement balance continuity, and
 the careful --write path (append + bean-check + rollback)."""
 import hashlib
+import os
 import re
 import subprocess
 import sys
@@ -24,6 +25,34 @@ def escape(s):
 
 def read_ofx(path):
     return Path(path).read_text(encoding="latin-1")
+
+
+def parse_ofx_amount(raw):
+    """Parse an OFX numeric field to float, tolerating US thousands-commas.
+
+    '2,500.00' -> 2500.0 (real banks emit this). Ambiguous or corrupt
+    shapes — EU-style '1.234,56', '12,34', multi-dot '1.2.3' — return None
+    so the caller can report-and-skip the row: float('2,500.00'-minus-regex)
+    used to read as 2.00, and guessing the EU intent is just as much of a
+    money bug as crashing.
+    """
+    s = (raw or "").strip()
+    m = re.fullmatch(r"([-+]?)([\d.,]+)", s)
+    if not m:
+        return None
+    sign, body = m.group(1), m.group(2)
+    if body.count(".") > 1:
+        return None  # '1.2.3' — corrupt
+    if "," in body:
+        # commas are only legal as US thousands separators: 1-3 leading
+        # digits, ,ddd groups, then an optional .decimals tail
+        if not re.fullmatch(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?", body):
+            return None  # '1.234,56' / '12,34' — ambiguous, never guess
+        body = body.replace(",", "")
+    try:
+        return float(sign + body)
+    except ValueError:
+        return None
 
 
 def acctid(text):
@@ -49,24 +78,54 @@ def bank_statements(text):
 
 
 def bank_transactions(text):
-    """Yield dicts for each <STMTTRN> in a bank/card OFX/QFX statement."""
-    for t in re.findall(r"<STMTTRN>(.*?)(?=<STMTTRN>|</BANKTRANLIST>)", text, re.S):
+    """Yield dicts for each <STMTTRN> in a bank/card OFX/QFX statement.
+
+    Truncation-safe: the terminator lookahead includes \\Z and <LEDGERBAL>,
+    so an export cut off before the closing tags still yields its final row;
+    a tally of <STMTTRN> opens vs rows parsed-or-reported backstops any other
+    silent drop with a loud warning.
+    """
+    opens = len(re.findall(r"<STMTTRN>", text))
+    yielded = reported = 0
+    for t in re.findall(r"<STMTTRN>(.*?)(?=<STMTTRN>|</BANKTRANLIST>|<LEDGERBAL>|\Z)",
+                        text, re.S):
         d = re.search(r"<DTPOSTED>(\d{8})", t)
-        a = re.search(r"<TRNAMT>([-+\d.]+)", t)
+        a = re.search(r"<TRNAMT>([-+\d.,]+)", t)
         if not (d and a):
+            reported += 1
+            print(f"; skipping malformed row — missing DTPOSTED/TRNAMT "
+                  f"({' '.join(t.split())[:80]!r})", file=sys.stderr)
+            continue
+        # a malformed row must skip with a report, never crash the whole
+        # import — and never silently mis-parse (see parse_ofx_amount)
+        amt = parse_ofx_amount(a.group(1))
+        try:
+            when = datetime.strptime(d.group(1), "%Y%m%d").date()
+        except ValueError:
+            when = None
+        if when is None or amt is None:
+            reported += 1
+            print(f"; skipping malformed row — unparseable TRNAMT/DTPOSTED "
+                  f"({a.group(1)!r} / {d.group(1)!r})", file=sys.stderr)
             continue
         n = re.search(r"<NAME>([^<\n]+)", t)
         m = re.search(r"<MEMO>([^<\n]+)", t)
         ty = re.search(r"<TRNTYPE>([A-Z]+)", t)
         fit = re.search(r"<FITID>([^<\n]+)", t)
         name = escape(((n.group(1) if n else "") + (" " + m.group(1) if m else "")).strip())
+        yielded += 1
         yield {
-            "date": datetime.strptime(d.group(1), "%Y%m%d").date(),
-            "amount": float(a.group(1)),
+            "date": when,
+            "amount": amt,
             "payee": name,
             "type": (ty.group(1) if ty else ""),
             "fitid": (fit.group(1).strip() if fit else ""),
         }
+    if opens != yielded + reported:
+        print(f"; WARNING: {opens} <STMTTRN> blocks opened but only "
+              f"{yielded + reported} parsed or reported — the export looks "
+              f"truncated/corrupt; reconcile the closing balance before "
+              f"trusting this import", file=sys.stderr)
 
 
 def payee_key(payee):
@@ -91,49 +150,102 @@ def import_hash(date, amt, payee, account):
 
 
 IMPORT_HASH_META = re.compile(r'^\s+import-hash:\s*"([0-9a-f]{8,64})"', re.M)
+FITID_META = re.compile(r'^\s+fitid:\s*"([^"\n]+)"', re.M)
+TXN_BLOCK = re.compile(r"^\d{4}-\d{2}-\d{2}\s+[*!].*\n((?:[ \t]+\S.*\n?)*)", re.M)
+FIRST_POSTING = re.compile(r"^[ \t]+([A-Z][A-Za-z0-9:_-]*)", re.M)
 
 
-def existing_hashes():
-    """Every import-hash already recorded in ledger/*.beancount.
+def existing_ids():
+    """Identity of every machine-imported entry in ledger/*.beancount.
 
     Read straight from the files (not bean-query) so it works before the
-    vault venv exists and stays cheap. Ledgers that predate hashing simply
-    contribute nothing here — their entries are still caught by the ±5-day
-    fuzzy match below, so old vaults keep deduping without a migration.
+    vault venv exists and stays cheap. Returns (hashes, fitids):
+
+      hashes: {import-hash: set of fitids recorded on entries carrying that
+              hash}. An empty set = the hash is present but the entry has no
+              fitid (imports that predate fitid:, and CSV rows — the CSV
+              carries no FITID).
+      fitids: {account: set of fitids} keyed by each entry's FIRST posting
+              account — the imported account leg in every entry the
+              importers write. The bank's FITID is the primary identity:
+              it survives payee/amount edits and distinguishes genuinely
+              identical same-day transactions.
+
+    Ledgers that predate both simply contribute nothing here — their entries
+    are still caught by the ±5-day fuzzy match below, so old vaults keep
+    deduping without a migration.
     """
-    found = set()
+    hashes, fitids = {}, {}
     for f in sorted((VAULT / "ledger").glob("*.beancount")):
         try:
-            found.update(IMPORT_HASH_META.findall(f.read_text()))
+            text = f.read_text()
         except OSError:
             continue
-    return found
+        for m in TXN_BLOCK.finditer(text):
+            body = m.group(1)
+            hm = IMPORT_HASH_META.search(body)
+            fm = FITID_META.search(body)
+            if not hm and not fm:
+                continue
+            fid = fm.group(1).strip() if fm else ""
+            if hm:
+                hashes.setdefault(hm.group(1), set())
+                if fid:
+                    hashes[hm.group(1)].add(fid)
+            if fid:
+                pm = FIRST_POSTING.search(body)
+                if pm:
+                    fitids.setdefault(pm.group(1), set()).add(fid)
+    return hashes, fitids
 
 
-def existing_index(account):
+def hash_is_duplicate(h, fitid, ledger_hashes, batch_hashes):
+    """Content-hash dedupe, FITID-aware (stage b — stage a, exact FITID
+    match, runs in the importer first). A hash hit only counts as the same
+    transaction when the recorded entry carries no fitid, or this row
+    carries none (CSV), or the fitids agree. Two same-day identical rows
+    with DIFFERENT bank FITIDs are two real transactions — both import."""
+    for seen in (ledger_hashes, batch_hashes):
+        if h in seen:
+            fids = seen[h]
+            if not fids or not fitid or fitid in fids:
+                return True
+    return False
+
+
+def existing_index(account, known_hashes=None):
     """(amount, payee-prefix) -> set of dates already in the ledger for an account.
 
-    The FUZZY half of dedupe; hash-exact matching (import_hash above) runs
-    first. This index catches the same transaction arriving via a different
-    export format, where the date shifts (Chase CSV carries the transaction
-    date, QFX the post date), by matching amount + payee within a date
-    WINDOW. The window applies ONLY to ledger-sourced dates — rows within one
-    import are deduped hash-exact (a bank never emits the same transaction
-    twice, and two real same-amount charges days apart at one merchant are
-    legitimate). Ledger-side twins inside the window still collide, so
-    importers list every skip and --all forces it.
+    The FUZZY half of dedupe; fitid-exact and hash-exact matching run first.
+    This index catches the same transaction arriving via a different export
+    format, where the date shifts (Chase CSV carries the transaction date,
+    QFX the post date), by matching amount + payee within a date WINDOW.
+
+    LEGACY ENTRIES ONLY: pass `known_hashes` (the ledger's recorded
+    import-hashes) and any row whose recomputed hash is among them is left
+    OUT of the index — machine-imported entries always carry the hash (and
+    fitid never appears without it), so the exact stages already own their
+    identity. Without this, two real same-amount charges days apart at one
+    merchant (Monday gym drop-in, Thursday again) would fuzzy-collide even
+    though their FITIDs and hashes differ. The window applies ONLY to
+    ledger-sourced dates; importers list every skip and --all forces it.
     """
     idx = {}
+    account = str(account).replace("'", "")  # account names never contain quotes;
+    # strip them so rules.toml-sourced text can't break out of the BQL string
     try:
         rows = query(f"SELECT date, number, payee WHERE account = '{account}'")
     except (RuntimeError, SystemExit):
         return idx
     for r in rows:
         try:
-            key = (round(float(r["number"]), 2), payee_key(r["payee"]))
-            idx.setdefault(key, set()).add(datetime.strptime(r["date"], "%Y-%m-%d").date())
+            d = datetime.strptime(r["date"], "%Y-%m-%d").date()
+            amt = round(float(r["number"]), 2)
         except (TypeError, ValueError):
             continue
+        if known_hashes and import_hash(d, amt, r["payee"], account) in known_hashes:
+            continue  # machine-imported — fitid/hash stages own it, never fuzzy
+        idx.setdefault((amt, payee_key(r["payee"])), set()).add(d)
     return idx
 
 
@@ -161,15 +273,26 @@ def ofx_closing_balance(text):
     if not m:
         return None, None
     block = m.group(1)
-    b = re.search(r"<BALAMT>([-+\d.]+)", block)
+    b = re.search(r"<BALAMT>([-+\d.,]+)", block)
     d = re.search(r"<DTASOF>(\d{8})", block) or re.search(r"<DTEND>(\d{8})", text)
-    asof = datetime.strptime(d.group(1), "%Y%m%d").date() if d else None
-    return (float(b.group(1)) if b else None), asof
+    closing = asof = None
+    if b:
+        closing = parse_ofx_amount(b.group(1))
+        if closing is None:
+            print(f"; ignoring malformed <BALAMT> {b.group(1)!r} — treating the "
+                  f"statement as carrying no closing balance", file=sys.stderr)
+    if d:
+        try:
+            asof = datetime.strptime(d.group(1), "%Y%m%d").date()
+        except ValueError:
+            print(f"; ignoring malformed balance as-of date {d.group(1)!r}", file=sys.stderr)
+    return closing, asof
 
 
 def ledger_balance_asof(account, asof):
     """(USD balance, posting count) for an account through a date; (None, 0)
     when the ledger can't be queried (vault venv missing)."""
+    account = str(account).replace("'", "")  # see existing_index — no BQL breakout
     try:
         rows = query(f"SELECT count(*) AS n, sum(convert(position,'USD')) AS v "
                      f"WHERE account = '{account}' AND date <= {asof.isoformat()}")
@@ -239,8 +362,58 @@ def assertion_date(statement_end, last_txn_date):
     being imported. +1 day because a Beancount `balance` directive asserts at
     the START of its date — the assertion must be dated the day after the
     activity it covers.
+
+    CAPPED at statement_end + 1: when statement rows postdate the balance's
+    as-of date (banks do ship a LEDGERBAL older than the last rows), the
+    closing balance excludes those rows — continuity's predicted sum already
+    caps at as-of, and an assertion dated after them would be broken by the
+    very import that writes it. `balance` asserts at the START of its date,
+    so as-of + 1 covers activity through as-of and nothing later.
     """
-    return max(statement_end - timedelta(days=2), last_txn_date) + timedelta(days=1)
+    return min(max(statement_end - timedelta(days=2), last_txn_date),
+               statement_end) + timedelta(days=1)
+
+
+ASSERTION_LINE = re.compile(r"^[;\s]*(\d{4}-\d{2}-\d{2})\s+balance\s+(\S+)\s")
+
+
+def existing_assertion_dates(account):
+    """Dates of every balance assertion already recorded for an account in
+    ledger/*.beancount — commented suggestions included, so a re-import
+    neither duplicates an assertion nor re-suggests one (re-importing an
+    already-imported file must not quietly advance the assertion line)."""
+    out = set()
+    for f in sorted((VAULT / "ledger").glob("*.beancount")):
+        try:
+            text = f.read_text()
+        except OSError:
+            continue
+        for line in text.splitlines():
+            m = ASSERTION_LINE.match(line)
+            if m and m.group(2) == account:
+                try:
+                    out.add(datetime.strptime(m.group(1), "%Y-%m-%d").date())
+                except ValueError:
+                    continue
+    return out
+
+
+def since_from_argv(argv, usage):
+    """Pull '--since YYYY-MM-DD' out of argv -> (since, remaining argv).
+
+    Exits with usage on a missing or malformed value: rows are dropped by
+    STRING comparison against this date, so '2026-6-1' would silently drop
+    nothing (or everything), and '--since --write' would swallow the write
+    flag AND import everything. Both are money bugs, not conveniences.
+    """
+    if "--since" not in argv:
+        return None, argv
+    i = argv.index("--since")
+    value = argv[i + 1] if i + 1 < len(argv) else ""
+    if value.startswith("--") or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        raise SystemExit(f"--since needs a YYYY-MM-DD date "
+                         f"(got {value or 'nothing'})\n\n{usage}")
+    return value, argv[:i] + argv[i + 2:]
 
 
 def emit(date, payee, meta, account, amt, counter):
@@ -267,6 +440,23 @@ def render_assertion(account, closing, date, verified):
 
 
 # ------------------------------------------------------------------- write
+def atomic_write(path, text):
+    """Write via tmp + fsync + os.replace so a crash mid-write can never
+    leave a ledger file truncated — readers see the old file or the new one,
+    nothing in between."""
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w") as fh:
+        fh.write(text)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
+
+
+ACTIVE_INCLUDE = "^include \"{name}\""  # column 0 — a commented ;include (or an
+                                        # indented copy) is NOT active and must
+                                        # not satisfy the presence check
+
+
 def append_to_ledger(entries):
     """Append rendered entries to ledger/<year>.beancount (grouped by date),
     keep main.beancount's include list complete, then bean-check. Any
@@ -287,15 +477,16 @@ def append_to_ledger(entries):
             backups[f] = f.read_text() if f.exists() else None
             old = backups[f] or ""
             sep = "" if (not old or old.endswith("\n\n")) else "\n"
-            f.write_text(old + sep + "\n".join(by_year[year]))
+            atomic_write(f, old + sep + "\n".join(by_year[year]))
             written.append(f)
         main_text = main.read_text()
         missing = [y for y in sorted(by_year)
-                   if f'include "{y}.beancount"' not in main_text]
+                   if not re.search(ACTIVE_INCLUDE.format(name=f"{y}\\.beancount"),
+                                    main_text, re.M)]
         if missing:
             backups[main] = main_text
             adds = "".join(f'include "{y}.beancount"\n' for y in missing)
-            main.write_text(main_text + ("" if main_text.endswith("\n") else "\n") + adds)
+            atomic_write(main, main_text + ("" if main_text.endswith("\n") else "\n") + adds)
     except OSError as e:
         _restore(backups)
         raise SystemExit(f"write failed, rolled back: {e}")
@@ -316,4 +507,4 @@ def _restore(backups):
         if text is None:
             p.unlink(missing_ok=True)
         else:
-            p.write_text(text)
+            atomic_write(p, text)

@@ -48,8 +48,8 @@ pull the current bands from the same IRS notice when they matter.
 | Standard deduction, MFJ | $32,200 | [IRS](https://www.irs.gov/newsroom/irs-releases-tax-inflation-adjustments-for-tax-year-2026-including-amendments-from-the-one-big-beautiful-bill) |
 | Standard deduction, single / MFS | $16,100 | [IRS](https://www.irs.gov/newsroom/irs-releases-tax-inflation-adjustments-for-tax-year-2026-including-amendments-from-the-one-big-beautiful-bill) |
 | Standard deduction, head of household | $24,150 | [IRS](https://www.irs.gov/newsroom/irs-releases-tax-inflation-adjustments-for-tax-year-2026-including-amendments-from-the-one-big-beautiful-bill) |
-| LTCG 0% rate up to (taxable income) | $49,450 single / $98,900 MFJ | [Tax Foundation](https://taxfoundation.org/data/all/federal/2026-tax-brackets/) |
-| LTCG 15% rate up to | $545,500 single / $613,700 MFJ (20% above) | [Tax Foundation](https://taxfoundation.org/data/all/federal/2026-tax-brackets/) |
+| LTCG 0% rate up to (taxable income) | $49,450 single / $98,900 MFJ | [IRS Rev. Proc. 2025-32](https://www.irs.gov/pub/irs-drop/rp-25-32.pdf) |
+| LTCG 15% rate up to | $545,500 single / $613,700 MFJ (20% above) | [IRS Rev. Proc. 2025-32](https://www.irs.gov/pub/irs-drop/rp-25-32.pdf) |
 | NIIT 3.8% above MAGI | $200,000 single / $250,000 MFJ *(statutory — not indexed)* | IRC §1411 |
 | Additional Medicare 0.9% above wages | $200,000 single / $250,000 MFJ *(statutory — not indexed)* | IRC §3101 |
 | Capital loss vs. ordinary income | $3,000/yr *(statutory — not indexed)* | IRC §1211 |

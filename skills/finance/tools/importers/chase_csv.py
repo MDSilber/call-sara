@@ -16,10 +16,13 @@ DRY-RUN BY DEFAULT: prints the would-be entries to stdout and a summary
 then re-run with --write to append to ledger/<year>.beancount (bean-check
 runs after; a failed check rolls the append back).
 
-Dedupe, in order: (1) hash-exact via each entry's `import-hash:` metadata;
-(2) fuzzy fallback — same amount and payee already in the ledger within
-±5 days (transaction vs post dates differ across formats; also covers
-pre-hash ledger entries). Skips are listed on stderr; --all disables dedupe.
+Dedupe, in order: (1) hash-exact via each entry's `import-hash:` metadata —
+a CSV row carries no bank FITID, so a hash hit against a fitid-bearing QFX
+entry still counts as the same transaction (the cross-format case);
+(2) fuzzy fallback — same amount and payee within ±5 days, applied ONLY to
+legacy ledger entries that carry neither fitid nor import-hash (transaction
+vs post dates differ across formats). Skips are listed on stderr; --all
+disables dedupe.
 
 Balance continuity ("Golden Rule"): when the export carries a running
 Balance column, every row must chain (balance = previous + amount) — tagged
@@ -35,9 +38,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from rules import EXPENSE_DEFAULT, TRANSFER_ACCOUNT, chase_category, match_rule  # noqa: E402
 from importers.common import (DISCREPANCY, VERIFIED, append_to_ledger,  # noqa: E402
                               assertion_date, check_continuity_ledger,
-                              check_continuity_rows, emit, escape, existing_hashes,
-                              existing_index, import_hash, is_duplicate,
-                              render_assertion)
+                              check_continuity_rows, emit, escape, existing_ids,
+                              existing_index, hash_is_duplicate, import_hash,
+                              is_duplicate, render_assertion, since_from_argv)
 
 FLAGS = {"--all", "--write", "--dry-run", "--allow-discrepancy"}
 VALUE_FLAGS = {"--since"}  # --since YYYY-MM-DD: ignore rows before this date
@@ -86,14 +89,7 @@ def parse_rows(path):
 
 def main():
     argv = sys.argv[1:]
-    since = None
-    if "--since" in argv:
-        i = argv.index("--since")
-        try:
-            since = argv[i + 1]
-        except IndexError:
-            sys.exit("--since needs a YYYY-MM-DD date")
-        argv = argv[:i] + argv[i + 2:]
+    since, argv = since_from_argv(argv, __doc__)
     unknown = {a for a in argv if a.startswith("--")} - FLAGS
     if unknown:
         sys.exit(f"unknown flag(s): {', '.join(sorted(unknown))}\n\n{__doc__}")
@@ -115,19 +111,23 @@ def main():
         if pre - len(rows):
             print(f";   --since {since}: ignoring {pre - len(rows)} earlier rows "
                   f"(pre-snapshot history the opening balance already nets)", file=sys.stderr)
-    ledger_hashes = existing_hashes() if dedupe else set()
-    idx = existing_index(account) if dedupe else {}
-    new_hashes = set()
+    ledger_hashes, _ledger_fitids = existing_ids() if dedupe else ({}, {})
+    idx = existing_index(account, set(ledger_hashes)) if dedupe else {}
+    new_hashes = {}
     entries, kept, skipped = [], [], []
     for r in rows:
         h = import_hash(r["date"], r["amount"], r["payee"], account)
-        if dedupe and (h in ledger_hashes or h in new_hashes):
+        # No FITID in a CSV: fitid="" makes any hash hit a duplicate — the
+        # right call both against QFX-imported twins (same transaction via
+        # another format) and in-batch (a CSV cannot disambiguate same-day
+        # identical rows; import the card's QFX when that matters).
+        if dedupe and hash_is_duplicate(h, "", ledger_hashes, new_hashes):
             skipped.append((r, "hash"))
             continue
         if dedupe and is_duplicate(idx, r["date"], r["amount"], r["payee"]):
             skipped.append((r, "±5d"))
             continue
-        new_hashes.add(h)
+        new_hashes.setdefault(h, set())
         counter = counter_account(r["desc"], r["category"], r["type"], r["amount"], account)
         entries.append((r["date"], emit(r["date"], r["payee"],
                                         {"chase-type": r["type"], "import-hash": h},
