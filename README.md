@@ -1,15 +1,12 @@
 # Call Sara ☎️
 
-**The family accountant, except she lives in your terminal and already
-read your statements.**
+Sara is my accountant. Well, a fictional version of her that lives in
+Claude Code, keeps my family's entire financial life in a plain-text
+vault on my disk, and roasts my streaming subscriptions. I built her
+because I wanted an advisor who actually knows my numbers, and honestly
+she's become the best money thing I have. Now she can be yours too!
 
-I wanted a financial advisor that actually knows my numbers. Not a
-chatbot with amnesia. Not another SaaS asking for my bank password. So
-I built Sara: a Claude skill with a plain-text vault of your household's
-entire financial life on your own disk, and a personality that opens
-with the number and never scolds.
-
-Here she is, mid-checkup (demo data):
+This is her, mid-checkup (demo data, but this is really what it's like):
 
 ```
 > how are we doing
@@ -22,111 +19,88 @@ $50/mo. Keep one, drop two, that's ~$420/yr back. Want the cancel
 pages?
 ```
 
-Decision support, not a licensed advisor. Details at the bottom.
+She does the whole job. Onboards you with an interview, pulls
+statements from your logged-in bank sites (you type passwords, you
+click anything that moves money, always), keeps a real double-entry
+ledger reconciled to the penny, runs monthly reviews (we call it the
+cheshbon), forecasts your next 60 days, hunts for wasted money like
+it's a sport, and writes it all down so next session she still knows
+you. Setting her up on my own house surfaced a six-figure account
+nobody was tracking. I'm still not over it.
 
-## What she does
+![the dashboard](docs/dashboard.png)
 
-- 🧠 **Remembers everything.** Every transaction, every account, and an
-  investment thesis you agreed to in writing. Big decisions get decided
-  once, not re-litigated every chat.
-- 💸 **Hunts for money.** Waste, bad rates, unclaimed property, expiring
-  card credits. Findings come with dollars per year and the exact fix.
-  (Setting this up on my own house surfaced a six-figure account nobody
-  was tracking. True story!)
-- 🏦 **Pulls your statements.** She drives your logged-in bank sites and
-  imports with dedupe and balance reconciliation. You type passwords,
-  you click anything that moves money. Always.
-- 📊 **Shows you the picture.** A local-only dashboard: net worth curve,
-  drill-downs, a 60-day cash-flow forecast.
-- 🧾 **Does the boring parts right.** Monthly reviews (the household
-  calls it the cheshbon), instant queries, a shareable assessment.
+## Try her
 
-![The dashboard, synthetic demo household](docs/dashboard.png)
-
-## Get started
-
-Three steps, about five minutes (onboarding itself is ~90, she's thorough):
-
-1. **Fork this repo**, then:
+1. Fork this repo, then:
    ```bash
    git clone <your-fork> ~/code/call-sara
    cd ~/code/call-sara && ./install.sh
    ```
-   install.sh does everything: links the skill, arms the secret scanner,
-   grabs its own dependencies.
-2. **Open a NEW Claude Code session** (skills load at startup).
-3. Say **"set up my finances."** Sara takes it from there.
+   install.sh does everything (deps, secret scanner, the works).
+2. Open a NEW Claude Code session. Skills load at startup.
+3. Say **"set up my finances."** That's it! She takes it from there
+   (~90 min, she's thorough).
 
-Just want to poke around first? Totally fair:
+Not ready to hand over real data? Same, at first:
 ```bash
 skills/finance/scripts/init_vault.sh --demo /tmp/demo-vault
 skills/finance/scripts/dashboard.sh --vault /tmp/demo-vault
 ```
-Something broken? `skills/finance/scripts/doctor.sh` will tell you what.
+If anything's weird, `skills/finance/scripts/doctor.sh` tells you what.
 
-**Requirements:** macOS, Python 3.11+ (install.sh handles it), and
-optionally the Claude in Chrome extension for statement fetching. Note
-that driving a logged-in bank session may conflict with your bank's
-terms of use. Your call, your account.
+macOS + Python 3.11+ (install.sh handles python). The Claude in Chrome
+extension makes statement-pulling magical but is optional. Fair warning:
+driving a logged-in bank session may bug your bank's terms of use. Your
+call, your account.
 
-## Where your data goes
+## Where your data actually goes
 
-Short version: **your disk, your private git remote, nowhere else** —
-with exactly six honest exceptions:
+Your disk and your private git remote. That's the design. The six
+honest exceptions, in full:
 
-1. Vault contents Sara reads enter Claude's model context, like anything
-   you'd paste into a chat.
-2. Pushes go to your private remote (if you set one up).
+1. Whatever Sara reads in a session enters Claude's model context, same
+   as pasting it into a chat.
+2. Pushes go to your private remote, if you set one up.
 3. Published assessments are private-by-default claude.ai pages.
 4. With the Chrome extension, Claude reads bank pages you're logged into.
 5. Price refreshes send ticker symbols (never balances) to quote APIs.
 6. Savings research sends merchant terms (never identities) to web search.
 
-Account numbers are last-4 only, sensitive documents never enter git,
-and a fail-closed gitleaks scanner blocks commits that break the rules.
+Account numbers are last-4 only. Statements never enter git. A
+fail-closed gitleaks scanner blocks any commit that breaks the rules.
 Sara never needs a password, SSN, or full account number typed into
-chat. If any of this is out of bounds for you, don't use this.
+chat, ever. If any of the six is a dealbreaker for you, don't use this!
 
-## Who it's for
+## How it's built
 
-You like terminals, you want your financial life local-first and
-inspectable, and you'd rather own a plain-text ledger than hand your
-bank login to a startup. If that's you, welcome!
-
-## How it works
-
-One rule runs the whole system: **Sara handles the fuzzy parts, code
-owns every number.** The money lives in a
-[Beancount](https://beancount.github.io/docs/) ledger (plain-text,
-double-entry, re-validated on every change) that you never hand-edit;
-importers write it, tests keep it honest. Why so strict? One HN author
-measured the same 457-row calculation: CLI, 8 seconds. Raw LLM
-arithmetic, 3+ minutes and 67,709 tokens, still needing weekly
-re-verification. "It was right the last three times" is not a
-foundation for your books.
-
-**The map:**
+One rule: **Sara handles the fuzzy stuff, code owns every number.**
+LLMs are amazing at reading a blurry receipt and terrible at summing
+400 rows, so all arithmetic lives in deterministic tools over a
+[Beancount](https://beancount.github.io/docs/) ledger that nobody
+hand-edits and a test suite keeps honest. Everything she's told is
+inspectable, starting at `skills/finance/SKILL.md`:
 
 | Path | What's in it |
 |---|---|
-| `skills/finance/SKILL.md` | The entry point. Read exactly what the model is told. |
-| `skills/finance/references/` | The method: onboarding, playbook, current-year figures, site notes. |
-| `skills/finance/tools/` | The deterministic layer: importers, queries, checks, forecast. |
-| `skills/finance/vault-template/` | Vault skeleton (+ a demo variant). |
-| `skills/finance/scripts/` | init, doctor, prices, dashboard, filing. |
+| `skills/finance/SKILL.md` | The entry point, literally what the model reads |
+| `skills/finance/references/` | The method: onboarding, playbook, figures, site notes |
+| `skills/finance/tools/` | Importers, queries, checks, forecast. The math |
+| `skills/finance/vault-template/` | Vault skeleton, plus a demo one |
+| `skills/finance/scripts/` | init, doctor, prices, dashboard, filing |
 
-## Make it yours
+## Make her yours
 
-Fork-first by design. It's markdown and small Python: rename Sara, teach
-her your bank's quirks, retune the playbook to your country, add
-importers. PRs for anything generally useful are very welcome! The test
-suite keeps the money math honest while you hack.
+It's all markdown and small Python. Rename her! Change her whole
+personality! Teach her your bank's weird download page! Retune the
+playbook for your country! If you build something everyone could use,
+PR it, I'd love that.
 
 ## The fine print
 
-Educational decision support, not legal, tax, or investment advice; no
-CPA, CFP, or fiduciary duty behind it. For filings, estate documents,
-and big irreversible moves, see a licensed professional. Sara will tell
-you when.
+Sara is decision support, not a licensed anything. No CPA, CFP, or
+fiduciary duty here. For filings, estate docs, and big irreversible
+moves, see a real professional. She'll tell you when, she's good like
+that.
 
-MIT licensed. Go build.
+MIT. Go nuts.
