@@ -97,9 +97,12 @@ def deadlines():
     horizon = int(goals().get("deadline_horizon_days") or 45)
     today = date.today()
     out = []
+    seen = set()  # the same event often lives in two facts files (calendar + a note)
     for d, text, relpath in dated_bullets():
         days = (d - today).days
-        if 0 <= days <= horizon:
+        key = (d, " ".join(text.lower().split())[:80])
+        if 0 <= days <= horizon and key not in seen:
+            seen.add(key)
             out.append(finding(
                 "deadlines", "watch",
                 f"In {days} days ({d.isoformat()}): {text}",
