@@ -40,6 +40,8 @@ from importers.common import (DISCREPANCY, VERIFIED, append_to_ledger,  # noqa: 
                               render_assertion)
 
 FLAGS = {"--all", "--write", "--dry-run", "--allow-discrepancy"}
+VALUE_FLAGS = {"--since"}  # --since YYYY-MM-DD: ignore rows before this date
+
 
 
 def counter_account(desc, chase_cat, txn_type, amount, account):
@@ -84,6 +86,14 @@ def parse_rows(path):
 
 def main():
     argv = sys.argv[1:]
+    since = None
+    if "--since" in argv:
+        i = argv.index("--since")
+        try:
+            since = argv[i + 1]
+        except IndexError:
+            sys.exit("--since needs a YYYY-MM-DD date")
+        argv = argv[:i] + argv[i + 2:]
     unknown = {a for a in argv if a.startswith("--")} - FLAGS
     if unknown:
         sys.exit(f"unknown flag(s): {', '.join(sorted(unknown))}\n\n{__doc__}")
@@ -99,6 +109,12 @@ def main():
     # emission below is date-sorted.
     tag, detail, closing = check_continuity_rows([(r["amount"], r["balance"]) for r in rows])
     rows.sort(key=lambda r: r["date"])
+    if since:
+        pre = len(rows)
+        rows = [r for r in rows if str(r["date"]) >= since]
+        if pre - len(rows):
+            print(f";   --since {since}: ignoring {pre - len(rows)} earlier rows "
+                  f"(pre-snapshot history the opening balance already nets)", file=sys.stderr)
     ledger_hashes = existing_hashes() if dedupe else set()
     idx = existing_index(account) if dedupe else {}
     new_hashes = set()

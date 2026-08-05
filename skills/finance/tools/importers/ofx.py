@@ -40,10 +40,20 @@ from importers.common import (DISCREPANCY, VERIFIED, append_to_ledger,  # noqa: 
                               ofx_closing_balance, read_ofx, render_assertion)
 
 FLAGS = {"--all", "--write", "--dry-run", "--allow-discrepancy"}
+VALUE_FLAGS = {"--since"}  # --since YYYY-MM-DD: ignore rows before this date
+
 
 
 def main():
     argv = sys.argv[1:]
+    since = None
+    if "--since" in argv:
+        i = argv.index("--since")
+        try:
+            since = argv[i + 1]
+        except IndexError:
+            sys.exit("--since needs a YYYY-MM-DD date")
+        argv = argv[:i] + argv[i + 2:]
     unknown = {a for a in argv if a.startswith("--")} - FLAGS
     if unknown:
         sys.exit(f"unknown flag(s): {', '.join(sorted(unknown))}\n\n{__doc__}")
@@ -69,6 +79,12 @@ def main():
         idx = existing_index(account) if dedupe else {}
         new_hashes = set()
         txns = sorted(bank_transactions(text), key=lambda t: t["date"])
+        if since:
+            pre = len(txns)
+            txns = [t for t in txns if str(t["date"]) >= since]
+            if pre - len(txns):
+                print(f";   --since {since}: ignoring {pre - len(txns)} earlier rows "
+                      f"(pre-snapshot history the opening balance already nets)", file=sys.stderr)
         kept, skipped = [], []
         for t in txns:
             h = import_hash(t["date"], t["amount"], t["payee"], account)
@@ -87,8 +103,9 @@ def main():
         closing, asof = ofx_closing_balance(text)
         tag, detail = check_continuity_ledger(account, closing, asof, kept)
         print(f"; {account}: balance continuity {tag} — {detail}", file=sys.stderr)
-        if kept and closing is not None and asof:
-            a_date = assertion_date(asof, max(d for d, _ in kept))
+        if closing is not None and asof and (kept or tag == VERIFIED):
+            last_kept = max((d for d, _ in kept), default=asof)
+            a_date = assertion_date(asof, last_kept)
             entries.append((a_date, render_assertion(account, closing, a_date, tag == VERIFIED)))
         print(f"; imported {len(kept)} transactions to {account}"
               + (f" (skipped {len(skipped)} already in ledger)" if skipped else ""), file=sys.stderr)
