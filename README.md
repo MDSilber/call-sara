@@ -107,6 +107,13 @@ recommendation. Advice is grounded in a thesis you've agreed to in
 writing, so decisions get made once. Arithmetic is code; judgment is the
 agent. Do things (drive the browser), don't just describe them.
 
+The division of labor is strict: the agent handles fuzzy input, the
+tools own every number. Independent validation of why: one HN author
+measured the same 457-row settlement done by CLI (8s, ~200 tokens)
+vs. raw LLM arithmetic (3+ minutes, 67,709 tokens, needs weekly
+re-verification) — "it was right the last three times" is not a
+property you can build a settlement system on.
+
 ## The ledger (beancount)
 The money itself lives in a [Beancount](https://beancount.github.io/docs/)
 ledger — plain-text, double-entry: every transaction dated, categorized,
