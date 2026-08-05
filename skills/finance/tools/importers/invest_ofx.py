@@ -84,7 +84,7 @@ from importers.common import (append_to_ledger, assertion_date,  # noqa: E402
                               bank_transactions, escape, existing_ids,
                               existing_index, hash_is_duplicate, import_hash,
                               is_duplicate, parse_ofx_amount, read_ofx,
-                              since_from_argv)
+                              routing_help, since_from_argv)
 
 FLAGS = {"--all", "--write", "--dry-run"}
 MATCH, MISMATCH, UNVERIFIABLE = "MATCH", "MISMATCH", "UNVERIFIABLE"
@@ -424,6 +424,7 @@ def main():
         if not account:
             print(f"; skipping account ending {acct_id[-4:]!r}: no [[accounts]] entry in "
                   f"rules.toml — add one (or pass the ledger account explicitly)", file=sys.stderr)
+            print(routing_help(), file=sys.stderr)
             continue
         idx = existing_index(account, set(ledger_hashes)) if dedupe else {}
         new_hashes, new_fitids = {}, set()

@@ -279,6 +279,28 @@ def main():
               "imported 3 transactions" in r.stderr and "NEWSSTAND KIOSK" in r.stdout,
               r.stderr + r.stdout)
 
+        # Routing miss lists the known options: an unrouted ACCTID prints the
+        # configured [[accounts]] table so a typo'd rules entry is instantly
+        # visible (ofx + invest); chase_csv (no ACCTID in a CSV) lists the
+        # options when the account argument is missing.
+        miss = Path(tmp) / "unrouted.qfx"
+        miss.write_text((FIX / "bank.qfx").read_text().replace("000009123", "000005599"))
+        r = run(vault, "importers/ofx.py", str(miss))
+        check("routing miss (ofx): skip message lists configured last4 -> account",
+              r.returncode == 0 and "no [[accounts]] entry" in r.stderr
+              and "9123 -> Assets:US:TestBank:Checking9123" in r.stderr
+              and "8642 -> Assets:US:TestBroker:Brokerage8642" in r.stderr, r.stderr)
+        missi = Path(tmp) / "unrouted_invest.qfx"
+        missi.write_text((FIX / "vanguard.qfx").read_text().replace("777008642", "777005599"))
+        r = run(vault, "importers/invest_ofx.py", str(missi))
+        check("routing miss (invest): skip message lists configured routing",
+              r.returncode == 0 and "no [[accounts]] entry" in r.stderr
+              and "9123 -> Assets:US:TestBank:Checking9123" in r.stderr, r.stderr)
+        r = run(vault, "importers/chase_csv.py", str(FIX / "card.csv"))
+        check("chase_csv without an account: usage lists configured routing",
+              r.returncode != 0 and "9123 -> Assets:US:TestBank:Checking9123"
+              in (r.stderr + r.stdout), r.stderr + r.stdout)
+
         # M6a: triple re-import of one file yields exactly ONE assertion
         r = run(vault, "importers/ofx.py", str(FIX / "bank.qfx"), "--write")
         r2 = run(vault, "importers/ofx.py", str(FIX / "bank.qfx"), "--write")

@@ -62,7 +62,10 @@ drivers, sizing the committed flows ahead. **Don't trust it for:** totals —
 irregular spend (groceries, dining, travel) is deliberately NOT projected;
 anything just set up — a stream needs 3+ ledger occurrences, so a new
 autobuy is invisible until it has history (bridge with a dated `$` bullet in
-facts/); card payoff paths — an autopay projects from the paying account
+facts/ — except card autopays: declare `bill_day`/`autopay_from` on the
+card's rules.toml `[[accounts]]` entry and the autopay projects day-exactly
+even with zero payment history, amount ~estimated from cycle spend until an
+inferred stream exists); card payoff paths — an autopay projects from the paying account
 even when the card side is too irregular to project. Every line it prints is
 a `~` estimate from cadence patterns — quote it only with the projection
 label attached, and re-run after importing (a `†` flags flows projected

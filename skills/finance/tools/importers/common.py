@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from vault import BEAN_CHECK, VAULT, amount, query  # noqa: E402  (tools/ on path)
+from vault import BEAN_CHECK, VAULT, amount, query, rules  # noqa: E402  (tools/ on path)
 
 
 def escape(s):
@@ -126,6 +126,20 @@ def bank_transactions(text):
               f"{yielded + reported} parsed or reported — the export looks "
               f"truncated/corrupt; reconcile the closing balance before "
               f"trusting this import", file=sys.stderr)
+
+
+def routing_help():
+    """The configured [[accounts]] routing table, one `last4 -> ledger_account`
+    line per entry, as `;`-comment text. Printed beside any ACCTID routing
+    miss so a typo'd or missing rules.toml entry is instantly visible next to
+    what IS configured — the fix is usually one glance away."""
+    routes = [(re.sub(r"\D", "", str(a.get("last4", ""))) or "????",
+               a["ledger_account"])
+              for a in rules().get("accounts", []) if a.get("ledger_account")]
+    if not routes:
+        return ";   rules.toml has no [[accounts]] entries yet"
+    return "\n".join([";   configured [[accounts]] routing (last4 -> ledger_account):"]
+                     + [f";     {l4} -> {acct}" for l4, acct in routes])
 
 
 def payee_key(payee):

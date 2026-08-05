@@ -9,6 +9,7 @@ tuning from rules.toml, dates from facts/, transactions from the ledger.
 One deliberate exception to "no side effects": milestones() records crossed
 milestones back into facts/goals/index.md so each fires exactly once.
 """
+import calendar
 import re
 import sys
 from collections import Counter
@@ -557,6 +558,39 @@ COV_MAX_FINDINGS = 5        # cap the noise — most-active accounts first, the 
 # arrives for this account. Values -> the expected max quiet days between imports.
 COV_CADENCE_DAYS = {"fast": 35, "monthly": 45, "quarterly": 100}
 
+# Declared card-cycle metadata — rules.toml [[accounts]] bill_day / statement_close
+# (1-31 or "last"). Parsed here and shared with forecast.py, which imports from
+# this module (never the reverse: projected_shortfall's deferred import is what
+# keeps the two acyclic).
+CYCLE_LAST_DAY = 31  # "last" parses to 31; _cycle_anchors clamps to each month's real end
+
+
+def _cycle_day(value):
+    """Parse a declared bill_day / statement_close value: 1-31 or "last" ->
+    anchor day, None when absent or malformed. A typo'd hint must never crash
+    a read-only tool — the account just falls back to pure inference."""
+    if isinstance(value, str) and value.strip().lower() == "last":
+        return CYCLE_LAST_DAY
+    try:
+        day = int(value)
+    except (TypeError, ValueError):
+        return None
+    return day if 1 <= day <= 31 else None
+
+
+def _cycle_anchors(day, start, end):
+    """Every declared cycle-day date in (start, end] — the statement closes /
+    autopay days the calendar says belong to that window. Clamped to short
+    months, so day 31 (and "last") lands on Feb 28/29, Apr 30, ..."""
+    out = []
+    y, m = start.year, start.month
+    while (y, m) <= (end.year, end.month):
+        a = date(y, m, min(day, calendar.monthrange(y, m)[1]))
+        if start < a <= end:
+            out.append(a)
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return out
+
 
 def coverage():
     """Stale feeds and month-sized holes — where the ledger stopped seeing.
@@ -565,6 +599,10 @@ def coverage():
     (floored at COV_GAP_FLOOR_DAYS, or set explicitly via rules.toml
     [[accounts]] cadence); silent for 2x that → stale feed. A gap wider than
     max(COV_HOLE_DAYS, rhythm) inside the history → a missed statement.
+    A declared statement_close/bill_day beats median-gap inference for that
+    account: ONE statement is expected per cycle, anchored on the declared
+    day — stale once COV_STALE_FACTOR declared days pass with no data, a
+    hole where an internal gap swallows a whole declared cycle.
     An optional [[accounts]] exported_through date counts as freshness even
     when the statement had no transactions (quiet months aren't stale).
     One finding per account (stale wins over hole), capped at
@@ -577,12 +615,11 @@ def coverage():
     for account, dates in _posting_dates().items():
         if _matches_segments(account, ("transfer",)):
             continue
-        if len(dates) < 3:
-            continue  # not enough history to know a rhythm
         acfg = cfg.get(account, {})
-        gaps = sorted((b - a).days for a, b in zip(dates, dates[1:]))
-        floor = COV_CADENCE_DAYS.get(str(acfg.get("cadence", "")).lower(), COV_GAP_FLOOR_DAYS)
-        expected = max(gaps[len(gaps) // 2], floor)
+        declared_raw = acfg.get("statement_close", acfg.get("bill_day"))
+        declared = _cycle_day(declared_raw)
+        if declared is None and len(dates) < 3:
+            continue  # not enough history to know a rhythm (a declared cycle needs none)
         inst = acfg.get("institution") or (account.split(":")[-2]
                                            if account.count(":") >= 2 else account)
         last_seen = dates[-1]
@@ -594,6 +631,42 @@ def coverage():
                 exported = None
         if isinstance(exported, date) and exported > last_seen:
             last_seen = exported
+        if declared is not None:
+            # Declared cadence beats median-gap inference for this account:
+            # one statement per cycle, anchored on the declared day.
+            day_name = ("the last day of the month"
+                        if str(declared_raw).strip().lower() == "last"
+                        else f"day {declared}")
+            owed = _cycle_anchors(declared, last_seen, today)
+            if len(owed) >= COV_STALE_FACTOR:
+                candidates.append((len(dates), finding(
+                    "coverage", "watch",
+                    f"{account}: stale feed — {len(owed)} declared statement days "
+                    f"({day_name}) passed with no data. Pull from `{inst}`.",
+                    f"rules.toml declares this account's statement cycle anchored on "
+                    f"{day_name}; statements should have closed on "
+                    f"{', '.join(d.isoformat() for d in owed)} but the newest data is "
+                    f"{last_seen.isoformat()}. The feed has probably stopped — pull a "
+                    f"fresh export from `{inst}` (institution text) and import it.")))
+            else:
+                hole = next(((a, b) for a, b in
+                             zip(reversed(dates[:-1]), reversed(dates[1:]))
+                             if len(_cycle_anchors(declared, a, b)) > 1), None)
+                if hole:
+                    a, b = hole
+                    candidates.append((len(dates), finding(
+                        "coverage", "watch",
+                        f"{account}: statement gap — a full declared cycle "
+                        f"({day_name}) has no data",
+                        f"No postings between {a.isoformat()} and {b.isoformat()}, a "
+                        f"window holding more than one declared statement day "
+                        f"({day_name}) — that statement looks never-imported. Re-pull "
+                        f"it from `{inst}` — the importer dedupes, so overlapping "
+                        f"exports are safe.")))
+            continue
+        gaps = sorted((b - a).days for a, b in zip(dates, dates[1:]))
+        floor = COV_CADENCE_DAYS.get(str(acfg.get("cadence", "")).lower(), COV_GAP_FLOOR_DAYS)
+        expected = max(gaps[len(gaps) // 2], floor)
         silent = (today - last_seen).days
         if silent > COV_STALE_FACTOR * expected:
             candidates.append((len(dates), finding(

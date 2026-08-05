@@ -38,7 +38,7 @@ tags = ["pii"]
 
 [allowlist]
 description = "Synthetic importer test fixtures (invented numbers, by design) plus the machine-metadata LINES the importers emit — never whole directories"
-paths = ['''skills/finance/tools/importers/tests/fixtures/.*''']
+paths = ['''skills/finance/tools/importers/tests/.*''']
 regexTarget = "line"
 regexes = [
   '''^\s*import-hash:\s*"[0-9a-f]{8,64}"''',

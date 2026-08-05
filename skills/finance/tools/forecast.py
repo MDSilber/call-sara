@@ -14,6 +14,9 @@ on known flows, not a spending simulator:
   does NOT:      irregular spend (groceries, dining, shopping), anything seen
                  fewer than 3 times (a just-set-up autobuy is invisible until
                  it has history), income that isn't on a locked rhythm
+  exception:     a card whose rules.toml [[accounts]] entry declares bill_day
+                 projects its autopay DAY-EXACTLY even with zero payment
+                 history (see declared_autopay_streams)
 
 The cadence machinery generalizes checks.py's subscription detector to ALL
 regular streams — income + expense + transfer — on cash (USD) accounts.
@@ -29,7 +32,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from vault import amount, dated_bullets, money, query, rules  # noqa: E402
 from checks import (FIXED_DRIFT_TOLERANCE, _closed_accounts,  # noqa: E402
-                    _matches_segments, _normalize_merchant)
+                    _cycle_anchors, _cycle_day, _matches_segments,
+                    _normalize_merchant)
 
 # ---------------------------------------------------------------- tuning
 DEFAULT_DAYS = 60             # two rent+paycheck cycles: long enough to catch a rent/tax
@@ -52,8 +56,10 @@ CADENCE_WINDOWS = [           # (name, lo, hi) in days between occurrences; wind
                               #   UNEVEN (61-122d gaps) and won't match — facts bullets carry those
     ("yearly", 350, 380),     #   same window the subscription radar uses
 ]
-CADENCE_MONTHS = {"monthly": 1, "quarterly": 3, "yearly": 12}  # month-stepped cadences project
-                              # on the anchor day-of-month (rent posts the 1st, not last+30d)
+CADENCE_MONTHS = {"monthly": 1, "quarterly": 3, "yearly": 12,  # month-stepped cadences project
+                  "declared": 1}  # on the anchor day-of-month (rent posts the 1st, not
+                              # last+30d); "declared" = a rules.toml bill_day autopay,
+                              # monthly by construction with an explicit anchor_day
 ACTIVE_DAYS = {               # a stream must have fired this recently to still be "live":
     "weekly": 21,             #   3 missed weeks = the flow ended (or the feed died —
     "biweekly": 35,           #   coverage() owns that conversation)
@@ -67,6 +73,10 @@ AMOUNT_LOOKBACK = 6           # variable streams project the median of their las
 MIN_STREAM_AMOUNT = 5         # ignore sub-$5 streams ($1 cloud storage): cosmetic, not cash flow
 SEMIMONTHLY_MIN_HITS = 4      # need 2 full months of paired paydays before trusting the
                               # two-days-of-month pattern over plain 15-day stepping
+DECLARED_SPEND_CYCLES = 3     # a declared-bill_day card with no qualifying autopay stream
+                              # projects the MEDIAN spend of its last 3 closed statement
+                              # cycles — enough to smooth one fat cycle without reaching
+                              # into history so old the card's habits have changed
 
 # One-off bullets: a dollar amount alone isn't enough — plenty of dated notes
 # mention amounts that never touch a bank account (an RSU grant, a brokerage
@@ -235,6 +245,134 @@ def recurring_streams(posts, today=None):
     return streams
 
 
+# ------------------------------------------------- declared card cycles
+def _declared_cards():
+    """rules.toml [[accounts]] entries declaring a card cycle (OPTIONAL keys
+    bill_day / statement_close / autopay_from on Liabilities accounts) ->
+    {ledger_account: {"bill", "close", "from", "label"}}. bill_day is the
+    trigger — statement_close alone belongs to checks.coverage(). Malformed
+    day values parse to None and drop the entry: a typo'd hint must never
+    crash a read-only tool."""
+    out = {}
+    for a in rules().get("accounts", []):
+        acct = a.get("ledger_account") or ""
+        bill = _cycle_day(a.get("bill_day"))
+        if not acct.startswith("Liabilities") or bill is None:
+            continue
+        out[acct] = {"bill": bill,
+                     "close": _cycle_day(a.get("statement_close")) or bill,
+                     "from": a.get("autopay_from") or None,
+                     "label": a.get("institution") or acct.split(":")[-1]}
+    return out
+
+
+def _cycle_spend(card_posts, close_day, today):
+    """~estimated autopay amount for a card with no autopay stream yet: the
+    median NET non-transfer spend over its last DECLARED_SPEND_CYCLES CLOSED
+    statement cycles (anchored on close_day; a cycle is closed only when data
+    reaches past its close date, so a lagging feed can't undercount). A
+    first-cycle card (nothing closed yet) uses its spend so far — that's what
+    lets a brand-new declared card project its first autopay. None when the
+    card has spent nothing worth paying."""
+    charges = [p for p in card_posts if p["kind"] != "transfer"]
+    if not charges:
+        return None
+    first = min(p["date"] for p in charges)
+    newest = max(p["date"] for p in card_posts)
+    # anchors from one cycle before the first charge through the newest data
+    # (62d back guarantees an anchor precedes `first`, so windows cover it)
+    anchors = _cycle_anchors(close_day, first - timedelta(days=62), max(newest, today))
+    closed = [a for a in anchors if a <= newest]
+    spends = []
+    for lo, hi in zip(closed, closed[1:]):
+        if hi < first:
+            continue  # cycle closed before the card existed — absence, not history
+        spends.append(-sum(p["amt"] for p in charges if lo < p["date"] <= hi))
+    spends = spends[-DECLARED_SPEND_CYCLES:]
+    if not spends:  # first statement hasn't closed — the balance building now
+        spends = [-sum(p["amt"] for p in charges if p["date"] > closed[-1])]
+    est = sorted(spends)[len(spends) // 2]
+    return est if est >= MIN_STREAM_AMOUNT else None
+
+
+def declared_autopay_streams(streams, posts, asof, today):
+    """Declared card-cycle metadata as a HINT layer over inference: each
+    [[accounts]] card with a bill_day takes over that ONE card's autopay
+    projection; every other stream stays purely inferred.
+
+      amount — from the inferred autopay (the largest transfer-in stream on
+               the card) when one exists: the DECLARED day replaces the
+               inferred dates, nothing else changes. Else from the trailing
+               statement-cycle spend (_cycle_spend), labeled ~est — so a
+               brand-new card with zero autopay history still projects.
+      dates  — bill_day, month-stepped, via an explicit anchor_day that
+               _future_dates prefers over the last-hit day-of-month.
+      funding — when autopay_from is declared, the same flow projects as an
+               outflow on the funding account, and the inferred funding-side
+               twin (same merchant, opposite sign — the two legs of one
+               transaction share their payee) retires so the payment is
+               never projected twice. Inference qualifies the two sides
+               symmetrically (same dates and |amounts|), so a matched-here-
+               but-not-there mismatch can't double count.
+
+    Cards absent from the ledger contribute nothing — there is no balance to
+    project from; the forecast stays a projection OF the ledger.
+    """
+    cards = _declared_cards()
+    if not cards:
+        return streams
+    skip = _closed_accounts()
+    out = list(streams)
+    for card, c in sorted(cards.items()):
+        if card in skip or card not in asof:
+            continue
+        # newest REAL payment into the card (any transfer-in posting): the
+        # declared day in that month counts as satisfied, so a payment that
+        # posted early (the 20th against a declared 25th) never re-projects
+        last_paid = max((p["date"] for p in posts if p["account"] == card
+                         and p["kind"] == "transfer" and p["amt"] > 0),
+                        default=None)
+        inferred = max((s for s in out if s["account"] == card
+                        and s["kind"] == "transfer" and s["amount"] > 0),
+                      key=lambda s: s["amount"], default=None)
+        if inferred is not None:
+            amt, label = inferred["amount"], inferred["label"]
+            out.remove(inferred)  # declared date WINS over inferred date
+        else:
+            amt = _cycle_spend([p for p in posts if p["account"] == card],
+                               c["close"], today)
+            if amt is None:
+                continue  # nothing spent, nothing due — no autopay to project
+            label = f"{c['label']} autopay ~est(cycle spend)"
+        sides = [(card, amt)]
+        if c["from"] and c["from"] in asof:
+            if inferred is not None:
+                twin = next((s for s in out if s["account"] == c["from"]
+                             and s["kind"] == "transfer" and s["amount"] < 0
+                             and s["merchant"] == inferred["merchant"]), None)
+                if twin is not None:
+                    out.remove(twin)
+            sides.append((c["from"], -amt))
+        for account, amount_ in sides:
+            # seed `last` at the newest SATISFIED bill day: the latest declared
+            # day the account's ledger already covers (absence inside covered
+            # history is data, not lag — same floor semantics as every stream),
+            # pushed forward to the last real payment's month when that payment
+            # posted before its declared day. Projection starts with the NEXT
+            # one; a lagging feed's due-but-unseen autopay still shows as †.
+            # (The funding side reuses the card's payment date — the two legs
+            # share a transaction, so its month is the same.)
+            anchor = _cycle_anchors(c["bill"], asof[account] - timedelta(days=62),
+                                    asof[account])[-1]
+            if last_paid is not None:
+                anchor = max(anchor, _add_months(last_paid, 0, c["bill"]))
+            out.append({"account": account, "merchant": "", "label": label,
+                        "kind": "transfer", "cadence": "declared", "step": None,
+                        "amount": amount_, "dates": [anchor], "last": anchor,
+                        "n": 0, "anchor_day": c["bill"]})
+    return out
+
+
 # ------------------------------------------------------------- projection
 def _add_months(d, months, anchor_day):
     y = d.year + (d.month - 1 + months) // 12
@@ -262,8 +400,10 @@ def _future_dates(stream, floor, end):
                     out.append(nxt)
         return out
     months = CADENCE_MONTHS.get(stream["cadence"])
+    anchor = stream.get("anchor_day") or last.day  # declared card cycles carry their own
+    #        anchor ("last" -> 31); _add_months clamps it to short months
     for k in range(1, (end - last).days + 2):  # generous bound; the break below governs
-        nxt = (_add_months(last, months * k, last.day) if months
+        nxt = (_add_months(last, months * k, anchor) if months
                else last + timedelta(days=stream["step"] * k))
         if nxt > end:
             break
@@ -323,6 +463,7 @@ def build_forecast(days=DEFAULT_DAYS, today=None):
         balances[p["account"]] = balances.get(p["account"], 0.0) + p["amt"]
         asof[p["account"]] = max(asof.get(p["account"], date.min), p["date"])
     streams = recurring_streams(posts, today)
+    streams = declared_autopay_streams(streams, posts, asof, today)
     floors = {a: float(t) for a, t in rules().get("fixed_balances", {}).items()}
     flows_by_account = {}
     for s in streams:

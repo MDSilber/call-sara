@@ -116,6 +116,12 @@ entries to stdout and a summary to stderr — dedupe skips (hash-exact via
 continuity tag (VERIFIED / DISCREPANCY / UNVERIFIABLE: opening + credits −
 debits must equal the statement's closing balance).
 
+For **agent-interpreted documents** (PDFs/screenshots — anything without a
+machine importer), checkpoint the interpreted-but-unwritten rows to a
+gitignored scratch note (`inbox/` works) BEFORE writing the ledger — the
+dry-run equivalent for hand-read docs: interpretation survives an
+interruption and gets reviewed before it lands.
+
 1. Preview: `tools/run importers/ofx.py export.qfx` (or
    `importers/chase_csv.py activity.csv Liabilities:...`). Read the summary.
 2. Write: re-run the same command with `--write` — it appends to

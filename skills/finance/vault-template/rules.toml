@@ -32,6 +32,22 @@ shadow_currency = "USD.EQ"
 #                                   # instead of guessing from the median posting gap
 #                                   # (fast ~ card/bank feeds, monthly ~ statement pulls,
 #                                   # quarterly ~ slow custodians).
+#
+# Optional card-cycle keys for LIABILITY/CARD accounts — declared hints that
+# beat inference for THIS account only (leave unset to keep pure inference):
+# bill_day = 15                     # statement/autopay day of month, 1-31 or "last".
+#                                   # forecast.py projects the card's autopay ON this
+#                                   # day (declared date wins over the inferred one);
+#                                   # a brand-new card with zero autopay history
+#                                   # projects from its trailing statement-cycle
+#                                   # spend, labeled ~est.
+# statement_close = 18              # statement-close day, 1-31 or "last". coverage()
+#                                   # then expects one statement per cycle anchored
+#                                   # on this day instead of guessing a rhythm from
+#                                   # posting gaps (bill_day stands in when unset).
+# autopay_from = "Assets:US:Ally:Checking1234"  # the account the autopay drafts
+#                                   # from — forecast.py projects the matching
+#                                   # outflow there on the same declared days.
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------

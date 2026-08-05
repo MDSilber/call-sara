@@ -43,7 +43,7 @@ from importers.common import (DISCREPANCY, VERIFIED, append_to_ledger,  # noqa: 
                               existing_assertion_dates, existing_ids,
                               existing_index, hash_is_duplicate, import_hash,
                               is_duplicate, ofx_closing_balance, read_ofx,
-                              render_assertion, since_from_argv)
+                              render_assertion, routing_help, since_from_argv)
 
 FLAGS = {"--all", "--write", "--dry-run", "--allow-discrepancy"}
 VALUE_FLAGS = {"--since"}  # --since YYYY-MM-DD: ignore rows before this date
@@ -74,6 +74,7 @@ def main():
         if not account:
             print(f"; skipping account ending {acct_id[-4:]!r}: no [[accounts]] entry in "
                   f"rules.toml — add one (or pass the ledger account explicitly)", file=sys.stderr)
+            print(routing_help(), file=sys.stderr)
             continue
         idx = existing_index(account, set(ledger_hashes)) if dedupe else {}
         new_hashes, new_fitids = {}, set()

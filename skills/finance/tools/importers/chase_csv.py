@@ -40,7 +40,8 @@ from importers.common import (DISCREPANCY, VERIFIED, append_to_ledger,  # noqa: 
                               assertion_date, check_continuity_ledger,
                               check_continuity_rows, emit, escape, existing_ids,
                               existing_index, hash_is_duplicate, import_hash,
-                              is_duplicate, render_assertion, since_from_argv)
+                              is_duplicate, render_assertion, routing_help,
+                              since_from_argv)
 
 FLAGS = {"--all", "--write", "--dry-run", "--allow-discrepancy"}
 VALUE_FLAGS = {"--since"}  # --since YYYY-MM-DD: ignore rows before this date
@@ -98,7 +99,12 @@ def main():
     write = "--write" in argv and "--dry-run" not in argv
     allow = "--allow-discrepancy" in argv
     if len(args) != 2:
-        sys.exit(__doc__)
+        msg = __doc__
+        if len(args) == 1:  # CSV given but no ledger account — list the known options
+            msg += ("\nNo ledger account given. The CSV carries no ACCTID, so name "
+                    "one of the configured accounts (or add its [[accounts]] entry):\n"
+                    + routing_help())
+        sys.exit(msg)
     path, account = args
     rows, bad = parse_rows(path)
     # Continuity runs over FILE order (the order the bank wrote the balances);
