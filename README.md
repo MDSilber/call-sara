@@ -71,6 +71,14 @@ And the expected parts: monthly reviews, statement filing and
 categorization, instant ledger queries with as-of dates, a regenerable
 published assessment, life-event interviews.
 
+## The dashboard
+
+![The vault as a local web dashboard — synthetic demo household](docs/dashboard.png)
+
+`skills/finance/scripts/dashboard.sh` — every chart above is served from the
+plain-text ledger on your own disk, at 127.0.0.1. (Screenshot: the bundled
+demo household, not real data.)
+
 ## Demo
 A session against the bundled demo vault (`init_vault.sh --demo <dir>` —
 all numbers synthetic):

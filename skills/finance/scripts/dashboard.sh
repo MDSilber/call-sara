@@ -32,4 +32,5 @@ if [ ! -x "$FAVA" ]; then
 fi
 
 echo "✓ dashboard on http://127.0.0.1:$PORT  (local only — Ctrl-C to stop)"
+command -v open >/dev/null && ( sleep 1; open "http://127.0.0.1:$PORT" ) &
 exec "$FAVA" --host 127.0.0.1 --port "$PORT" "$LEDGER"
