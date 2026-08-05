@@ -1,0 +1,11 @@
+; --- prices (append to ledger/prices.beancount) ---
+2026-06-30 price TWC        100.0000 USD
+2026-06-30 price TIF        40.0000 USD
+
+; --- holdings snapshot (file to facts/accounts/<acct>/index.md) ---
+
+## ...8642  ->  Assets:US:TestBroker:Brokerage8642   (as of 2026-06-30)
+- TWC — 10.500 sh @ 100.00 = $1,050   (Test Widget Corp)
+- TIF — 25.000 sh @ 40.00 = $1,000   (Test Index Fund)
+- cash (available) = $250
+- **total ≈ $2,300**

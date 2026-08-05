@@ -1,0 +1,230 @@
+; TEST PERSONA — entirely synthetic. "Maya & Sam" (equity-comp couple, pre-IPO
+; employer stock) exist only to exercise the advisory layer. Planted findings
+; are listed in test-scenarios/equity-comp/expected-findings.md.
+
+; --- Accounts -----------------------------------------------------------
+2026-01-01 open Assets:US:Chase:Checking7710        USD   ; joint flow
+2026-01-01 open Assets:US:Marcus:Savings8802        USD   ; HYSA (idle-cash plant)
+2026-01-01 open Assets:US:GoldenState:Checking2201  USD   ; Sam's old credit union
+2026-01-01 open Assets:US:Schwab:Brokerage6620      VTI,USD  ; joint taxable
+2026-01-01 open Assets:Equity:NimbusRobotics        NIMBUS   ; Maya's vested RSUs (private)
+2026-01-01 open Liabilities:US:Chase:Card4455       USD
+2026-01-01 open Income:US:Salary:NimbusRobotics     USD   ; Maya
+2026-01-01 open Income:US:Salary:CoastalDesign      USD   ; Sam
+2026-01-01 open Income:US:EquityComp:NimbusRobotics USD.EQ
+2026-01-01 open Income:US:Dividends                 USD
+
+; --- Prices (as of the last statement) ----------------------------------
+2026-07-31 price VTI     295.00 USD
+2026-07-31 price NIMBUS   35.00 USD.EQ   ; 409A, Feb 2026 valuation
+
+; --- Opening balances ---------------------------------------------------
+2026-02-01 * "Opening balances — dormant/slow accounts"
+  Assets:US:GoldenState:Checking2201     1890.00 USD
+  Assets:US:Schwab:Brokerage6620             220 VTI {280.00 USD}
+  Equity:Opening-Balances
+
+2026-04-01 * "Opening balances — core accounts (as of first imported statements)"
+  Assets:US:Chase:Checking7710          44000.00 USD
+  Assets:US:Marcus:Savings8802         262000.00 USD
+  Liabilities:US:Chase:Card4455         -1800.00 USD
+  Assets:Equity:NimbusRobotics             12000 NIMBUS {35.00 USD.EQ}
+  Equity:Opening-Balances
+
+; --- Golden State CU: old account, monthly service fee, feed stops in May
+2026-02-10 * "Golden State CU" "Monthly service fee"
+  Assets:US:GoldenState:Checking2201      -12.95 USD
+  Expenses:Fees                            12.95 USD
+
+2026-03-10 * "Golden State CU" "Monthly service fee"
+  Assets:US:GoldenState:Checking2201      -12.95 USD
+  Expenses:Fees                            12.95 USD
+
+2026-04-10 * "Golden State CU" "Monthly service fee"
+  Assets:US:GoldenState:Checking2201      -12.95 USD
+  Expenses:Fees                            12.95 USD
+
+2026-05-10 * "Golden State CU" "Monthly service fee"
+  Assets:US:GoldenState:Checking2201      -12.95 USD
+  Expenses:Fees                            12.95 USD
+
+; --- Schwab: quarterly dividends ----------------------------------------
+2026-04-01 * "Schwab" "VTI dividend"
+  Assets:US:Schwab:Brokerage6620          142.30 USD
+  Income:US:Dividends                    -142.30 USD
+
+2026-07-01 * "Schwab" "VTI dividend"
+  Assets:US:Schwab:Brokerage6620          151.80 USD
+  Income:US:Dividends                    -151.80 USD
+
+; --- April ---------------------------------------------------------------
+2026-04-01 * "Nimbus Robotics" "Payroll — Maya (net)"
+  Assets:US:Chase:Checking7710          13400.00 USD
+  Income:US:Salary:NimbusRobotics      -13400.00 USD
+
+2026-04-01 * "Oakview Flats" "Rent"
+  Assets:US:Chase:Checking7710          -4650.00 USD
+  Expenses:Housing                       4650.00 USD
+
+2026-04-05 * "Coastal Design Co" "Payroll — Sam (net)"
+  Assets:US:Chase:Checking7710           6100.00 USD
+  Income:US:Salary:CoastalDesign        -6100.00 USD
+
+2026-04-07 * "PG&E" "Electric + gas"
+  Assets:US:Chase:Checking7710           -176.40 USD
+  Expenses:Utilities                      176.40 USD
+
+2026-04-09 * "Netflix" ""
+  Liabilities:US:Chase:Card4455           -22.99 USD
+  Expenses:Entertainment                   22.99 USD
+
+2026-04-12 * "Whole Foods Market" ""
+  Liabilities:US:Chase:Card4455          -523.40 USD
+  Expenses:Food:Groceries                 523.40 USD
+
+2026-04-15 * "Peloton" "App membership"
+  Liabilities:US:Chase:Card4455           -44.00 USD
+  Expenses:Health                          44.00 USD
+
+2026-04-16 * "Marcus" "Sweep to savings"
+  Assets:US:Chase:Checking7710          -8000.00 USD
+  Assets:US:Marcus:Savings8802           8000.00 USD
+
+2026-04-20 * "Chase" "Card autopay — statement balance"
+  Assets:US:Chase:Checking7710          -1800.00 USD
+  Liabilities:US:Chase:Card4455          1800.00 USD
+
+2026-04-25 * "Marcus" "Interest"
+  Assets:US:Marcus:Savings8802            941.10 USD
+  Income:US:Interest                     -941.10 USD
+
+; --- May -----------------------------------------------------------------
+2026-05-01 * "Nimbus Robotics" "Payroll — Maya (net)"
+  Assets:US:Chase:Checking7710          13400.00 USD
+  Income:US:Salary:NimbusRobotics      -13400.00 USD
+
+2026-05-01 * "Oakview Flats" "Rent"
+  Assets:US:Chase:Checking7710          -4650.00 USD
+  Expenses:Housing                       4650.00 USD
+
+2026-05-05 * "Coastal Design Co" "Payroll — Sam (net)"
+  Assets:US:Chase:Checking7710           6100.00 USD
+  Income:US:Salary:CoastalDesign        -6100.00 USD
+
+2026-05-07 * "PG&E" "Electric + gas"
+  Assets:US:Chase:Checking7710           -158.20 USD
+  Expenses:Utilities                      158.20 USD
+
+2026-05-10 balance Assets:US:Chase:Checking7710   63565.40 USD
+
+2026-05-09 * "Netflix" ""
+  Liabilities:US:Chase:Card4455           -22.99 USD
+  Expenses:Entertainment                   22.99 USD
+
+2026-05-12 * "Whole Foods Market" ""
+  Liabilities:US:Chase:Card4455          -498.12 USD
+  Expenses:Food:Groceries                 498.12 USD
+
+2026-05-15 * "Peloton" "App membership"
+  Liabilities:US:Chase:Card4455           -44.00 USD
+  Expenses:Health                          44.00 USD
+
+2026-05-16 * "Marcus" "Sweep to savings"
+  Assets:US:Chase:Checking7710          -8000.00 USD
+  Assets:US:Marcus:Savings8802           8000.00 USD
+
+2026-05-20 * "Chase" "Card autopay — statement balance"
+  Assets:US:Chase:Checking7710           -590.39 USD
+  Liabilities:US:Chase:Card4455           590.39 USD
+
+2026-05-25 * "Marcus" "Interest"
+  Assets:US:Marcus:Savings8802            972.30 USD
+  Income:US:Interest                     -972.30 USD
+
+; --- June ----------------------------------------------------------------
+2026-06-01 * "Nimbus Robotics" "Payroll — Maya (net)"
+  Assets:US:Chase:Checking7710          13400.00 USD
+  Income:US:Salary:NimbusRobotics      -13400.00 USD
+
+2026-06-01 * "Oakview Flats" "Rent"
+  Assets:US:Chase:Checking7710          -4650.00 USD
+  Expenses:Housing                       4650.00 USD
+
+2026-06-05 * "Coastal Design Co" "Payroll — Sam (net)"
+  Assets:US:Chase:Checking7710           6100.00 USD
+  Income:US:Salary:CoastalDesign        -6100.00 USD
+
+2026-06-07 * "PG&E" "Electric + gas"
+  Assets:US:Chase:Checking7710           -149.80 USD
+  Expenses:Utilities                      149.80 USD
+
+2026-06-09 * "Netflix" ""
+  Liabilities:US:Chase:Card4455           -22.99 USD
+  Expenses:Entertainment                   22.99 USD
+
+2026-06-12 * "Whole Foods Market" ""
+  Liabilities:US:Chase:Card4455          -541.30 USD
+  Expenses:Food:Groceries                 541.30 USD
+
+2026-06-15 * "Nimbus Robotics" "Q2 RSU vest — 1,500 sh net, sell-to-cover at flat 22% federal supplemental withholding"
+  Assets:Equity:NimbusRobotics              1500 NIMBUS {35.00 USD.EQ}
+  Income:US:EquityComp:NimbusRobotics  -52500.00 USD.EQ
+
+2026-06-15 * "Peloton" "App membership"
+  Liabilities:US:Chase:Card4455           -44.00 USD
+  Expenses:Health                          44.00 USD
+
+2026-06-16 * "Marcus" "Sweep to savings"
+  Assets:US:Chase:Checking7710          -8000.00 USD
+  Assets:US:Marcus:Savings8802           8000.00 USD
+
+2026-06-20 * "Chase" "Card autopay — statement balance"
+  Assets:US:Chase:Checking7710           -565.11 USD
+  Liabilities:US:Chase:Card4455           565.11 USD
+
+2026-06-25 * "Marcus" "Interest"
+  Assets:US:Marcus:Savings8802           1004.15 USD
+  Income:US:Interest                    -1004.15 USD
+
+; --- July ----------------------------------------------------------------
+2026-07-01 * "Nimbus Robotics" "Payroll — Maya (net)"
+  Assets:US:Chase:Checking7710          13400.00 USD
+  Income:US:Salary:NimbusRobotics      -13400.00 USD
+
+2026-07-01 * "Oakview Flats" "Rent"
+  Assets:US:Chase:Checking7710          -4650.00 USD
+  Expenses:Housing                       4650.00 USD
+
+2026-07-05 * "Coastal Design Co" "Payroll — Sam (net)"
+  Assets:US:Chase:Checking7710           6100.00 USD
+  Income:US:Salary:CoastalDesign        -6100.00 USD
+
+2026-07-07 * "PG&E" "Electric + gas"
+  Assets:US:Chase:Checking7710           -195.30 USD
+  Expenses:Utilities                      195.30 USD
+
+2026-07-09 * "Netflix" ""
+  Liabilities:US:Chase:Card4455           -22.99 USD
+  Expenses:Entertainment                   22.99 USD
+
+2026-07-12 * "Whole Foods Market" ""
+  Liabilities:US:Chase:Card4455          -507.88 USD
+  Expenses:Food:Groceries                 507.88 USD
+
+2026-07-15 * "Peloton" "App membership"
+  Liabilities:US:Chase:Card4455           -44.00 USD
+  Expenses:Health                          44.00 USD
+
+2026-07-16 * "Marcus" "Sweep to savings"
+  Assets:US:Chase:Checking7710          -8000.00 USD
+  Assets:US:Marcus:Savings8802           8000.00 USD
+
+2026-07-20 * "Chase" "Card autopay — statement balance"
+  Assets:US:Chase:Checking7710           -608.29 USD
+  Liabilities:US:Chase:Card4455           608.29 USD
+
+2026-07-21 balance Liabilities:US:Chase:Card4455   -574.87 USD
+
+2026-07-25 * "Marcus" "Interest"
+  Assets:US:Marcus:Savings8802           1036.80 USD
+  Income:US:Interest                    -1036.80 USD

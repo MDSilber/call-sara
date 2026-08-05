@@ -1,0 +1,148 @@
+# rules.toml — this household's categorization + routing brain (DEMO data).
+# Same shape as a real vault's: [[accounts]] route statements by last4,
+# [[payee_rules]] are ORDERED, first match wins. Grow it every time a
+# category gets corrected, then run  tools/run recategorize.py --write.
+
+[household]
+illiquid_commodity_prefixes = []          # the Demo household has no private paper
+shadow_currency = "USD.EQ"
+
+# --- Account routing (last4 -> ledger account) -----------------------------
+[[accounts]]
+last4 = "4321"
+ledger_account = "Assets:US:Chase:Checking4321"
+institution = "Chase"
+owner = "joint"
+
+[[accounts]]
+last4 = "9876"
+ledger_account = "Assets:US:Ally:Savings9876"
+institution = "Ally"
+owner = "joint"
+
+[[accounts]]
+last4 = "5678"
+ledger_account = "Liabilities:US:Chase:Card5678"
+institution = "Chase"
+owner = "alex"
+
+[[accounts]]
+last4 = "1122"
+ledger_account = "Liabilities:US:CapitalOne:Card1122"
+institution = "Capital One"
+owner = "jordan"
+
+# --- Payee rules (ordered, first match wins) -------------------------------
+# Own-account movements are transfers, never spending or income.
+[[payee_rules]]
+ofx_type = "XFER"
+account = "Assets:US:Transfers"
+note = "own-account transfer"
+
+[[payee_rules]]
+match = "TRANSFER|PAYMENT THANK YOU|AUTOMATIC PAYMENT|PAYMENT TO CHASE|CHASE CREDIT CRD|CAPITAL ONE (AUTOPAY|PYMT)"
+account = "Assets:US:Transfers"
+note = "card autopay / internal transfers"
+
+[[payee_rules]]
+ofx_type = "INT"
+account = "Income:US:Interest"
+note = "bank interest"
+
+[[payee_rules]]
+ofx_type = "ATM"
+account = "Expenses:Cash"
+note = "cash withdrawals"
+
+[[payee_rules]]
+match = "BRIGHTPATH"
+account = "Income:US:Salary:BrightPathLabs"
+note = "Alex payroll"
+
+[[payee_rules]]
+match = "CEDAR GROVE"
+account = "Income:US:Salary:CedarGroveSD"
+note = "Jordan payroll"
+
+[[payee_rules]]
+match = "OAKWOOD"
+account = "Expenses:Housing"
+note = "rent"
+
+[[payee_rules]]
+match = "LITTLE SPROUTS"
+account = "Expenses:Childcare"
+note = "Riley daycare"
+
+[[payee_rules]]
+match = "CITY POWER|COMCAST|T-MOBILE"
+account = "Expenses:Utilities"
+note = "electric / internet / phones"
+
+[[payee_rules]]
+match = "NETFLIX|HULU|MAX STREAM|SPOTIFY|DISNEY"
+account = "Expenses:Entertainment"
+note = "streaming & music subscriptions"
+
+[[payee_rules]]
+match = "FITLIFE"
+account = "Expenses:Health"
+note = "gym membership"
+
+[[payee_rules]]
+match = "GEICO"
+account = "Expenses:Insurance"
+note = "auto insurance"
+
+[[payee_rules]]
+match = "TRADER JOE|SAFEWAY|WHOLE FOODS"
+account = "Expenses:Food:Groceries"
+note = "groceries"
+
+[[payee_rules]]
+match = "CHIPOTLE|SUSHI ORA|PIZZA MY HEART|BLUE BOTTLE|DOORDASH"
+account = "Expenses:Food:Dining"
+note = "restaurants & coffee"
+
+[[payee_rules]]
+match = "SHELL|CHEVRON|76 "
+account = "Expenses:Transport"
+note = "gas"
+
+[[payee_rules]]
+match = "AMAZON|TARGET|REI"
+account = "Expenses:Shopping"
+note = "retail"
+
+[[payee_rules]]
+match = "UNITED AIR|DELTA AIR|AIRBNB"
+account = "Expenses:Travel"
+note = "flights & stays"
+
+[[payee_rules]]
+match = "IKEA|HOME DEPOT"
+account = "Expenses:Home"
+note = "furniture & house stuff"
+
+# --- Chase CSV category column -> account (merchant overrides above win) ---
+[chase_categories]
+"Food & Drink" = "Expenses:Food:Dining"
+"Groceries" = "Expenses:Food:Groceries"
+"Shopping" = "Expenses:Shopping"
+"Travel" = "Expenses:Travel"
+"Gas" = "Expenses:Transport"
+"Health & Wellness" = "Expenses:Health"
+"Entertainment" = "Expenses:Entertainment"
+"Personal" = "Expenses:Personal"
+"Gifts & Donations" = "Expenses:Gifts"
+"Home" = "Expenses:Home"
+"Bills & Utilities" = "Expenses:Utilities"
+"Education" = "Expenses:Education"
+"Automotive" = "Expenses:Transport"
+"Professional Services" = "Expenses:Services"
+"Fees & Adjustments" = "Expenses:Fees"
+
+# --- Anomaly-check tuning --------------------------------------------------
+[anomaly]
+ignore_payee_regex = "^(ATM |WITHDRAWAL|ZELLE|VENMO|CHECK )"
+ignore_account_regex = "Childcare|Cash|Uncategorized|Investment-Loss|Taxes|Insurance"

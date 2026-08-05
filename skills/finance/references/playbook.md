@@ -3,27 +3,37 @@
 Distilled from the CFP Board domain map, fpPathfinder's checklist library
 (Kitces), the pre-IPO / concentrated-equity literature, state estate-tax law,
 and behavioral-finance practice. **State-specific rules are marked [state:XX]
-— apply the ones matching the household profile's state; skip the rest.** Consult on every **review**, and whenever a
-new fact enters the vault. The rules below are TRIGGERS: walk the data
+— apply the ones matching the household profile's state; skip the rest.** Consult on every **review** — new facts
+filed between reviews get walked against Part 1 at the next review. The
+rules below are TRIGGERS: walk the data
 against them; anything that fires becomes a finding with a dollar figure.
+Most households fire only a handful — the size of this file does not mean
+every household has pre-IPO equity and an estate cliff.
 
 Precision beats coverage. A rule that fires wrong costs trust. When
-unsure, say what would confirm it and go check.
+unsure, say what would confirm it and go check. Dollar limits and
+thresholds below (contribution limits, exemption amounts, phase-outs) are
+year-stamped — verify the current year's figures before relying on them.
 
 ## Contents
-- **Part 1 — Pattern-spotting rules** (IF data → FLAG): cash & flows · tax cliff map · retirement accounts · concentration & liquidity events · insurance & protection · estate ([state:XX] gated) · employer benefits · behavioral
+- **Part 1 — Pattern-spotting rules** (IF data → FLAG): cash & flows · routing the next dollar · tax cliff map · retirement accounts · concentration & liquidity events · insurance & protection · estate ([state:XX] gated) · employer benefits · behavioral
 - **Part 2 — The service calendar** (what to raise, month by month)
-- **Part 3 — Life-event playbooks** (new child · IPO/liquidity · sudden wealth · job change · death of a spouse · moving states)
+- **Part 3 — Life-event playbooks** (new child · IPO/liquidity · major purchase · sudden wealth · buying a home · job change · death of a spouse · moving states)
 - **Part 4 — Team, fees, and what to refuse**
 - **Part 5 — Behavioral craft** (money scripts; advise to the client's type)
 
 Two rules earned the hard way, before any of the below:
 - **Load the complete picture before prescribing** (statements, paystubs,
   plan docs, the return). A generic high-earner playbook misfires on a
-  client who's already built better systems than it prescribes.
+  client who's already built better systems than it prescribes — and every
+  wrong-because-uninformed recommendation costs credibility that the right
+  ones need.
 - **Price every recommendation against the client's actual holdings**
   before stating a dollar value. "~$5K/yr" that turns out to be a wash at
-  today's yields is worse than saying nothing.
+  today's yields is worse than saying nothing. And when real household
+  data corrects an assumption (e.g. the actual combined marginal rate vs.
+  the estimate used), log it under corrections-to-assumptions in the vault
+  so all future math uses the corrected figure.
 
 ---
 
@@ -33,6 +43,16 @@ Two rules earned the hard way, before any of the below:
 - IF cash > cushion + 12mo known outlays with no earmark → idle-drag; put a
   number on the annual cost. (But see Part 5: for a vigilant client a fat buffer
   can be a legitimate purchase of sleep — flag, don't nag.)
+- Sizing the cushion: an emergency month = fixed + bare-minimum variable
+  spend — typically 65–80% of a normal month, NOT the ledger average.
+  Base months: dual stable W-2 3 · single-earner with kids 6 ·
+  variable/1099 income 6–9 · business owner 9–12 · within 5 years of
+  retirement 12+ (sequence risk). Modifiers: +1–2 no individual
+  disability coverage · +1 HDHP with >$5K OOP max · +2–3 expecting a
+  child or a known income gap · −1 a standing HELOC (a backup, never the
+  plan). Present floor / target / upper and let the thesis pick — and
+  the Part 5 caveat above applies: extra buffer bought for sleep is a
+  purchase, not an error.
 - IF cash > $250K per institution/ownership category → FDIC concentration;
   ladder or hold Treasuries/govt MMF. Post-liquidity this fires immediately.
 - IF a known outlay < 5 years out (taxes on a vest, a purchase) → that
@@ -43,6 +63,13 @@ Two rules earned the hard way, before any of the below:
   problem, not a spending problem; fix account depth/routing.
 - IF a large lump-sum outflow recurs (school Zelle batches, quarterly IRS)
   → never average it into a fake monthly; model it as a lump.
+
+### Routing the next dollar (raise, vest, windfall, surplus)
+Starter cushion → employer match (a 100% return) → high-interest debt →
+HSA → IRA / 401(k) max → mega-backdoor → 529 → taxable. Debt-vs-invest
+tiebreak: guaranteed payoff wins above roughly the 10-yr Treasury + 3%;
+below that, investing in parallel is fine. Don't stop at a step — stop
+when the money runs out. Gate every step on the household's thesis.
 
 ### Tax — the cliff map (check projected AGI/MAGI against every line yearly)
 - IF MAGI > $250K MFJ → 3.8% NIIT on all investment income (permanently
@@ -89,6 +116,11 @@ Two rules earned the hard way, before any of the below:
   excess-contribution error.
 - IF ESPP with discount/lookback exists and unused → guaranteed return
   left on the table.
+- IF medical costs are paid FROM the HSA → switch: pay out of pocket,
+  invest the HSA, file every receipt in the vault
+  (documents/medical-receipts/). Reimbursement has no time limit, so
+  decades of tax-free growth ride on a shoebox of receipts — no receipt,
+  no reimbursement; the vault is the shoebox.
 
 ### Concentration & liquidity events
 - IF any position > 10–15% of net worth → concentration; but IF it is
@@ -182,7 +214,13 @@ Two rules earned the hard way, before any of the below:
 
 Monthly review covers: cash-flow reconciliation, concentration %,
 withholding-gap accumulation, drift vs. IPS, life-event check, and any
-NEW fact walked against Part 1. Beyond that:
+NEW fact walked against Part 1. Alongside those judgment items runs the
+mechanical plumbing audit: logins still work (they feed the fetch
+pipeline), dividend reinvestment on, autopay = statement balance,
+beneficiaries current on any account that changed, credit freezes
+intact, no account gone silent (a statement that stopped arriving = a
+failed feed or a closed account). Its output is one line unless
+something fired. Beyond that:
 
 - **Jan** — set the year's automations; new limits; W-4/withholding reset
   (esp. vs. the RSU calendar); Q4 estimate due Jan 15; net-worth statement.
@@ -191,7 +229,16 @@ NEW fact walked against Part 1. Beyond that:
 - **Mar** — Q1 drift check; annual credit-report pull + freeze check.
 - **Apr** — filing; Q1 estimate; spring review: projections, cash flow.
 - **May** — line-by-line review of the FILED return against Part 1's tax
-  rules; reconcile Sched B/D to accounts; log carryforwards.
+  rules; reconcile Sched B/D to accounts; log carryforwards. Sched D/8949
+  red flags: zero-basis rows (the tool lost the acquisition — chase every
+  one), big short-term losses beside big long-term gains (basis on the
+  wrong lots), proceeds ≠ broker records (dupes or missing trades),
+  negative basis (chain break). 1099-B on equity comp and 1099-DA on
+  crypto are routinely WRONG — verify against grant records / own lots
+  before trusting either. Prior-year errors: refund claims die 3 years
+  from filing; price an amendment as tax recovered at marginal rates
+  minus the CPA fee (~$500–1,500) — recommend only when the net is
+  meaningfully positive (>$1K) or the error is exposure the other way.
 - **Jun** — Q2 estimate; insurance review in EVEN years (umbrella limits,
   disability adequacy, in-force illustrations).
 - **Jul** — estate review in ODD years (beneficiary audit, doc currency,
@@ -205,6 +252,9 @@ NEW fact walked against Part 1. Beyond that:
   annual-exclusion gifts; equity-comp year-end withholding true-up.
 - **Dec** — execute every Dec-31 deadline: harvesting, conversions,
   charitable, gifts, FSA spend-down, backdoor Roth, 401(k) max check.
+  And the non-tax sweep, first week of December: card calendar-year
+  credits expire Dec 31 (burn them), points-expiry check, expiring
+  transfer bonuses (mechanics in `savings-hunt.md`).
 
 Quarterly estimated-tax dates: Apr 15, Jun 15, Sep 15, Jan 15 (federal +
 state; some cities/districts add their own — [state:NY] NYC + MCTMT).
@@ -230,9 +280,32 @@ offset, appreciated shares to DAF, umbrella to $5–10M+, estate docs
 upgraded, state-estate-tax planning becomes urgent, fund the security
 bucket FIRST. Have written down in advance what the money is FOR.
 
+**Major purchase (>$1K, discretionary)** — run the pre-mortem before
+the money moves: price the 12-month-later scenario (still glad? resale
+value? recurring costs it drags in — insurance, storage, subscriptions);
+opportunity-cost it against the thesis's stated goals, not a generic
+index; and check the household's OWN pattern in the ledger — prior
+same-category purchases that went unused within months are the strongest
+predictor. Deliver the verdict in one of four registers — go for it ·
+yes, with the trade-off · not right now · hard no — plus the why in two
+lines, then let the client decide. A 24-hour wait on anything the
+pre-mortem flags costs nothing. And the floor comes first: discretionary
+spend under 0.01% of net worth (net worth ÷ 10,000 — roughly one day of
+conservative portfolio yield) is auto-approved, never advisor business;
+for a vigilant client, name that number once as permission-to-spend
+("anything under $X, stop asking").
+
 **Sudden wealth (generalized)** — freeze irreversible decisions 6–12
 months; park across FDIC/SIPC limits or in Treasuries; expect
 solicitations; build the decision filter.
+
+**Buying a home** (starter block — it expands when the event fires) —
+quote 3+ lenders inside one 45-day window (the pulls count as ONE credit
+inquiry) and make them bid with each other's loan estimates; ask each
+about relationship pricing for moved assets; commission is negotiable
+(e.g. propose a lower total with a buyer credit where dual agency is
+legal); keep DTI under ~36%; negotiate earnest-money timing to keep
+due-diligence room.
 
 **Job change** — old 401(k) disposition; unvested equity forfeited (ISOs
 must be exercised within 3 months of termination); benefits gap; W-4.
@@ -269,6 +342,33 @@ Network, Advice-Only Network. This system IS the coordinator layer; it
 escalates to the human CPA / attorney / broker for judgment and
 signatures.
 
+**The hand-off packet.** Before any CPA / attorney / broker engagement,
+prepare a one-page packet so the professional reacts to a position instead
+of starting cold:
+- Facts & figures with their sources — grants, balances, withholding YTD,
+  carryovers, and prior-year issues (an underpayment penalty, an AMT year).
+- A numbered **"questions I want to leave with answers to"** list, each
+  question carrying the advisor's own rough model of the answer — the pro
+  corrects a number faster than they build one.
+- The attachments list (what's enclosed, what they already have).
+- An agenda ordered time-sensitive-first, ending with "what I'd love to
+  leave with."
+Afterwards, log everything the professional asked for as a status-marked
+checklist in the vault; their open requests are the household's to-do
+list until answered.
+
+**The owner-executes script.** Some moves only the owner can do —
+rollovers, retention calls, claims that need an SSN. The deliverable is a
+literal call script, not advice: a numbers-to-have-in-front-of-you box
+(phone numbers, plan/account numbers, the balance), verbatim opening
+lines, blanks to write down each answer, and a **GOLDEN RULE box** for
+the one expensive mistake. Canonical example: a direct-rollover check is
+payable to the receiving custodian FBO the owner, NEVER to the owner
+personally (that triggers 20% withholding and a 60-day redeposit clock) —
+and never into a traditional IRA when a backdoor Roth is in play. End
+every script with "tell the advisor when it lands," so the vault gets
+updated and the old account marked closed.
+
 **Refuse on the client's behalf:** 1% AUM at eight figures; commissioned
 insurance dressed as planning (whole life / annuities pitched to a young
 family that needs term); brokerage "advisors" without a fiduciary duty;
@@ -288,7 +388,9 @@ household's THESIS.md — it inverts what "good advice" means:
   mode is UNDER-LIVING the money, not blowing it. The task inverts: guard
   against excess fear and paralysis; permission to spend/enjoy is a
   legitimate deliverable; a bigger-than-textbook cash buffer that buys
-  sleep is a correct recommendation, not a compromise.
+  sleep is a correct recommendation, not a compromise. Part 3's
+  0.01%-of-net-worth floor is the ready-made tool — name the
+  auto-approved number once.
 - A **status/worship** client needs guardrails, automation that saves
   before they see it, and framing around what the money is FOR.
 - Ask the family money history — one open question ("what did you learn
@@ -324,9 +426,3 @@ household's THESIS.md — it inverts what "good advice" means:
   never pitch upside; frame as security/regret and the drawdown test.
 - **Under-promise, show margin.** Vigilant clients trust conservative
   assumptions and distrust rosy ones.
-- **Facts first, then opinions.** Load the COMPLETE picture (statements,
-  paystubs, plan documents, the return) before recommending anything.
-  Half of a generic high-earner playbook does not apply to a client who
-  has quietly built better systems than the playbook prescribes. Every
-  wrong-because-uninformed recommendation costs credibility that the
-  right ones need.

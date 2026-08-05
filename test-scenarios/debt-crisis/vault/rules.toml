@@ -1,0 +1,87 @@
+# rules.toml — Dre (TEST PERSONA, synthetic). Same shape as a real vault's.
+
+[household]
+illiquid_commodity_prefixes = []
+shadow_currency = "USD.EQ"
+
+# --- Account routing (last4 -> ledger account) -----------------------------
+[[accounts]]
+last4 = "3308"
+ledger_account = "Assets:US:WellsFargo:Checking3308"
+institution = "Wells Fargo"
+owner = "dre"
+cadence = "fast"
+
+[[accounts]]
+last4 = "9012"
+ledger_account = "Liabilities:US:Apex:Visa9012"
+institution = "Apex Card Services"
+owner = "dre"
+cadence = "fast"
+
+[[accounts]]
+last4 = "4477"
+ledger_account = "Liabilities:US:Meridian:Store4477"
+institution = "Meridian"
+owner = "dre"
+
+# --- Payee rules (ordered, first match wins) -------------------------------
+[[payee_rules]]
+ofx_type = "XFER"
+account = "Assets:US:Transfers"
+note = "own-account transfer"
+
+[[payee_rules]]
+match = "CARD PAYMENT|PAYMENT THANK YOU|AUTOPAY"
+account = "Assets:US:Transfers"
+note = "card payments are transfers, not spending"
+
+[[payee_rules]]
+ofx_type = "INT"
+account = "Income:US:Interest"
+note = "bank interest"
+
+[[payee_rules]]
+match = "HARBOR GRILL"
+account = "Income:US:Wages:HarborGrill"
+note = "payroll"
+
+[[payee_rules]]
+match = "SUNSET COURT"
+account = "Expenses:Housing"
+note = "rent"
+
+[[payee_rules]]
+match = "METRO BY T-MOBILE"
+account = "Expenses:Utilities"
+note = "phone"
+
+[[payee_rules]]
+match = "FOODMAXX"
+account = "Expenses:Food:Groceries"
+note = "groceries"
+
+[[payee_rules]]
+match = "NETFLIX|SPOTIFY"
+account = "Expenses:Entertainment"
+note = "streaming"
+
+[[payee_rules]]
+match = "TAQUERIA|DOORDASH"
+account = "Expenses:Food:Dining"
+note = "eating out"
+
+[[payee_rules]]
+match = "PURCHASE INTEREST CHARGE"
+account = "Expenses:Interest"
+note = "card interest — the fire we are putting out"
+
+[[payee_rules]]
+match = "MERIDIAN HOME STORE"
+account = "Expenses:Home"
+note = "store card purchases"
+
+# --- Anomaly-check tuning --------------------------------------------------
+[anomaly]
+ignore_payee_regex = "^(ATM |WITHDRAWAL|ZELLE|VENMO|CHECK )"
+ignore_account_regex = "Cash|Uncategorized|Taxes|Insurance"

@@ -1,56 +1,121 @@
-# finance-system — a personal CFO in a git repo
+# finance-system
 
-The **method** for running a household's finances with Claude: a skill that
-(a) builds a private financial **vault** from scratch — ledger, facts, an
-investment thesis, categorization rules — by interviewing you and pulling
-data from every bank / broker / payroll site you use, and (b) acts as your
-ongoing financial advisor over that vault: monthly reviews, decision advice,
-instant answers, and a regenerable household assessment.
+A financial-advisor practice grounded in **your real ledger** — a Claude
+Code skill that builds a private beancount vault of your household's money
+(every transaction, the facts, an agreed investment thesis) and then
+advises over it, session after session (decision support, not a licensed
+advisor — details below). Not a chatbot with amnesia.
 
-Everything about *you* lives in your vault (a separate **private** repo,
-default `~/Finance`). This repo holds only the method and the code —
-share it freely; **never share your vault.**
-
-## Install
+## Quickstart
 ```bash
 git clone <this-repo> ~/code/finance-system
 cd ~/code/finance-system && ./install.sh   # symlinks the skill into ~/.claude/skills/
-brew install gitleaks                          # secret scanner — the vault refuses to commit without it
-brew install poppler                           # pdftotext, used to identify downloaded statements
 ```
-Optional: `brew install git-filter-repo` (history surgery if a secret ever
-slips in), and the **Claude in Chrome** extension so the skill can drive
-your logged-in financial sites (you type passwords; it only reads and
-downloads).
+Start a **new** Claude Code session (skills register at session start)
+and say **"set up my finances."** Onboarding interviews you, pulls your
+data, writes your thesis, and ends with a first assessment — ~90 minutes.
 
-## First run
-Open Claude Code anywhere and say **"set up my finances."** With no vault
-present the skill runs onboarding: scaffolds `~/Finance` (or
-`$FINANCE_VAULT`) from `skills/finance/vault-template/`, inventories your
-institutions, interviews you to write your investment thesis, walks you
-through exporting data from each site, and ends with a first published
-assessment. ~90 minutes.
+No real data yet? `skills/finance/scripts/init_vault.sh --demo <dir>`
+seeds a synthetic household to poke at.
+`skills/finance/scripts/doctor.sh` health-checks an install. **macOS only** for now (assumes `brew`, `screencapture`,
+`~/Downloads`); requires Python **3.11+**, plus `brew install gitleaks
+poppler` (secret scanner + `pdftotext`). Optional: `git-filter-repo` for
+history surgery, and the **Claude in Chrome** extension for
+browser-assisted fetching (you type passwords; it only reads and
+downloads). Heads up: driving a logged-in bank session may conflict with
+your institution's terms of use and can trip bot detection — your call,
+your account.
 
-## Daily use
-- "let's do the monthly" — 15-minute review, one open item.
-- "here's my new statement" / drop a PDF — filed, categorized, reconciled.
-- "what did we spend on X?" — answered from the ledger, with the as-of date.
-- "should I …" — advice grounded in your written thesis.
-- "update the report" — regenerate the assessment artifact.
+## Where your data goes
+Everything about *you* lives in your vault — plain text on your own disk
+(default `~/Finance`; set `FINANCE_VAULT=/path` in your shell profile to
+relocate it) plus whatever **private** git remote you give it. This repo
+holds only the method and the code; share it freely, never share your
+vault. Beyond your disk and your remote, exactly four things leave your
+machine:
+- Vault contents the agent reads during a session enter Claude's model
+  context, like anything you'd paste into a chat.
+- Pushes go to your private remote, if you configure one.
+- Assessments published as claude.ai artifacts are private-by-default
+  pages under your account.
+- With the Chrome extension, Claude reads the pages of financial sites
+  you're logged into.
+
+Sensitive documents never enter git, account numbers are last-4 only, and
+a fail-closed `gitleaks` pre-commit scanner enforces it — in the vault
+and in this repo. The skill never needs a password, SSN, or full account
+number typed into chat; last-4 identifies everything. If any of the above
+is out of bounds for you, don't use this.
+
+## Who this is for
+You're comfortable in a terminal, you want your financial life local-first
+and inspectable, and you're not willing to upload your finances to a SaaS.
+You'd rather own a plain-text ledger than trust a dashboard.
+
+## What it does
+The parts you won't find elsewhere:
+- **Thesis-grounded advice** — decisions are answered from a written
+  investment thesis you agreed to, not improvised per session.
+- **Savings hunts** — mines the ledger for waste, bad rates, unclaimed
+  money; findings come with $/yr and the exact fix.
+- **Browser statement fetching** — drives your logged-in bank/broker
+  sites to pull statements; you handle passwords and anything that moves
+  money.
+- **Sara** — an advisor voice that opens with the number, notices what
+  you didn't ask about, and never scolds.
+
+And the expected parts: monthly reviews, statement filing and
+categorization, instant ledger queries with as-of dates, a regenerable
+published assessment, life-event interviews.
+
+## Demo
+A session against the bundled demo vault (`init_vault.sh --demo <dir>` —
+all numbers synthetic):
+
+```
+> how are we doing
+
+Liquid net worth $115,014 as of Aug 1 — July added $6,046 ($11,412
+in, $5,366 out). Cash is fine: $49,621 in the Ally HYSA against
+your ~$40K six-month floor. One thing while I was in there: you're
+paying for Netflix, Hulu, AND Max — three overlapping streamers,
+$50/mo. Keep one, drop two, that's ~$420/yr back. Want the cancel
+pages?
+```
+
+## Philosophy
+The vault is the source of truth; the model reads it fresh every session.
+Facts first, opinions second — the complete picture loads before any
+recommendation. Advice is grounded in a thesis you've agreed to in
+writing, so decisions get made once. Arithmetic is code; judgment is the
+agent. Do things (drive the browser), don't just describe them.
+
+## The ledger (beancount)
+The money itself lives in a [Beancount](https://beancount.github.io/docs/)
+ledger — plain-text, double-entry: every transaction dated, categorized,
+balancing to zero, with `bean-check` validating the whole history on
+every change. You never hand-edit it; the importers write it and the
+agent maintains it. Importers ship for generic **OFX/QFX** and **Chase
+CSV**; anything else, the agent reads the document and writes the entries.
 
 ## What's where
-- `skills/finance/SKILL.md` — the entry point and modes.
-- `skills/finance/references/` — onboarding, the advisory playbook, querying,
-  report generation, the browser-fetch workflow, institution site behavior.
+- `skills/finance/SKILL.md` — the entry point: read exactly what the
+  model is told.
+- `skills/finance/references/` — onboarding, the advisory playbook,
+  current-year figures, querying, report generation, browser fetching,
+  institution site behavior.
 - `skills/finance/tools/` — deterministic importers, queries, checks, and
-  report generators, parameterized entirely by the vault (`FINANCE_VAULT`,
-  `rules.toml`, `facts/goals`). Arithmetic is code; judgment is the agent.
+  report generators, parameterized entirely by the vault.
 - `skills/finance/vault-template/` — the canonical vault skeleton.
-- `skills/finance/scripts/init_vault.sh` — scaffold a fresh vault from it.
+- `skills/finance/scripts/` — `init_vault.sh` (scaffold, `--demo` for a
+  synthetic household), `doctor.sh` (install health check),
+  `file_downloads.py` (identify and file downloaded statements).
 
-## Design principles
-Facts first, opinions second. Verify every dollar figure against real
-holdings before stating it. Do things (drive the browser), don't just
-describe. Optimize the human's utility, not the spreadsheet. Sensitive
-documents never enter git, account numbers are last-4 only, and a fail-closed
-pre-commit scanner enforces it — in the vault and in this repo.
+## Not a licensed advisor
+This is educational decision support, not legal, tax, or investment
+advice — no CPA, CFP, or fiduciary duty behind it. For tax filings,
+estate documents, and large irreversible moves, see a licensed
+professional; the skill itself will tell you when.
+
+## License
+MIT — see `LICENSE`.

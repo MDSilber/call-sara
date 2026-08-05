@@ -22,6 +22,16 @@ shadow_currency = "USD.EQ"
 # ledger_account = "Assets:US:Ally:Checking1234"
 # institution = "Ally"
 # owner = "sam"
+#
+# Optional per-account keys, read by tools/run_checks.py (the coverage check):
+# exported_through = "YYYY-MM-DD"   # date the last imported statement ran through;
+#                                   # importers may update it. Counts as feed freshness
+#                                   # even when a quiet month had no transactions.
+# cadence = "fast|monthly|quarterly" # how often data actually arrives for this account.
+#                                   # coverage() scales its stale-feed threshold to this
+#                                   # instead of guessing from the median posting gap
+#                                   # (fast ~ card/bank feeds, monthly ~ statement pulls,
+#                                   # quarterly ~ slow custodians).
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------

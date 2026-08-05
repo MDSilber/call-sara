@@ -23,3 +23,7 @@ description = "Bare 8+ digit run — almost always a full account number in this
 regex = '''(?:^|[^.\d])(\d{8,})(?:[^\d]|$)'''
 secretGroup = 1
 tags = ["pii"]
+
+[allowlist]
+description = "Synthetic importer test fixtures — invented account numbers/FITIDs, by design"
+paths = ['''skills/finance/tools/importers/tests/fixtures/.*''']

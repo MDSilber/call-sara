@@ -2,8 +2,42 @@
 
 Run this when there's no vault, or the user says "set me up." The goal
 of session one is NOT completeness — it's a working skeleton with real
-data flowing in, so every later session compounds. Budget ~90 minutes,
-and say so up front. Narrate progress; long silences read as stalls.
+data flowing in, so every later session compounds. Budget ~90 minutes
+of working time — usually 2–3 sittings — and say so up front. Narrate
+progress; long silences read as stalls.
+
+## First act: write the progress file
+Before anything else, write `ONBOARDING.md` at the vault root (create
+the directory if the scaffold hasn't run yet) and keep it current:
+
+```markdown
+# Onboarding — live progress
+Legend: [ ] todo · [→] in progress · [x] done · [~] deferred
+
+- [ ] 0  expectations set (both browser boundaries stated)
+- [ ] 1  vault scaffolded · bean-check passes · hosting decided
+- [ ] 2  institution inventory → facts
+- [ ] 3  founding interview → THESIS confirmed ("yes, that's me")
+- [ ] 3b first browser export done together
+- [ ] 3c existing-data sweep (Downloads / email / tax returns /
+      prior tools / equity portals)
+- [ ] 4  live pulls — pull queue below
+- [ ] 5  first assessment published · committed · next step named
+
+## Pull queue (ordered by value × ease)
+| Institution | What it holds | Status | Notes |
+|---|---|---|---|
+
+## Deferred / blocked
+```
+
+Check items off AS THEY COMPLETE, not in a batch at the end — a dead
+session costs nothing if this file is current, and the whole 90 minutes
+if it isn't. If the file already exists, onboarding is mid-flight:
+resume at the first unchecked item. On completion, move it to
+`notes/YYYY-MM-DD.onboarding-log.md` — the file's absence is what says
+onboarding is done. Tell the user up front: "usually 2–3 sittings; stop
+anytime, we resume exactly where we left off."
 
 ## 0. Set expectations (one paragraph, then start)
 Tell the user, briefly: what a vault is (their private financial memory
@@ -31,6 +65,8 @@ Explain the hosting model once, then apply it:
   account number. Store account numbers as **last-4 only** in facts.
 Offer to create the private GitHub repo now (`gh repo create <name>
 --private --source=. --push`) — the user runs it if the tool is denied.
+Pushing to a remote this session didn't create? Verify it's private
+first: `gh repo view --json visibility`.
 
 ## 2. Inventory institutions & services (10 min) — DO THIS BEFORE THE INTERVIEW
 People forget accounts; a checklist beats memory. Use AskUserQuestion in
@@ -79,6 +115,24 @@ tap-not-type options with a free-text escape. Cover:
   crypto beyond a token).
 - **The known unknowns:** anything they've been avoiding (an old policy
   they don't understand, a login that's broken, cash paid off-books).
+
+**Reconcile as you go.** Every number gets a silent plausibility pass
+before it lands in a file; from the third question-batch on, cross-check
+against earlier answers — the story must add up. Anchors: take-home is
+typically 60–80% of gross (equity comp and mega-backdoor deferrals skew
+it — ask, don't assume); card APRs 19–29%, mortgages 3–8%, car loans
+0–12%, and a number outside its band gets one casual "want to
+double-check that?"; stated spending must fit income − taxes − savings,
+and a gap gets resolved NOW, warmly, never accusatorially ("expenses
+come to ~$10.3K but take-home is $9.5K — dipping into savings, or did we
+miss an income source?"). Numbers the user isn't sure of land in facts
+with `verified:` unset and an "(estimate)" marker, so the first
+assessment labels them.
+
+**Save after every batch.** Write THESIS.md, the profile, and the facts
+files incrementally as answers land — never one big write at the end
+(same logic as the progress file: a dead session should cost nothing).
+
 Write the answers as `THESIS.md` — the investment policy statement — in
 their voice, then read it back and get a "yes, that's me." Values first,
 then rules, then goal placeholders the advisor will fill with numbers.
@@ -124,11 +178,13 @@ For each thing found: file the source, extract facts, add transactions.
 Only THEN move to live pulls for what's missing or recent.
 
 ## 4. First live data pull (30 min) — biggest and fastest first
-Order by (value × ease). Typically: the equity portal (largest number,
-usually a clean summary page), then the main brokerage, then payroll (one
-paystub explains income, deductions, and every automatic split), then
-the checking account. For each, follow `references/fetching.md` and
-consult `references/institutions.md` for that site's quirks. Bank on-screen
+Order by (value × ease) — mirror the order in the progress file's
+pull-queue table and keep Status current as each pull lands. Typically:
+the equity portal (largest number, usually a clean summary page), then
+the main brokerage, then payroll (one paystub explains income,
+deductions, and every automatic split), then the checking account. For
+each, follow `references/fetching.md` and consult
+`references/institutions.md` for that site's quirks. Bank on-screen
 numbers into facts IMMEDIATELY, before any download — the screen is a
 source. Ask for the most recent **tax return** and **latest paystubs** to
 be dropped in; a filed return is the single most information-dense
@@ -152,5 +208,6 @@ Vault scaffolded and private-repo hosted (or explicitly deferred);
 institution map complete; THESIS.md written and confirmed by the user;
 household profile + people files; at least the top 2–3 accounts pulled
 with facts filed; the tax return ingested if available; a first
-assessment published; everything committed. Later sessions handle the
-long tail of accounts, automation, and refinement.
+assessment published; everything committed, `ONBOARDING.md` retired to
+`notes/`. Later sessions handle the long tail of accounts, automation,
+and refinement.

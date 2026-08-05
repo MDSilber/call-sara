@@ -1,0 +1,23 @@
+2026-06-03 * "BLUE BOTTLE COFFEE 042 POS PURCHASE" ""
+  ofx-type: "DEBIT"
+  import-hash: "40c81712bc22840b"
+  Assets:US:TestBank:Checking9123   -42.50 USD
+  Expenses:Food:Dining
+
+2026-06-15 * "ACME PAYROLL DIRECT DEP" ""
+  ofx-type: "CREDIT"
+  import-hash: "a38fa97051f28599"
+  Assets:US:TestBank:Checking9123   2500.00 USD
+  Income:US:Other
+
+2026-06-20 * "ATM WITHDRAWAL 0042 MAIN ST" ""
+  ofx-type: "ATM"
+  import-hash: "2514dd4671d872fa"
+  Assets:US:TestBank:Checking9123   -200.00 USD
+  Expenses:Cash
+
+2026-06-28 * "ZORP UNKNOWN MERCHANT LLC" ""
+  ofx-type: "DEBIT"
+  import-hash: "4fc0bf0e6129c07e"
+  Assets:US:TestBank:Checking9123   -87.13 USD
+  Expenses:Uncategorized

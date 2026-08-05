@@ -1,0 +1,350 @@
+; TEST PERSONA — entirely synthetic. "Dre" (debt-crisis renter: >20% APR card
+; carried, minimum below monthly interest, zero cushion, duplicate streaming)
+; exists only to exercise the advisory layer. Planted findings are listed in
+; test-scenarios/debt-crisis/expected-findings.md.
+
+; --- Accounts -----------------------------------------------------------
+2026-01-01 open Assets:US:WellsFargo:Checking3308  USD
+2026-01-01 open Liabilities:US:Apex:Visa9012       USD   ; 26.99% APR, carried
+2026-01-01 open Liabilities:US:Meridian:Store4477  USD   ; 29.99% store card
+2026-01-01 open Income:US:Wages:HarborGrill        USD
+2026-01-01 open Expenses:Interest                  USD   ; card interest — debt service
+
+; --- Opening balances (as of 2026-02-01) --------------------------------
+2026-02-01 * "Opening balances"
+  Assets:US:WellsFargo:Checking3308       620.00 USD
+  Liabilities:US:Apex:Visa9012          -6850.00 USD
+  Liabilities:US:Meridian:Store4477      -480.00 USD
+  Equity:Opening-Balances
+
+; --- February ------------------------------------------------------------
+2026-02-01 * "Harbor Grill" "Payroll (net)"
+  Assets:US:WellsFargo:Checking3308      1180.00 USD
+  Income:US:Wages:HarborGrill           -1180.00 USD
+
+2026-02-01 * "Sunset Court Apartments" "Rent"
+  Assets:US:WellsFargo:Checking3308     -1625.00 USD
+  Expenses:Housing                       1625.00 USD
+
+2026-02-03 * "Metro by T-Mobile" ""
+  Assets:US:WellsFargo:Checking3308       -55.00 USD
+  Expenses:Utilities                       55.00 USD
+
+2026-02-05 * "FoodMaxx" ""
+  Assets:US:WellsFargo:Checking3308       -84.12 USD
+  Expenses:Food:Groceries                  84.12 USD
+
+2026-02-10 * "Spotify" ""
+  Assets:US:WellsFargo:Checking3308       -11.99 USD
+  Expenses:Entertainment                   11.99 USD
+
+2026-02-15 * "Harbor Grill" "Payroll (net)"
+  Assets:US:WellsFargo:Checking3308      1180.00 USD
+  Income:US:Wages:HarborGrill           -1180.00 USD
+
+
+
+2026-02-24 * "Meridian Card Payment" "Minimum"
+  Assets:US:WellsFargo:Checking3308       -35.00 USD
+  Liabilities:US:Meridian:Store4477        35.00 USD
+
+2026-02-25 * "Apex Card Payment" "Minimum"
+  Assets:US:WellsFargo:Checking3308      -140.00 USD
+  Liabilities:US:Apex:Visa9012            140.00 USD
+
+2026-02-06 * "Netflix" ""
+  Liabilities:US:Apex:Visa9012            -15.49 USD
+  Expenses:Entertainment                   15.49 USD
+
+2026-02-09 * "Spotify" ""
+  Liabilities:US:Apex:Visa9012            -11.99 USD
+  Expenses:Entertainment                   11.99 USD
+
+2026-02-08 * "Taqueria Azteca" ""
+  Liabilities:US:Apex:Visa9012            -52.30 USD
+  Expenses:Food:Dining                     52.30 USD
+
+
+2026-02-28 * "Purchase Interest Charge" ""
+  Liabilities:US:Apex:Visa9012           -148.20 USD
+  Expenses:Interest                       148.20 USD
+
+2026-02-14 * "Meridian Home Store" ""
+  Liabilities:US:Meridian:Store4477       -62.40 USD
+  Expenses:Home                            62.40 USD
+
+; --- March ---------------------------------------------------------------
+2026-03-01 * "Harbor Grill" "Payroll (net)"
+  Assets:US:WellsFargo:Checking3308      1180.00 USD
+  Income:US:Wages:HarborGrill           -1180.00 USD
+
+2026-03-01 * "Sunset Court Apartments" "Rent"
+  Assets:US:WellsFargo:Checking3308     -1625.00 USD
+  Expenses:Housing                       1625.00 USD
+
+2026-03-03 * "Metro by T-Mobile" ""
+  Assets:US:WellsFargo:Checking3308       -55.00 USD
+  Expenses:Utilities                       55.00 USD
+
+2026-03-05 * "FoodMaxx" ""
+  Assets:US:WellsFargo:Checking3308       -91.30 USD
+  Expenses:Food:Groceries                  91.30 USD
+
+2026-03-10 * "Spotify" ""
+  Assets:US:WellsFargo:Checking3308       -11.99 USD
+  Expenses:Entertainment                   11.99 USD
+
+2026-03-15 * "Harbor Grill" "Payroll (net)"
+  Assets:US:WellsFargo:Checking3308      1180.00 USD
+  Income:US:Wages:HarborGrill           -1180.00 USD
+
+
+
+2026-03-24 * "Meridian Card Payment" "Minimum"
+  Assets:US:WellsFargo:Checking3308       -35.00 USD
+  Liabilities:US:Meridian:Store4477        35.00 USD
+
+2026-03-25 * "Apex Card Payment" "Minimum"
+  Assets:US:WellsFargo:Checking3308      -140.00 USD
+  Liabilities:US:Apex:Visa9012            140.00 USD
+
+2026-03-06 * "Netflix" ""
+  Liabilities:US:Apex:Visa9012            -15.49 USD
+  Expenses:Entertainment                   15.49 USD
+
+2026-03-09 * "Spotify" ""
+  Liabilities:US:Apex:Visa9012            -11.99 USD
+  Expenses:Entertainment                   11.99 USD
+
+2026-03-08 * "Taqueria Azteca" ""
+  Liabilities:US:Apex:Visa9012            -61.85 USD
+  Expenses:Food:Dining                     61.85 USD
+
+
+2026-03-28 * "Purchase Interest Charge" ""
+  Liabilities:US:Apex:Visa9012           -151.05 USD
+  Expenses:Interest                       151.05 USD
+
+; --- April ---------------------------------------------------------------
+2026-04-01 * "Harbor Grill" "Payroll (net)"
+  Assets:US:WellsFargo:Checking3308      1180.00 USD
+  Income:US:Wages:HarborGrill           -1180.00 USD
+
+2026-04-01 * "Sunset Court Apartments" "Rent"
+  Assets:US:WellsFargo:Checking3308     -1625.00 USD
+  Expenses:Housing                       1625.00 USD
+
+2026-04-03 * "Metro by T-Mobile" ""
+  Assets:US:WellsFargo:Checking3308       -55.00 USD
+  Expenses:Utilities                       55.00 USD
+
+2026-04-05 * "FoodMaxx" ""
+  Assets:US:WellsFargo:Checking3308       -79.45 USD
+  Expenses:Food:Groceries                  79.45 USD
+
+2026-04-10 * "Spotify" ""
+  Assets:US:WellsFargo:Checking3308       -11.99 USD
+  Expenses:Entertainment                   11.99 USD
+
+2026-04-15 * "Harbor Grill" "Payroll (net)"
+  Assets:US:WellsFargo:Checking3308      1180.00 USD
+  Income:US:Wages:HarborGrill           -1180.00 USD
+
+
+
+2026-04-24 * "Meridian Card Payment" "Minimum"
+  Assets:US:WellsFargo:Checking3308       -35.00 USD
+  Liabilities:US:Meridian:Store4477        35.00 USD
+
+2026-04-25 * "Apex Card Payment" "Minimum"
+  Assets:US:WellsFargo:Checking3308      -140.00 USD
+  Liabilities:US:Apex:Visa9012            140.00 USD
+
+2026-04-06 * "Netflix" ""
+  Liabilities:US:Apex:Visa9012            -15.49 USD
+  Expenses:Entertainment                   15.49 USD
+
+2026-04-09 * "Spotify" ""
+  Liabilities:US:Apex:Visa9012            -11.99 USD
+  Expenses:Entertainment                   11.99 USD
+
+2026-04-08 * "Taqueria Azteca" ""
+  Liabilities:US:Apex:Visa9012            -48.90 USD
+  Expenses:Food:Dining                     48.90 USD
+
+
+2026-04-28 * "Purchase Interest Charge" ""
+  Liabilities:US:Apex:Visa9012           -153.85 USD
+  Expenses:Interest                       153.85 USD
+
+2026-04-20 * "Meridian Home Store" ""
+  Liabilities:US:Meridian:Store4477       -44.85 USD
+  Expenses:Home                            44.85 USD
+
+; --- May (Meridian statement never imported — hole is deliberate) ---------
+2026-05-01 * "Harbor Grill" "Payroll (net)"
+  Assets:US:WellsFargo:Checking3308      1180.00 USD
+  Income:US:Wages:HarborGrill           -1180.00 USD
+
+2026-05-01 * "Sunset Court Apartments" "Rent"
+  Assets:US:WellsFargo:Checking3308     -1625.00 USD
+  Expenses:Housing                       1625.00 USD
+
+2026-05-03 * "Metro by T-Mobile" ""
+  Assets:US:WellsFargo:Checking3308       -55.00 USD
+  Expenses:Utilities                       55.00 USD
+
+2026-05-05 * "FoodMaxx" ""
+  Assets:US:WellsFargo:Checking3308       -88.20 USD
+  Expenses:Food:Groceries                  88.20 USD
+
+2026-05-10 * "Spotify" ""
+  Assets:US:WellsFargo:Checking3308       -11.99 USD
+  Expenses:Entertainment                   11.99 USD
+
+2026-05-15 * "Harbor Grill" "Payroll (net)"
+  Assets:US:WellsFargo:Checking3308      1180.00 USD
+  Income:US:Wages:HarborGrill           -1180.00 USD
+
+
+
+2026-05-25 * "Apex Card Payment" "Minimum"
+  Assets:US:WellsFargo:Checking3308      -140.00 USD
+  Liabilities:US:Apex:Visa9012            140.00 USD
+
+2026-05-06 * "Netflix" ""
+  Liabilities:US:Apex:Visa9012            -17.99 USD
+  Expenses:Entertainment                   17.99 USD
+
+2026-05-09 * "Spotify" ""
+  Liabilities:US:Apex:Visa9012            -11.99 USD
+  Expenses:Entertainment                   11.99 USD
+
+2026-05-08 * "Taqueria Azteca" ""
+  Liabilities:US:Apex:Visa9012            -57.20 USD
+  Expenses:Food:Dining                     57.20 USD
+
+
+2026-05-28 * "Purchase Interest Charge" ""
+  Liabilities:US:Apex:Visa9012           -156.70 USD
+  Expenses:Interest                       156.70 USD
+
+; --- June ----------------------------------------------------------------
+2026-06-01 * "Harbor Grill" "Payroll (net)"
+  Assets:US:WellsFargo:Checking3308      1180.00 USD
+  Income:US:Wages:HarborGrill           -1180.00 USD
+
+2026-06-01 * "Sunset Court Apartments" "Rent"
+  Assets:US:WellsFargo:Checking3308     -1625.00 USD
+  Expenses:Housing                       1625.00 USD
+
+2026-06-03 * "Metro by T-Mobile" ""
+  Assets:US:WellsFargo:Checking3308       -55.00 USD
+  Expenses:Utilities                       55.00 USD
+
+2026-06-05 * "FoodMaxx" ""
+  Assets:US:WellsFargo:Checking3308       -95.60 USD
+  Expenses:Food:Groceries                  95.60 USD
+
+2026-06-10 * "Spotify" ""
+  Assets:US:WellsFargo:Checking3308       -11.99 USD
+  Expenses:Entertainment                   11.99 USD
+
+2026-06-15 * "Harbor Grill" "Payroll (net)"
+  Assets:US:WellsFargo:Checking3308      1180.00 USD
+  Income:US:Wages:HarborGrill           -1180.00 USD
+
+
+
+2026-06-24 * "Meridian Card Payment" "Minimum"
+  Assets:US:WellsFargo:Checking3308       -35.00 USD
+  Liabilities:US:Meridian:Store4477        35.00 USD
+
+2026-06-25 * "Apex Card Payment" "Minimum"
+  Assets:US:WellsFargo:Checking3308      -140.00 USD
+  Liabilities:US:Apex:Visa9012            140.00 USD
+
+2026-06-06 * "Netflix" ""
+  Liabilities:US:Apex:Visa9012            -17.99 USD
+  Expenses:Entertainment                   17.99 USD
+
+2026-06-09 * "Spotify" ""
+  Liabilities:US:Apex:Visa9012            -11.99 USD
+  Expenses:Entertainment                   11.99 USD
+
+2026-06-08 * "Taqueria Azteca" ""
+  Liabilities:US:Apex:Visa9012            -54.75 USD
+  Expenses:Food:Dining                     54.75 USD
+
+
+2026-06-28 * "Purchase Interest Charge" ""
+  Liabilities:US:Apex:Visa9012           -159.60 USD
+  Expenses:Interest                       159.60 USD
+
+2026-06-18 * "Meridian Home Store" ""
+  Liabilities:US:Meridian:Store4477       -38.20 USD
+  Expenses:Home                            38.20 USD
+
+; --- July (DoorDash binge — the spike is deliberate) ----------------------
+2026-07-01 * "Harbor Grill" "Payroll (net)"
+  Assets:US:WellsFargo:Checking3308      1180.00 USD
+  Income:US:Wages:HarborGrill           -1180.00 USD
+
+2026-07-01 * "Sunset Court Apartments" "Rent"
+  Assets:US:WellsFargo:Checking3308     -1625.00 USD
+  Expenses:Housing                       1625.00 USD
+
+2026-07-03 * "Metro by T-Mobile" ""
+  Assets:US:WellsFargo:Checking3308       -55.00 USD
+  Expenses:Utilities                       55.00 USD
+
+2026-07-05 * "FoodMaxx" ""
+  Assets:US:WellsFargo:Checking3308       -90.15 USD
+  Expenses:Food:Groceries                  90.15 USD
+
+2026-07-10 * "Spotify" ""
+  Assets:US:WellsFargo:Checking3308       -11.99 USD
+  Expenses:Entertainment                   11.99 USD
+
+2026-07-15 * "Harbor Grill" "Payroll (net)"
+  Assets:US:WellsFargo:Checking3308      1180.00 USD
+  Income:US:Wages:HarborGrill           -1180.00 USD
+
+
+
+2026-07-24 * "Meridian Card Payment" "Minimum"
+  Assets:US:WellsFargo:Checking3308       -35.00 USD
+  Liabilities:US:Meridian:Store4477        35.00 USD
+
+2026-07-25 * "Apex Card Payment" "Minimum"
+  Assets:US:WellsFargo:Checking3308      -140.00 USD
+  Liabilities:US:Apex:Visa9012            140.00 USD
+
+2026-07-06 * "Netflix" ""
+  Liabilities:US:Apex:Visa9012            -17.99 USD
+  Expenses:Entertainment                   17.99 USD
+
+2026-07-09 * "Spotify" ""
+  Liabilities:US:Apex:Visa9012            -11.99 USD
+  Expenses:Entertainment                   11.99 USD
+
+2026-07-08 * "Taqueria Azteca" ""
+  Liabilities:US:Apex:Visa9012            -52.80 USD
+  Expenses:Food:Dining                     52.80 USD
+
+2026-07-11 * "DoorDash" ""
+  Liabilities:US:Apex:Visa9012           -162.40 USD
+  Expenses:Food:Dining                    162.40 USD
+
+2026-07-18 * "DoorDash" ""
+  Liabilities:US:Apex:Visa9012           -148.75 USD
+  Expenses:Food:Dining                    148.75 USD
+
+
+2026-07-25 * "DoorDash" ""
+  Liabilities:US:Apex:Visa9012           -121.30 USD
+  Expenses:Food:Dining                    121.30 USD
+
+2026-07-28 * "Purchase Interest Charge" ""
+  Liabilities:US:Apex:Visa9012           -162.55 USD
+  Expenses:Interest                       162.55 USD

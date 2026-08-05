@@ -143,11 +143,22 @@ awards table; watch for a **blackout banner** and note its end date.
   link. `get_page_text` captures it all — no screenshots needed.
 - Facts to `facts/accounts/<plan>529-<beneficiary>/`.
 
-## Coinbase (crypto)
-- After login, `coinbase.com/home` via `get_page_text` yields balances
-  (units + USD cash). For an immaterial "token" position, reading the home
-  page quarterly beats maintaining a CSV pipeline; export only if taxes need
-  lot detail.
+## Crypto (exchange & self-custody)
+- **Coinbase fast path**: after login, `coinbase.com/home` via
+  `get_page_text` yields balances (units + USD cash). For an immaterial
+  "token" position, reading the home page quarterly beats maintaining a CSV
+  pipeline; export only if taxes need lot detail.
+- **The moment a position stops being immaterial — or anything sells —
+  book properly**: FIFO on the crypto accounts, every acquisition with
+  `{cost}`. Transfers (exchange ↔ self-custody) are NOT taxable, but basis
+  rides along — the same `{cost}` on both legs. Every swap IS a
+  disposition: `@ price` plus a gains income leg. Staking rewards are
+  ordinary income at receipt FMV (the principal coming back is just a
+  transfer). Dust under $10: note it, skip the bookkeeping.
+- **Verify any 1099-DA against own lot records** — exchange-reported
+  acquisition dates and basis are routinely wrong.
+- **Filter scam tokens** (unicode look-alike tickers) before anything
+  enters facts or the ledger.
 
 ## Private-fund / SPV platforms (AngelList and similar)
 _(document on first pull)_ — capital-call notices, annual tax report / K-1;
@@ -176,3 +187,8 @@ typically all manual downloads.
   flow. Simple claims pay in ~2-8 weeks. Free — never a "finder" fee.
   THE OWNER files (SSN/ID step is theirs alone); the agent only finds and
   preps the list.
+
+## Sources that age well
+- `chrishutchins.com` play pages intermittently 503. The substack mirror —
+  `chrishutchins.substack.com/p/<slug>` — serves the same posts reliably;
+  fetch there first when the main site errors.

@@ -15,4 +15,5 @@ done
 chmod +x "$here"/skills/finance/scripts/init_vault.sh "$here"/skills/finance/tools/run 2>/dev/null || true
 git -C "$here" config core.hooksPath .githooks   # this repo scans its own commits too
 command -v gitleaks >/dev/null 2>&1 || echo "⚠️  brew install gitleaks — the vault (and this repo) refuse to commit without it"
-echo "Say \"set up my finances\" in Claude Code to create a vault (or run skills/finance/scripts/init_vault.sh)."
+echo "Start a NEW Claude Code session (skills register at session start), then say"
+echo "\"set up my finances\" to create a vault (or run skills/finance/scripts/init_vault.sh)."

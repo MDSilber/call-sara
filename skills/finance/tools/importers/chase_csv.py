@@ -2,17 +2,29 @@
 """Import a Chase credit-card CSV export into Beancount transactions.
 
 Usage:
-  chase_csv.py <activity.csv> <liability-account> [--all]
+  chase_csv.py <activity.csv> <liability-account> [--write] [--all] [--allow-discrepancy] [--dry-run]
 
 Prefer this over the QFX for CARDS: the CSV carries Chase's own Category
 column, mapped via rules.toml [chase_categories]. Merchant-specific
 [[payee_rules]] win first (so a corrected merchant is fixed forever).
-Payments to the card go to Assets:US:Transfers.
+Payments to the card go to Assets:US:Transfers; unmatched merchants land in
+Expenses:Uncategorized (the review queue — imports never stall on
+categorization), and rows that fail to parse are reported, not fatal.
 
-Skips a transaction when the ledger already has one with the same amount and
-payee within ±5 days (transaction vs post dates differ across formats); rows
-inside this file are compared exactly. Skips are listed on stderr; --all
-disables dedupe. Prints Beancount to stdout for review.
+DRY-RUN BY DEFAULT: prints the would-be entries to stdout and a summary
+(dedupe skips, balance continuity) to stderr, and writes nothing. Review,
+then re-run with --write to append to ledger/<year>.beancount (bean-check
+runs after; a failed check rolls the append back).
+
+Dedupe, in order: (1) hash-exact via each entry's `import-hash:` metadata;
+(2) fuzzy fallback — same amount and payee already in the ledger within
+±5 days (transaction vs post dates differ across formats; also covers
+pre-hash ledger entries). Skips are listed on stderr; --all disables dedupe.
+
+Balance continuity ("Golden Rule"): when the export carries a running
+Balance column, every row must chain (balance = previous + amount) — tagged
+VERIFIED / DISCREPANCY / UNVERIFIABLE. A DISCREPANCY blocks the import
+(exit 1, nothing written) unless --allow-discrepancy.
 """
 import csv
 import sys
@@ -21,7 +33,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from rules import EXPENSE_DEFAULT, TRANSFER_ACCOUNT, chase_category, match_rule  # noqa: E402
-from importers.common import emit, escape, existing_index, is_duplicate, seen_in_file  # noqa: E402
+from importers.common import (DISCREPANCY, VERIFIED, append_to_ledger,  # noqa: E402
+                              assertion_date, check_continuity_ledger,
+                              check_continuity_rows, emit, escape, existing_hashes,
+                              existing_index, import_hash, is_duplicate,
+                              render_assertion)
+
+FLAGS = {"--all", "--write", "--dry-run", "--allow-discrepancy"}
 
 
 def counter_account(desc, chase_cat, txn_type, amount, account):
@@ -34,33 +52,98 @@ def counter_account(desc, chase_cat, txn_type, amount, account):
     return chase_category(chase_cat) or EXPENSE_DEFAULT
 
 
+def parse_rows(path):
+    """-> (parsed rows in FILE order, [(line#, error)]). A malformed row is
+    reported and skipped, never fatal — one bad line must not stall the
+    import (same never-block spirit as the Uncategorized fallback)."""
+    with open(path, newline="") as fh:
+        reader = csv.DictReader(fh)
+        raw = list(reader)
+    if raw and not {"Transaction Date", "Description", "Amount"} <= set(raw[0]):
+        sys.exit(f"{path}: not a Chase activity CSV — need Transaction Date / "
+                 f"Description / Amount columns, got: {', '.join(raw[0])}")
+    parsed, bad = [], []
+    for lineno, r in enumerate(raw, 2):  # 2 = first data line of the file
+        try:
+            date = datetime.strptime((r["Transaction Date"] or "").strip(), "%m/%d/%Y").date()
+            amt = float((r["Amount"] or "").replace(",", "").replace("$", ""))
+        except (TypeError, ValueError) as e:
+            bad.append((lineno, str(e)))
+            continue
+        balance = None
+        if (r.get("Balance") or "").strip():
+            try:
+                balance = float(r["Balance"].replace(",", ""))
+            except ValueError:
+                pass  # treated as no balance -> continuity UNVERIFIABLE
+        parsed.append({"date": date, "amount": amt, "balance": balance,
+                       "payee": escape(r["Description"]), "desc": r["Description"],
+                       "category": r.get("Category"), "type": r.get("Type", "")})
+    return parsed, bad
+
+
 def main():
-    args = [a for a in sys.argv[1:] if a != "--all"]
-    dedupe = "--all" not in sys.argv[1:]
+    argv = sys.argv[1:]
+    unknown = {a for a in argv if a.startswith("--")} - FLAGS
+    if unknown:
+        sys.exit(f"unknown flag(s): {', '.join(sorted(unknown))}\n\n{__doc__}")
+    args = [a for a in argv if not a.startswith("--")]
+    dedupe = "--all" not in argv
+    write = "--write" in argv and "--dry-run" not in argv
+    allow = "--allow-discrepancy" in argv
     if len(args) != 2:
         sys.exit(__doc__)
     path, account = args
-    with open(path, newline="") as fh:
-        rows = list(csv.DictReader(fh))
-    rows.sort(key=lambda r: datetime.strptime(r["Transaction Date"], "%m/%d/%Y"))
+    rows, bad = parse_rows(path)
+    # Continuity runs over FILE order (the order the bank wrote the balances);
+    # emission below is date-sorted.
+    tag, detail, closing = check_continuity_rows([(r["amount"], r["balance"]) for r in rows])
+    rows.sort(key=lambda r: r["date"])
+    ledger_hashes = existing_hashes() if dedupe else set()
     idx = existing_index(account) if dedupe else {}
-    fileset = set()
-    kept, skipped = 0, []
+    new_hashes = set()
+    entries, kept, skipped = [], [], []
     for r in rows:
-        date = datetime.strptime(r["Transaction Date"], "%m/%d/%Y").date()
-        amount = float(r["Amount"])  # Chase: charges negative, payments/credits positive
-        payee = escape(r["Description"])
-        if dedupe and (seen_in_file(fileset, date, amount, payee)
-                       or is_duplicate(idx, date, amount, payee)):
-            skipped.append((date, amount, payee))
+        h = import_hash(r["date"], r["amount"], r["payee"], account)
+        if dedupe and (h in ledger_hashes or h in new_hashes):
+            skipped.append((r, "hash"))
             continue
-        counter = counter_account(r["Description"], r.get("Category"), r.get("Type"), amount, account)
-        emit(date, payee, {"chase-type": r.get("Type", "")}, account, amount, counter)
-        kept += 1
-    print(f"; imported {kept} transactions to {account}"
+        if dedupe and is_duplicate(idx, r["date"], r["amount"], r["payee"]):
+            skipped.append((r, "±5d"))
+            continue
+        new_hashes.add(h)
+        counter = counter_account(r["desc"], r["category"], r["type"], r["amount"], account)
+        entries.append((r["date"], emit(r["date"], r["payee"],
+                                        {"chase-type": r["type"], "import-hash": h},
+                                        account, r["amount"], counter)))
+        kept.append((r["date"], r["amount"]))
+    print(f"; {account}: balance continuity {tag} — {detail}", file=sys.stderr)
+    if kept and closing is not None:
+        # No statement-end date in a CSV — the last transaction date stands in.
+        stmt_end = max(r["date"] for r in rows)
+        anchored, _ = check_continuity_ledger(account, closing, stmt_end, kept)
+        a_date = assertion_date(stmt_end, max(d for d, _ in kept))
+        entries.append((a_date, render_assertion(account, closing, a_date,
+                                                 anchored == VERIFIED)))
+    print(f"; imported {len(kept)} transactions to {account}"
           + (f" (skipped {len(skipped)} already in ledger)" if skipped else ""), file=sys.stderr)
-    for d, a, pz in skipped:
-        print(f";   skipped {d} {a:.2f} {pz}", file=sys.stderr)
+    for r, why in skipped:
+        print(f";   skipped ({why}) {r['date']} {r['amount']:.2f} {r['payee']}", file=sys.stderr)
+    for lineno, err in bad:
+        print(f";   UNPARSEABLE line {lineno}: {err} — fix the row and re-import", file=sys.stderr)
+    if tag == DISCREPANCY and not allow:
+        sys.exit(f"BLOCKED: balance continuity DISCREPANCY for {account} — nothing "
+                 f"{'written' if write else 'imported'}. Fix the export or the ledger, "
+                 f"or re-run with --allow-discrepancy.")
+    for _, e in entries:
+        print(e)
+    if write:
+        if not entries:
+            print("; nothing new to write", file=sys.stderr)
+            return
+        paths = append_to_ledger(entries)
+        print(f"; wrote {len(entries)} entries to {', '.join(paths)} (bean-check passed "
+              f"or was unavailable — see above)", file=sys.stderr)
 
 
 if __name__ == "__main__":

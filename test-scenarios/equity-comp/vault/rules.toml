@@ -1,0 +1,97 @@
+# rules.toml — Maya & Sam (TEST PERSONA, synthetic). Same shape as a real vault's.
+
+[household]
+# Nimbus RSUs are private paper — never counted in spendable net worth.
+illiquid_commodity_prefixes = ["NIMBUS"]
+shadow_currency = "USD.EQ"
+
+# --- Account routing (last4 -> ledger account) -----------------------------
+[[accounts]]
+last4 = "7710"
+ledger_account = "Assets:US:Chase:Checking7710"
+institution = "Chase"
+owner = "joint"
+cadence = "fast"
+exported_through = "2026-07-31"   # last statement pull ran through end of July
+
+[[accounts]]
+last4 = "8802"
+ledger_account = "Assets:US:Marcus:Savings8802"
+institution = "Marcus"
+owner = "joint"
+cadence = "monthly"
+
+[[accounts]]
+last4 = "4455"
+ledger_account = "Liabilities:US:Chase:Card4455"
+institution = "Chase"
+owner = "maya"
+
+[[accounts]]
+last4 = "6620"
+ledger_account = "Assets:US:Schwab:Brokerage6620"
+institution = "Schwab"
+owner = "joint"
+cadence = "quarterly"   # dividends + statements only — don't nag about quiet months
+
+[[accounts]]
+last4 = "2201"
+ledger_account = "Assets:US:GoldenState:Checking2201"
+institution = "Golden State CU"
+owner = "sam"
+
+# --- Payee rules (ordered, first match wins) -------------------------------
+[[payee_rules]]
+ofx_type = "XFER"
+account = "Assets:US:Transfers"
+note = "own-account transfer"
+
+[[payee_rules]]
+match = "TRANSFER|PAYMENT THANK YOU|AUTOMATIC PAYMENT|CARD AUTOPAY"
+account = "Assets:US:Transfers"
+note = "card autopay / internal transfers"
+
+[[payee_rules]]
+ofx_type = "INT"
+account = "Income:US:Interest"
+note = "bank interest"
+
+[[payee_rules]]
+match = "NIMBUS ROBOTICS"
+account = "Income:US:Salary:NimbusRobotics"
+note = "Maya payroll"
+
+[[payee_rules]]
+match = "COASTAL DESIGN"
+account = "Income:US:Salary:CoastalDesign"
+note = "Sam payroll"
+
+[[payee_rules]]
+match = "OAKVIEW"
+account = "Expenses:Housing"
+note = "rent"
+
+[[payee_rules]]
+match = "PG&E|PACIFIC GAS"
+account = "Expenses:Utilities"
+note = "electric + gas"
+
+[[payee_rules]]
+match = "NETFLIX"
+account = "Expenses:Entertainment"
+note = "streaming"
+
+[[payee_rules]]
+match = "PELOTON"
+account = "Expenses:Health"
+note = "fitness app"
+
+[[payee_rules]]
+match = "WHOLE FOODS"
+account = "Expenses:Food:Groceries"
+note = "groceries"
+
+# --- Anomaly-check tuning --------------------------------------------------
+[anomaly]
+ignore_payee_regex = "^(ATM |WITHDRAWAL|ZELLE|VENMO|CHECK )"
+ignore_account_regex = "Cash|Uncategorized|Taxes|Insurance"

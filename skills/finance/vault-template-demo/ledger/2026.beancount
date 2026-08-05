@@ -1,0 +1,838 @@
+; DEMO DATA — entirely synthetic. The "Demo" household (Alex, Jordan, Riley)
+; is fictional; every payee, balance, and transaction below was generated as
+; sample data for the --demo vault. Feb–Jul 2026.
+
+; --- Accounts -----------------------------------------------------------
+2026-01-01 open Assets:US:Chase:Checking4321       USD   ; joint
+2026-01-01 open Assets:US:Ally:Savings9876          USD   ; joint emergency fund
+2026-01-01 open Liabilities:US:Chase:Card5678          USD   ; alex
+2026-01-01 open Liabilities:US:CapitalOne:Card1122      USD   ; jordan
+2026-01-01 open Assets:US:Fidelity:401k7701          VTI,VXUS,BND  ; alex
+2026-01-01 open Assets:US:Empower:401k8810           BND           ; jordan
+2026-01-01 open Assets:US:Vanguard:Brokerage3344     VTI,VXUS      ; joint taxable
+2026-01-01 open Assets:US:CollegeSave:529Riley       AGGRX         ; Riley's 529
+2026-01-01 open Income:US:Salary:BrightPathLabs      USD   ; alex
+2026-01-01 open Income:US:Salary:CedarGroveSD        USD   ; jordan
+2026-01-01 open Expenses:Childcare                   USD
+
+; --- Prices (as of the last statement) ----------------------------------
+2026-07-31 price VTI    295.00 USD
+2026-07-31 price VXUS    65.00 USD
+2026-07-31 price BND     72.00 USD
+2026-07-31 price AGGRX   30.00 USD
+
+; --- Opening balances (as of 2026-02-01) --------------------------------
+2026-02-01 * "Opening balances"
+  Assets:US:Chase:Checking4321     4200.00 USD
+  Assets:US:Ally:Savings9876       28000.00 USD
+  Assets:US:Fidelity:401k7701          30 VTI {270.00 USD}
+  Assets:US:Fidelity:401k7701         140 VXUS {60.00 USD}
+  Assets:US:Fidelity:401k7701          60 BND {70.00 USD}
+  Assets:US:Empower:401k8810          120 BND {70.00 USD}
+  Assets:US:Vanguard:Brokerage3344     10 VTI {270.00 USD}
+  Assets:US:Vanguard:Brokerage3344     60 VXUS {60.00 USD}
+  Assets:US:CollegeSave:529Riley     340 AGGRX {29.00 USD}
+  Equity:Opening-Balances
+
+; --- Transactions -------------------------------------------------------
+2026-02-01 * "BrightPath Labs" "Payroll — Alex (net)"
+  Assets:US:Chase:Checking4321              3950.00 USD
+  Income:US:Salary:BrightPathLabs          -3950.00 USD
+
+2026-02-15 * "BrightPath Labs" "Payroll — Alex (net)"
+  Assets:US:Chase:Checking4321              3950.00 USD
+  Income:US:Salary:BrightPathLabs          -3950.00 USD
+
+2026-02-05 * "Cedar Grove School District" "Payroll — Jordan (net)"
+  Assets:US:Chase:Checking4321              3400.00 USD
+  Income:US:Salary:CedarGroveSD            -3400.00 USD
+
+2026-02-01 * "Oakwood Property Management" "Rent"
+  Assets:US:Chase:Checking4321             -2600.00 USD
+  Expenses:Housing                          2600.00 USD
+
+2026-02-03 * "Little Sprouts Daycare" "Daycare — Riley"
+  Assets:US:Chase:Checking4321             -1150.00 USD
+  Expenses:Childcare                        1150.00 USD
+
+2026-02-07 * "City Power & Light" "Electric"
+  Assets:US:Chase:Checking4321              -164.20 USD
+  Expenses:Utilities                         164.20 USD
+
+2026-02-07 * "Comcast" "Internet"
+  Assets:US:Chase:Checking4321               -79.99 USD
+  Expenses:Utilities                          79.99 USD
+
+2026-02-10 * "T-Mobile" "Family phone plan"
+  Assets:US:Chase:Checking4321               -95.00 USD
+  Expenses:Utilities                          95.00 USD
+
+2026-02-12 * "FitLife Gym" "Membership"
+  Assets:US:Chase:Checking4321               -89.00 USD
+  Expenses:Health                             89.00 USD
+
+2026-02-18 * "GEICO" "Auto insurance"
+  Assets:US:Chase:Checking4321              -168.00 USD
+  Expenses:Insurance                         168.00 USD
+
+2026-02-15 * "CollegeSave" "529 monthly contribution — Riley"
+  Assets:US:Chase:Checking4321              -300.00 USD
+  Assets:US:CollegeSave:529Riley                 10 AGGRX {30.00 USD}
+
+2026-02-16 * "Ally Bank" "Transfer to savings"
+  Assets:US:Chase:Checking4321             -3500.00 USD
+  Assets:US:Ally:Savings9876                3500.00 USD
+
+2026-02-25 * "Ally Bank" "Interest"
+  Assets:US:Ally:Savings9876                  96.12 USD
+  Income:US:Interest                         -96.12 USD
+
+2026-02-02 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -132.47 USD
+  Expenses:Food:Groceries                    132.47 USD
+
+2026-02-08 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -118.09 USD
+  Expenses:Food:Groceries                    118.09 USD
+
+2026-02-16 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -141.88 USD
+  Expenses:Food:Groceries                    141.88 USD
+
+2026-02-27 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678              -97.35 USD
+  Expenses:Food:Groceries                     97.35 USD
+
+2026-02-11 * "Sushi Ora" ""
+  Liabilities:US:Chase:Card5678              -68.40 USD
+  Expenses:Food:Dining                        68.40 USD
+
+2026-02-21 * "Pizza My Heart" ""
+  Liabilities:US:Chase:Card5678              -42.15 USD
+  Expenses:Food:Dining                        42.15 USD
+
+2026-02-06 * "Shell Oil" ""
+  Liabilities:US:Chase:Card5678              -47.20 USD
+  Expenses:Transport                          47.20 USD
+
+2026-02-19 * "Shell Oil" ""
+  Liabilities:US:Chase:Card5678              -51.85 USD
+  Expenses:Transport                          51.85 USD
+
+2026-02-06 * "Netflix" ""
+  Liabilities:US:Chase:Card5678              -15.49 USD
+  Expenses:Entertainment                      15.49 USD
+
+2026-02-09 * "Spotify" ""
+  Liabilities:US:Chase:Card5678              -11.99 USD
+  Expenses:Entertainment                      11.99 USD
+
+2026-02-04 * "Amazon" ""
+  Liabilities:US:Chase:Card5678              -77.42 USD
+  Expenses:Shopping                           77.42 USD
+
+2026-02-17 * "Amazon" ""
+  Liabilities:US:Chase:Card5678              -38.19 USD
+  Expenses:Shopping                           38.19 USD
+
+2026-02-05 * "Target" ""
+  Liabilities:US:CapitalOne:Card1122        -126.40 USD
+  Expenses:Shopping                          126.40 USD
+
+2026-02-08 * "Hulu" ""
+  Liabilities:US:CapitalOne:Card1122         -17.99 USD
+  Expenses:Entertainment                      17.99 USD
+
+2026-02-08 * "Max Streaming" ""
+  Liabilities:US:CapitalOne:Card1122         -16.99 USD
+  Expenses:Entertainment                      16.99 USD
+
+2026-02-03 * "Blue Bottle Coffee" ""
+  Liabilities:US:CapitalOne:Card1122          -7.25 USD
+  Expenses:Food:Dining                         7.25 USD
+
+2026-02-13 * "Blue Bottle Coffee" ""
+  Liabilities:US:CapitalOne:Card1122          -7.25 USD
+  Expenses:Food:Dining                         7.25 USD
+
+2026-02-24 * "Blue Bottle Coffee" ""
+  Liabilities:US:CapitalOne:Card1122          -7.25 USD
+  Expenses:Food:Dining                         7.25 USD
+
+2026-03-01 * "BrightPath Labs" "Payroll — Alex (net)"
+  Assets:US:Chase:Checking4321              3950.00 USD
+  Income:US:Salary:BrightPathLabs          -3950.00 USD
+
+2026-03-15 * "BrightPath Labs" "Payroll — Alex (net)"
+  Assets:US:Chase:Checking4321              3950.00 USD
+  Income:US:Salary:BrightPathLabs          -3950.00 USD
+
+2026-03-05 * "Cedar Grove School District" "Payroll — Jordan (net)"
+  Assets:US:Chase:Checking4321              3400.00 USD
+  Income:US:Salary:CedarGroveSD            -3400.00 USD
+
+2026-03-01 * "Oakwood Property Management" "Rent"
+  Assets:US:Chase:Checking4321             -2600.00 USD
+  Expenses:Housing                          2600.00 USD
+
+2026-03-03 * "Little Sprouts Daycare" "Daycare — Riley"
+  Assets:US:Chase:Checking4321             -1150.00 USD
+  Expenses:Childcare                        1150.00 USD
+
+2026-03-07 * "City Power & Light" "Electric"
+  Assets:US:Chase:Checking4321              -151.80 USD
+  Expenses:Utilities                         151.80 USD
+
+2026-03-07 * "Comcast" "Internet"
+  Assets:US:Chase:Checking4321               -79.99 USD
+  Expenses:Utilities                          79.99 USD
+
+2026-03-10 * "T-Mobile" "Family phone plan"
+  Assets:US:Chase:Checking4321               -95.00 USD
+  Expenses:Utilities                          95.00 USD
+
+2026-03-12 * "FitLife Gym" "Membership"
+  Assets:US:Chase:Checking4321               -89.00 USD
+  Expenses:Health                             89.00 USD
+
+2026-03-18 * "GEICO" "Auto insurance"
+  Assets:US:Chase:Checking4321              -168.00 USD
+  Expenses:Insurance                         168.00 USD
+
+2026-03-15 * "CollegeSave" "529 monthly contribution — Riley"
+  Assets:US:Chase:Checking4321              -300.00 USD
+  Assets:US:CollegeSave:529Riley                 10 AGGRX {30.00 USD}
+
+2026-03-16 * "Ally Bank" "Transfer to savings"
+  Assets:US:Chase:Checking4321             -3500.00 USD
+  Assets:US:Ally:Savings9876                3500.00 USD
+
+2026-03-25 * "Ally Bank" "Interest"
+  Assets:US:Ally:Savings9876                  98.03 USD
+  Income:US:Interest                         -98.03 USD
+
+2026-03-20 * "Chase" "Card autopay — statement balance"
+  Assets:US:Chase:Checking4321              -842.48 USD
+  Liabilities:US:Chase:Card5678              842.48 USD
+
+2026-03-21 * "Capital One" "Card autopay — statement balance"
+  Assets:US:Chase:Checking4321              -183.13 USD
+  Liabilities:US:CapitalOne:Card1122         183.13 USD
+
+2026-03-02 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -124.60 USD
+  Expenses:Food:Groceries                    124.60 USD
+
+2026-03-08 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -135.12 USD
+  Expenses:Food:Groceries                    135.12 USD
+
+2026-03-16 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -109.44 USD
+  Expenses:Food:Groceries                    109.44 USD
+
+2026-03-27 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -128.71 USD
+  Expenses:Food:Groceries                    128.71 USD
+
+2026-03-13 * "Chipotle" ""
+  Liabilities:US:Chase:Card5678              -31.80 USD
+  Expenses:Food:Dining                        31.80 USD
+
+2026-03-24 * "Sushi Ora" ""
+  Liabilities:US:Chase:Card5678              -74.25 USD
+  Expenses:Food:Dining                        74.25 USD
+
+2026-03-06 * "Shell Oil" ""
+  Liabilities:US:Chase:Card5678              -49.60 USD
+  Expenses:Transport                          49.60 USD
+
+2026-03-19 * "Shell Oil" ""
+  Liabilities:US:Chase:Card5678              -44.30 USD
+  Expenses:Transport                          44.30 USD
+
+2026-03-06 * "Netflix" ""
+  Liabilities:US:Chase:Card5678              -15.49 USD
+  Expenses:Entertainment                      15.49 USD
+
+2026-03-09 * "Spotify" ""
+  Liabilities:US:Chase:Card5678              -11.99 USD
+  Expenses:Entertainment                      11.99 USD
+
+2026-03-04 * "Amazon" ""
+  Liabilities:US:Chase:Card5678              -54.88 USD
+  Expenses:Shopping                           54.88 USD
+
+2026-03-17 * "Amazon" ""
+  Liabilities:US:Chase:Card5678              -92.30 USD
+  Expenses:Shopping                           92.30 USD
+
+2026-03-05 * "Target" ""
+  Liabilities:US:CapitalOne:Card1122         -98.75 USD
+  Expenses:Shopping                           98.75 USD
+
+2026-03-08 * "Hulu" ""
+  Liabilities:US:CapitalOne:Card1122         -17.99 USD
+  Expenses:Entertainment                      17.99 USD
+
+2026-03-08 * "Max Streaming" ""
+  Liabilities:US:CapitalOne:Card1122         -16.99 USD
+  Expenses:Entertainment                      16.99 USD
+
+2026-03-03 * "Blue Bottle Coffee" ""
+  Liabilities:US:CapitalOne:Card1122          -7.25 USD
+  Expenses:Food:Dining                         7.25 USD
+
+2026-03-13 * "Blue Bottle Coffee" ""
+  Liabilities:US:CapitalOne:Card1122          -7.25 USD
+  Expenses:Food:Dining                         7.25 USD
+
+2026-03-24 * "Blue Bottle Coffee" ""
+  Liabilities:US:CapitalOne:Card1122          -7.25 USD
+  Expenses:Food:Dining                         7.25 USD
+
+2026-03-20 * "United Airlines" ""
+  Liabilities:US:Chase:Card5678             -782.40 USD
+  Expenses:Travel                            782.40 USD
+
+2026-04-01 * "BrightPath Labs" "Payroll — Alex (net)"
+  Assets:US:Chase:Checking4321              3950.00 USD
+  Income:US:Salary:BrightPathLabs          -3950.00 USD
+
+2026-04-15 * "BrightPath Labs" "Payroll — Alex (net)"
+  Assets:US:Chase:Checking4321              3950.00 USD
+  Income:US:Salary:BrightPathLabs          -3950.00 USD
+
+2026-04-05 * "Cedar Grove School District" "Payroll — Jordan (net)"
+  Assets:US:Chase:Checking4321              3400.00 USD
+  Income:US:Salary:CedarGroveSD            -3400.00 USD
+
+2026-04-01 * "Oakwood Property Management" "Rent"
+  Assets:US:Chase:Checking4321             -2600.00 USD
+  Expenses:Housing                          2600.00 USD
+
+2026-04-03 * "Little Sprouts Daycare" "Daycare — Riley"
+  Assets:US:Chase:Checking4321             -1150.00 USD
+  Expenses:Childcare                        1150.00 USD
+
+2026-04-07 * "City Power & Light" "Electric"
+  Assets:US:Chase:Checking4321              -128.45 USD
+  Expenses:Utilities                         128.45 USD
+
+2026-04-07 * "Comcast" "Internet"
+  Assets:US:Chase:Checking4321               -79.99 USD
+  Expenses:Utilities                          79.99 USD
+
+2026-04-10 * "T-Mobile" "Family phone plan"
+  Assets:US:Chase:Checking4321               -95.00 USD
+  Expenses:Utilities                          95.00 USD
+
+2026-04-12 * "FitLife Gym" "Membership"
+  Assets:US:Chase:Checking4321               -89.00 USD
+  Expenses:Health                             89.00 USD
+
+2026-04-18 * "GEICO" "Auto insurance"
+  Assets:US:Chase:Checking4321              -168.00 USD
+  Expenses:Insurance                         168.00 USD
+
+2026-04-15 * "CollegeSave" "529 monthly contribution — Riley"
+  Assets:US:Chase:Checking4321              -300.00 USD
+  Assets:US:CollegeSave:529Riley                 10 AGGRX {30.00 USD}
+
+2026-04-16 * "Ally Bank" "Transfer to savings"
+  Assets:US:Chase:Checking4321             -3500.00 USD
+  Assets:US:Ally:Savings9876                3500.00 USD
+
+2026-04-25 * "Ally Bank" "Interest"
+  Assets:US:Ally:Savings9876                 101.44 USD
+  Income:US:Interest                        -101.44 USD
+
+2026-04-20 * "Chase" "Card autopay — statement balance"
+  Assets:US:Chase:Checking4321              -812.40 USD
+  Liabilities:US:Chase:Card5678              812.40 USD
+
+2026-04-21 * "Capital One" "Card autopay — statement balance"
+  Assets:US:Chase:Checking4321                27.65 USD
+  Liabilities:US:CapitalOne:Card1122         -27.65 USD
+
+2026-04-02 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -119.83 USD
+  Expenses:Food:Groceries                    119.83 USD
+
+2026-04-08 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -142.55 USD
+  Expenses:Food:Groceries                    142.55 USD
+
+2026-04-16 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -131.20 USD
+  Expenses:Food:Groceries                    131.20 USD
+
+2026-04-27 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -104.96 USD
+  Expenses:Food:Groceries                    104.96 USD
+
+2026-04-09 * "Pizza My Heart" ""
+  Liabilities:US:Chase:Card5678              -38.90 USD
+  Expenses:Food:Dining                        38.90 USD
+
+2026-04-22 * "Chipotle" ""
+  Liabilities:US:Chase:Card5678              -29.45 USD
+  Expenses:Food:Dining                        29.45 USD
+
+2026-04-06 * "Shell Oil" ""
+  Liabilities:US:Chase:Card5678              -52.15 USD
+  Expenses:Transport                          52.15 USD
+
+2026-04-19 * "Shell Oil" ""
+  Liabilities:US:Chase:Card5678              -48.90 USD
+  Expenses:Transport                          48.90 USD
+
+2026-04-06 * "Netflix" ""
+  Liabilities:US:Chase:Card5678              -15.49 USD
+  Expenses:Entertainment                      15.49 USD
+
+2026-04-09 * "Spotify" ""
+  Liabilities:US:Chase:Card5678              -11.99 USD
+  Expenses:Entertainment                      11.99 USD
+
+2026-04-04 * "Amazon" ""
+  Liabilities:US:Chase:Card5678              -41.75 USD
+  Expenses:Shopping                           41.75 USD
+
+2026-04-17 * "Amazon" ""
+  Liabilities:US:Chase:Card5678              -63.20 USD
+  Expenses:Shopping                           63.20 USD
+
+2026-04-05 * "Target" ""
+  Liabilities:US:CapitalOne:Card1122        -143.20 USD
+  Expenses:Shopping                          143.20 USD
+
+2026-04-08 * "Hulu" ""
+  Liabilities:US:CapitalOne:Card1122         -17.99 USD
+  Expenses:Entertainment                      17.99 USD
+
+2026-04-08 * "Max Streaming" ""
+  Liabilities:US:CapitalOne:Card1122         -16.99 USD
+  Expenses:Entertainment                      16.99 USD
+
+2026-04-03 * "Blue Bottle Coffee" ""
+  Liabilities:US:CapitalOne:Card1122          -7.25 USD
+  Expenses:Food:Dining                         7.25 USD
+
+2026-04-13 * "Blue Bottle Coffee" ""
+  Liabilities:US:CapitalOne:Card1122          -7.25 USD
+  Expenses:Food:Dining                         7.25 USD
+
+2026-04-24 * "Blue Bottle Coffee" ""
+  Liabilities:US:CapitalOne:Card1122          -7.25 USD
+  Expenses:Food:Dining                         7.25 USD
+
+2026-04-11 * "IKEA" ""
+  Liabilities:US:Chase:Card5678             -436.28 USD
+  Expenses:Home                              436.28 USD
+
+2026-05-01 * "BrightPath Labs" "Payroll — Alex (net)"
+  Assets:US:Chase:Checking4321              3950.00 USD
+  Income:US:Salary:BrightPathLabs          -3950.00 USD
+
+2026-05-15 * "BrightPath Labs" "Payroll — Alex (net)"
+  Assets:US:Chase:Checking4321              3950.00 USD
+  Income:US:Salary:BrightPathLabs          -3950.00 USD
+
+2026-05-05 * "Cedar Grove School District" "Payroll — Jordan (net)"
+  Assets:US:Chase:Checking4321              3400.00 USD
+  Income:US:Salary:CedarGroveSD            -3400.00 USD
+
+2026-05-01 * "Oakwood Property Management" "Rent"
+  Assets:US:Chase:Checking4321             -2600.00 USD
+  Expenses:Housing                          2600.00 USD
+
+2026-05-03 * "Little Sprouts Daycare" "Daycare — Riley"
+  Assets:US:Chase:Checking4321             -1150.00 USD
+  Expenses:Childcare                        1150.00 USD
+
+2026-05-07 * "City Power & Light" "Electric"
+  Assets:US:Chase:Checking4321              -112.30 USD
+  Expenses:Utilities                         112.30 USD
+
+2026-05-07 * "Comcast" "Internet"
+  Assets:US:Chase:Checking4321               -79.99 USD
+  Expenses:Utilities                          79.99 USD
+
+2026-05-10 * "T-Mobile" "Family phone plan"
+  Assets:US:Chase:Checking4321               -95.00 USD
+  Expenses:Utilities                          95.00 USD
+
+2026-05-12 * "FitLife Gym" "Membership"
+  Assets:US:Chase:Checking4321               -89.00 USD
+  Expenses:Health                             89.00 USD
+
+2026-05-18 * "GEICO" "Auto insurance"
+  Assets:US:Chase:Checking4321              -168.00 USD
+  Expenses:Insurance                         168.00 USD
+
+2026-05-15 * "CollegeSave" "529 monthly contribution — Riley"
+  Assets:US:Chase:Checking4321              -300.00 USD
+  Assets:US:CollegeSave:529Riley                 10 AGGRX {30.00 USD}
+
+2026-05-16 * "Ally Bank" "Transfer to savings"
+  Assets:US:Chase:Checking4321             -3500.00 USD
+  Assets:US:Ally:Savings9876                3500.00 USD
+
+2026-05-25 * "Ally Bank" "Interest"
+  Assets:US:Ally:Savings9876                 104.90 USD
+  Income:US:Interest                        -104.90 USD
+
+2026-05-20 * "Chase" "Card autopay — statement balance"
+  Assets:US:Chase:Checking4321              -424.25 USD
+  Liabilities:US:Chase:Card5678              424.25 USD
+
+2026-05-21 * "Capital One" "Card autopay — statement balance"
+  Assets:US:Chase:Checking4321              -227.58 USD
+  Liabilities:US:CapitalOne:Card1122         227.58 USD
+
+2026-05-02 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -137.18 USD
+  Expenses:Food:Groceries                    137.18 USD
+
+2026-05-08 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -121.42 USD
+  Expenses:Food:Groceries                    121.42 USD
+
+2026-05-16 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -115.77 USD
+  Expenses:Food:Groceries                    115.77 USD
+
+2026-05-27 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -133.09 USD
+  Expenses:Food:Groceries                    133.09 USD
+
+2026-05-14 * "Sushi Ora" ""
+  Liabilities:US:Chase:Card5678              -81.10 USD
+  Expenses:Food:Dining                        81.10 USD
+
+2026-05-25 * "Pizza My Heart" ""
+  Liabilities:US:Chase:Card5678              -44.60 USD
+  Expenses:Food:Dining                        44.60 USD
+
+2026-05-06 * "Shell Oil" ""
+  Liabilities:US:Chase:Card5678              -46.75 USD
+  Expenses:Transport                          46.75 USD
+
+2026-05-19 * "Shell Oil" ""
+  Liabilities:US:Chase:Card5678              -50.40 USD
+  Expenses:Transport                          50.40 USD
+
+2026-05-06 * "Netflix" ""
+  Liabilities:US:Chase:Card5678              -15.49 USD
+  Expenses:Entertainment                      15.49 USD
+
+2026-05-09 * "Spotify" ""
+  Liabilities:US:Chase:Card5678              -11.99 USD
+  Expenses:Entertainment                      11.99 USD
+
+2026-05-04 * "Amazon" ""
+  Liabilities:US:Chase:Card5678              -88.14 USD
+  Expenses:Shopping                           88.14 USD
+
+2026-05-17 * "Amazon" ""
+  Liabilities:US:Chase:Card5678              -29.99 USD
+  Expenses:Shopping                           29.99 USD
+
+2026-05-05 * "Target" ""
+  Liabilities:US:CapitalOne:Card1122        -112.60 USD
+  Expenses:Shopping                          112.60 USD
+
+2026-05-08 * "Hulu" ""
+  Liabilities:US:CapitalOne:Card1122         -17.99 USD
+  Expenses:Entertainment                      17.99 USD
+
+2026-05-08 * "Max Streaming" ""
+  Liabilities:US:CapitalOne:Card1122         -16.99 USD
+  Expenses:Entertainment                      16.99 USD
+
+2026-05-03 * "Blue Bottle Coffee" ""
+  Liabilities:US:CapitalOne:Card1122          -7.25 USD
+  Expenses:Food:Dining                         7.25 USD
+
+2026-05-13 * "Blue Bottle Coffee" ""
+  Liabilities:US:CapitalOne:Card1122          -7.25 USD
+  Expenses:Food:Dining                         7.25 USD
+
+2026-05-24 * "Blue Bottle Coffee" ""
+  Liabilities:US:CapitalOne:Card1122          -7.25 USD
+  Expenses:Food:Dining                         7.25 USD
+
+2026-05-02 * "REI" ""
+  Liabilities:US:Chase:Card5678             -218.55 USD
+  Expenses:Shopping                          218.55 USD
+
+2026-06-01 * "BrightPath Labs" "Payroll — Alex (net)"
+  Assets:US:Chase:Checking4321              3950.00 USD
+  Income:US:Salary:BrightPathLabs          -3950.00 USD
+
+2026-06-15 * "BrightPath Labs" "Payroll — Alex (net)"
+  Assets:US:Chase:Checking4321              3950.00 USD
+  Income:US:Salary:BrightPathLabs          -3950.00 USD
+
+2026-06-05 * "Cedar Grove School District" "Payroll — Jordan (net)"
+  Assets:US:Chase:Checking4321              3400.00 USD
+  Income:US:Salary:CedarGroveSD            -3400.00 USD
+
+2026-06-01 * "Oakwood Property Management" "Rent"
+  Assets:US:Chase:Checking4321             -2600.00 USD
+  Expenses:Housing                          2600.00 USD
+
+2026-06-03 * "Little Sprouts Daycare" "Daycare — Riley"
+  Assets:US:Chase:Checking4321             -1150.00 USD
+  Expenses:Childcare                        1150.00 USD
+
+2026-06-07 * "City Power & Light" "Electric"
+  Assets:US:Chase:Checking4321              -138.75 USD
+  Expenses:Utilities                         138.75 USD
+
+2026-06-07 * "Comcast" "Internet"
+  Assets:US:Chase:Checking4321               -79.99 USD
+  Expenses:Utilities                          79.99 USD
+
+2026-06-10 * "T-Mobile" "Family phone plan"
+  Assets:US:Chase:Checking4321               -95.00 USD
+  Expenses:Utilities                          95.00 USD
+
+2026-06-12 * "FitLife Gym" "Membership"
+  Assets:US:Chase:Checking4321               -89.00 USD
+  Expenses:Health                             89.00 USD
+
+2026-06-18 * "GEICO" "Auto insurance"
+  Assets:US:Chase:Checking4321              -168.00 USD
+  Expenses:Insurance                         168.00 USD
+
+2026-06-15 * "CollegeSave" "529 monthly contribution — Riley"
+  Assets:US:Chase:Checking4321              -300.00 USD
+  Assets:US:CollegeSave:529Riley                 10 AGGRX {30.00 USD}
+
+2026-06-16 * "Ally Bank" "Transfer to savings"
+  Assets:US:Chase:Checking4321             -3500.00 USD
+  Assets:US:Ally:Savings9876                3500.00 USD
+
+2026-06-25 * "Ally Bank" "Interest"
+  Assets:US:Ally:Savings9876                 108.32 USD
+  Income:US:Interest                        -108.32 USD
+
+2026-06-20 * "Chase" "Card autopay — statement balance"
+  Assets:US:Chase:Checking4321              -670.22 USD
+  Liabilities:US:Chase:Card5678              670.22 USD
+
+2026-06-21 * "Capital One" "Card autopay — statement balance"
+  Assets:US:Chase:Checking4321                58.25 USD
+  Liabilities:US:CapitalOne:Card1122         -58.25 USD
+
+2026-06-02 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -126.94 USD
+  Expenses:Food:Groceries                    126.94 USD
+
+2026-06-08 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -140.31 USD
+  Expenses:Food:Groceries                    140.31 USD
+
+2026-06-16 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -112.58 USD
+  Expenses:Food:Groceries                    112.58 USD
+
+2026-06-27 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -129.86 USD
+  Expenses:Food:Groceries                    129.86 USD
+
+2026-06-10 * "Chipotle" ""
+  Liabilities:US:Chase:Card5678              -33.25 USD
+  Expenses:Food:Dining                        33.25 USD
+
+2026-06-23 * "Sushi Ora" ""
+  Liabilities:US:Chase:Card5678              -69.85 USD
+  Expenses:Food:Dining                        69.85 USD
+
+2026-06-06 * "Shell Oil" ""
+  Liabilities:US:Chase:Card5678              -53.30 USD
+  Expenses:Transport                          53.30 USD
+
+2026-06-19 * "Shell Oil" ""
+  Liabilities:US:Chase:Card5678              -45.95 USD
+  Expenses:Transport                          45.95 USD
+
+2026-06-06 * "Netflix" ""
+  Liabilities:US:Chase:Card5678              -15.49 USD
+  Expenses:Entertainment                      15.49 USD
+
+2026-06-09 * "Spotify" ""
+  Liabilities:US:Chase:Card5678              -11.99 USD
+  Expenses:Entertainment                      11.99 USD
+
+2026-06-04 * "Amazon" ""
+  Liabilities:US:Chase:Card5678              -59.63 USD
+  Expenses:Shopping                           59.63 USD
+
+2026-06-17 * "Amazon" ""
+  Liabilities:US:Chase:Card5678              -71.05 USD
+  Expenses:Shopping                           71.05 USD
+
+2026-06-05 * "Target" ""
+  Liabilities:US:CapitalOne:Card1122        -131.85 USD
+  Expenses:Shopping                          131.85 USD
+
+2026-06-08 * "Hulu" ""
+  Liabilities:US:CapitalOne:Card1122         -17.99 USD
+  Expenses:Entertainment                      17.99 USD
+
+2026-06-08 * "Max Streaming" ""
+  Liabilities:US:CapitalOne:Card1122         -16.99 USD
+  Expenses:Entertainment                      16.99 USD
+
+2026-06-03 * "Blue Bottle Coffee" ""
+  Liabilities:US:CapitalOne:Card1122          -7.25 USD
+  Expenses:Food:Dining                         7.25 USD
+
+2026-06-13 * "Blue Bottle Coffee" ""
+  Liabilities:US:CapitalOne:Card1122          -7.25 USD
+  Expenses:Food:Dining                         7.25 USD
+
+2026-06-24 * "Blue Bottle Coffee" ""
+  Liabilities:US:CapitalOne:Card1122          -7.25 USD
+  Expenses:Food:Dining                         7.25 USD
+
+2026-07-01 * "BrightPath Labs" "Payroll — Alex (net)"
+  Assets:US:Chase:Checking4321              3950.00 USD
+  Income:US:Salary:BrightPathLabs          -3950.00 USD
+
+2026-07-15 * "BrightPath Labs" "Payroll — Alex (net)"
+  Assets:US:Chase:Checking4321              3950.00 USD
+  Income:US:Salary:BrightPathLabs          -3950.00 USD
+
+2026-07-05 * "Cedar Grove School District" "Payroll — Jordan (net)"
+  Assets:US:Chase:Checking4321              3400.00 USD
+  Income:US:Salary:CedarGroveSD            -3400.00 USD
+
+2026-07-01 * "Oakwood Property Management" "Rent"
+  Assets:US:Chase:Checking4321             -2600.00 USD
+  Expenses:Housing                          2600.00 USD
+
+2026-07-03 * "Little Sprouts Daycare" "Daycare — Riley"
+  Assets:US:Chase:Checking4321             -1150.00 USD
+  Expenses:Childcare                        1150.00 USD
+
+2026-07-07 * "City Power & Light" "Electric"
+  Assets:US:Chase:Checking4321              -171.60 USD
+  Expenses:Utilities                         171.60 USD
+
+2026-07-07 * "Comcast" "Internet"
+  Assets:US:Chase:Checking4321               -79.99 USD
+  Expenses:Utilities                          79.99 USD
+
+2026-07-10 * "T-Mobile" "Family phone plan"
+  Assets:US:Chase:Checking4321               -95.00 USD
+  Expenses:Utilities                          95.00 USD
+
+2026-07-12 * "FitLife Gym" "Membership"
+  Assets:US:Chase:Checking4321               -89.00 USD
+  Expenses:Health                             89.00 USD
+
+2026-07-18 * "GEICO" "Auto insurance"
+  Assets:US:Chase:Checking4321              -168.00 USD
+  Expenses:Insurance                         168.00 USD
+
+2026-07-15 * "CollegeSave" "529 monthly contribution — Riley"
+  Assets:US:Chase:Checking4321              -300.00 USD
+  Assets:US:CollegeSave:529Riley                 10 AGGRX {30.00 USD}
+
+2026-07-16 * "Ally Bank" "Transfer to savings"
+  Assets:US:Chase:Checking4321             -3500.00 USD
+  Assets:US:Ally:Savings9876                3500.00 USD
+
+2026-07-25 * "Ally Bank" "Interest"
+  Assets:US:Ally:Savings9876                 111.85 USD
+  Income:US:Interest                        -111.85 USD
+
+2026-07-20 * "Chase" "Card autopay — statement balance"
+  Assets:US:Chase:Checking4321              -199.98 USD
+  Liabilities:US:Chase:Card5678              199.98 USD
+
+2026-07-21 * "Capital One" "Card autopay — statement balance"
+  Assets:US:Chase:Checking4321              -246.83 USD
+  Liabilities:US:CapitalOne:Card1122         246.83 USD
+
+2026-07-02 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -134.72 USD
+  Expenses:Food:Groceries                    134.72 USD
+
+2026-07-08 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -117.25 USD
+  Expenses:Food:Groceries                    117.25 USD
+
+2026-07-16 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -138.40 USD
+  Expenses:Food:Groceries                    138.40 USD
+
+2026-07-27 * "Trader Joe's" ""
+  Liabilities:US:Chase:Card5678             -123.61 USD
+  Expenses:Food:Groceries                    123.61 USD
+
+2026-07-12 * "Pizza My Heart" ""
+  Liabilities:US:Chase:Card5678              -41.30 USD
+  Expenses:Food:Dining                        41.30 USD
+
+2026-07-26 * "Chipotle" ""
+  Liabilities:US:Chase:Card5678              -35.70 USD
+  Expenses:Food:Dining                        35.70 USD
+
+2026-07-06 * "Shell Oil" ""
+  Liabilities:US:Chase:Card5678              -48.65 USD
+  Expenses:Transport                          48.65 USD
+
+2026-07-19 * "Shell Oil" ""
+  Liabilities:US:Chase:Card5678              -51.10 USD
+  Expenses:Transport                          51.10 USD
+
+2026-07-06 * "Netflix" ""
+  Liabilities:US:Chase:Card5678              -15.49 USD
+  Expenses:Entertainment                      15.49 USD
+
+2026-07-09 * "Spotify" ""
+  Liabilities:US:Chase:Card5678              -11.99 USD
+  Expenses:Entertainment                      11.99 USD
+
+2026-07-04 * "Amazon" ""
+  Liabilities:US:Chase:Card5678              -46.90 USD
+  Expenses:Shopping                           46.90 USD
+
+2026-07-17 * "Amazon" ""
+  Liabilities:US:Chase:Card5678              -83.55 USD
+  Expenses:Shopping                           83.55 USD
+
+2026-07-05 * "Target" ""
+  Liabilities:US:CapitalOne:Card1122        -107.30 USD
+  Expenses:Shopping                          107.30 USD
+
+2026-07-08 * "Hulu" ""
+  Liabilities:US:CapitalOne:Card1122         -17.99 USD
+  Expenses:Entertainment                      17.99 USD
+
+2026-07-08 * "Max Streaming" ""
+  Liabilities:US:CapitalOne:Card1122         -16.99 USD
+  Expenses:Entertainment                      16.99 USD
+
+2026-07-03 * "Blue Bottle Coffee" ""
+  Liabilities:US:CapitalOne:Card1122          -7.25 USD
+  Expenses:Food:Dining                         7.25 USD
+
+2026-07-13 * "Blue Bottle Coffee" ""
+  Liabilities:US:CapitalOne:Card1122          -7.25 USD
+  Expenses:Food:Dining                         7.25 USD
+
+2026-07-24 * "Blue Bottle Coffee" ""
+  Liabilities:US:CapitalOne:Card1122          -7.25 USD
+  Expenses:Food:Dining                         7.25 USD
+
+; --- Statement balance assertions (2026-08-01) --------------------------
+2026-08-01 balance Assets:US:Chase:Checking4321   19719.99 USD
+2026-08-01 balance Assets:US:Ally:Savings9876      49620.66 USD
+2026-08-01 balance Liabilities:US:Chase:Card5678      -3598.01 USD
+2026-08-01 balance Liabilities:US:CapitalOne:Card1122  -488.84 USD

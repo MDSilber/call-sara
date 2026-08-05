@@ -35,14 +35,18 @@ inbox/         drop zone for unfiled files — GITIGNORED, kept empty
 2. **File the source** into `documents/` as `YYYY-MM-DD.name.pdf`, under a
    folder mirroring the ledger account
    (`documents/Assets/US/<Institution>/<Owner>/`); tax forms go to
-   `documents/tax/<year>/`. Superseded docs move to an `archive/` subfolder;
-   originals are never deleted or edited.
+   `documents/tax/<year>/`; medical receipts saved for future HSA
+   reimbursement go to `documents/medical-receipts/` (the shoebox — no
+   receipt, no reimbursement). Superseded docs move to an `archive/`
+   subfolder; originals are never deleted or edited.
 3. **Extract**: transactions → `ledger/<year>.beancount` (via the importers,
    categorized by `rules.toml`); statement balances → `balance` assertions;
-   non-transaction facts → the right `facts/` file.
+   non-transaction facts → the right `facts/` file. Creating a NEW
+   `<year>.beancount` requires adding `include "<year>.beancount"` to
+   `main.beancount` — nothing is read without it.
 4. **Learn the rule**: any categorization you corrected by hand becomes a
    `[[payee_rules]]` entry in `rules.toml`, then re-apply with
-   `tools/run recategorize.py`. Never fix the same thing twice.
+   `tools/run recategorize.py --write`. Never fix the same thing twice.
 5. **Check**: `.venv/bin/bean-check ledger/main.beancount` must pass.
 6. **Regenerate `reports/`** (`tools/run reports.py`, `tools/run run_checks.py`).
 7. **Commit**, and report back in one or two lines.
@@ -100,7 +104,19 @@ rather than eyeballing the ledger. Arithmetic is code; judgment is the agent.
   The pre-commit scanner blocks any commit that violates this; don't fight
   it — redact. Full numbers live in the password manager, not here.
 - Edit surgically. Never regenerate a whole file to change one line.
+- A transaction dated before an existing `balance` assertion is settled
+  history: correct it with a dated adjusting entry, never by editing —
+  an edit invalidates the anchor. Removing a balance assertion needs the
+  owner's explicit OK.
 - History is never deleted: closed accounts get a Beancount `close`
   directive and `status: closed`, not removal. Documents are archived, not
   deleted.
+- Never `git reset --hard` or force-push this vault — history is the
+  audit trail; `git revert` mistakes forward.
+- Deleting any ledger or facts file needs the owner's confirmation first,
+  with the safer alternative named (archive, `close`, or revert).
+- On any fresh clone of this vault, run `git config core.hooksPath
+  .githooks` before committing — hooks don't clone; `doctor.sh` verifies.
+- The vault remote must be PRIVATE. Before pushing to a remote this
+  session didn't create, verify: `gh repo view --json visibility`.
 - Commit at the end of every session so the next one starts already knowing.

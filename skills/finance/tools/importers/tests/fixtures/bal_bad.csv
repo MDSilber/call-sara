@@ -1,0 +1,4 @@
+Transaction Date,Post Date,Description,Category,Type,Amount,Balance
+06/28/2026,06/28/2026,INTEREST PAYMENT,,Adjustment,4.10,1204.10
+06/15/2026,06/15/2026,GROCERY OUTLET 44,Groceries,Sale,-100.00,1150.00
+06/01/2026,06/01/2026,ACME PAYROLL,,Deposit,800.00,1300.00

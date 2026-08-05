@@ -1,0 +1,23 @@
+2026-06-05 * "BLUE BOTTLE COFFEE NYC" ""
+  chase-type: "Sale"
+  import-hash: "c01cc602d2d33302"
+  Liabilities:US:TestBank:Card7777   -11.25 USD
+  Expenses:Food:Dining
+
+2026-06-10 * "WHOLEFDS MKT 10233" ""
+  chase-type: "Sale"
+  import-hash: "f297d334635e3464"
+  Liabilities:US:TestBank:Card7777   -142.19 USD
+  Expenses:Food:Groceries
+
+2026-06-12 * "MYSTERY VENDOR LLC" ""
+  chase-type: "Sale"
+  import-hash: "b038eb1d8dbdd532"
+  Liabilities:US:TestBank:Card7777   -63.00 USD
+  Expenses:Uncategorized
+
+2026-06-20 * "Payment Thank You - Web" ""
+  chase-type: "Payment"
+  import-hash: "72748dd319dd6f9a"
+  Liabilities:US:TestBank:Card7777   500.00 USD
+  Assets:US:Transfers
