@@ -65,7 +65,7 @@ terms of use. Your call, your account.
 
 ## Where your data actually goes
 
-Your disk and your private git remote. That's the design. The six
+Your disk and your private git remote. That's the design. The seven
 honest exceptions, in full:
 
 1. Whatever Sara reads in a session enters Claude's model context, same
@@ -75,11 +75,13 @@ honest exceptions, in full:
 4. With the Chrome extension, Claude reads bank pages you're logged into.
 5. Price refreshes send ticker symbols (never balances) to quote APIs.
 6. Savings research sends merchant terms (never identities) to web search.
+7. If you set up the optional Plaid feeds, your transactions flow from
+   your bank through Plaid's API (under your own keys) to your disk.
 
 Account numbers are last-4 only. Statements never enter git. A
 fail-closed gitleaks scanner blocks any commit that breaks the rules.
 Sara never needs a password, SSN, or full account number typed into
-chat, ever. If any of the six is a dealbreaker for you, don't use this!
+chat, ever. If any of the seven is a dealbreaker for you, don't use this!
 
 ## Sara in your pocket (optional)
 
@@ -90,6 +92,20 @@ straight from your private vault repo, so Claude on your phone can
 answer "how are we doing?" with your real numbers while your laptop
 sleeps. Opt-in, bearer-gated, one read-only GitHub token, no second
 copy of your data anywhere. Full walkthrough in that directory's README.
+
+## The feeds (optional)
+
+New: Sara can pull the everyday accounts herself. You mint your own free
+Plaid keys (took me ten minutes, the walkthrough with the exact wording is
+in `references/fetching.md`), link an institution with one command, and
+`tools/run ingest.py` syncs it into the ledger. It refuses to write until
+every count reconciles, it prints a verification report that compares your
+bank's reported balance against the ledger to the cent, and re-running it
+is always free because dedupe is exact. First run is report-only, you read
+it, then you flip `--write`. Your keys, your machine, no middleman, and the
+10 lifetime Plaid links are guarded so you never burn one by accident
+(broken connections repair for free). Statements you still drag in by hand
+work exactly like before, same ledger, same dedupe.
 
 ## How it's built
 

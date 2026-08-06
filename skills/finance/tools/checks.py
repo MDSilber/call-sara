@@ -1119,9 +1119,63 @@ def allocation_drift():
     return out
 
 
+# ------------------------------------------------------------ plaid feeds
+PLAID_WATCH_DAYS = 3
+PLAID_ALERT_DAYS = 7
+
+
+def plaid_freshness():
+    """A configured Plaid item whose sync has gone quiet — the daemon died,
+    the token broke, or the laptop never woke. Cursor timestamps live in
+    $VAULT/.secrets/plaid-cursors.json, written only on successful --write,
+    so staleness here means data genuinely is not landing. Watch past
+    PLAID_WATCH_DAYS, alert past PLAID_ALERT_DAYS; a linked item that has
+    NEVER synced is its own watch (the trust ramp stalled)."""
+    import json
+    sources = rules().get("sources", {})
+    items = (sources.get("plaid", {}) or {}).get("items", {}) if isinstance(sources, dict) else {}
+    if not isinstance(items, dict) or not items:
+        return []
+    cursor_file = VAULT / ".secrets" / "plaid-cursors.json"
+    stamps = {}
+    if cursor_file.is_file():
+        try:
+            stamps = json.loads(cursor_file.read_text()).get("items", {})
+        except (ValueError, AttributeError):
+            stamps = {}
+    out = []
+    today = date.today()
+    for alias in sorted(items):
+        synced_raw = (stamps.get(alias) or {}).get("last_synced", "")
+        if not synced_raw:
+            out.append(finding(
+                "plaid_freshness", "watch",
+                f"Plaid item `{alias}` is configured but has never synced",
+                f"rules.toml declares [sources.plaid.items.{alias}] and no cursor exists "
+                f"yet. Finish the trust ramp: `tools/run ingest.py` (read the report), "
+                f"then `tools/run ingest.py --write`."))
+            continue
+        try:
+            synced = datetime.fromisoformat(str(synced_raw)).date()
+        except ValueError:
+            continue
+        silent = (today - synced).days
+        if silent > PLAID_WATCH_DAYS:
+            severity = "alert" if silent > PLAID_ALERT_DAYS else "watch"
+            out.append(finding(
+                "plaid_freshness", severity,
+                f"Plaid item `{alias}` has not synced in {silent} days",
+                f"Last successful sync {synced.isoformat()}. If the daemon is scheduled, "
+                f"check /tmp/sara-ingestd.log; run `tools/run ingest.py --item {alias}` "
+                f"by hand — a broken connection repairs FREE with "
+                f"`python -m sara.link --repair {alias}` (never re-link fresh: Plaid "
+                f"slots are lifetime)."))
+    return out
+
+
 ALL = [concentration, deadlines, inbox, anomaly, subscriptions, reconciliation,
        coverage, review_queue, goals_status, milestones, fixed_balances, lanes,
-       projected_shortfall, cash_drag, allocation_drift]
+       projected_shortfall, cash_drag, allocation_drift, plaid_freshness]
 
 
 def run_all():

@@ -1,0 +1,19 @@
+[
+  {
+    "accounts": [
+      {
+        "account_id": "plaid-acct-brokerage",
+        "name": "Demo Brokerage",
+        "mask": "8642",
+        "type": "investment",
+        "subtype": "brokerage",
+        "balances": {"current": 2300.00, "available": null, "iso_currency_code": "USD"}
+      }
+    ],
+    "added": [],
+    "modified": [],
+    "removed": [],
+    "next_cursor": "vg-cursor-1",
+    "has_more": false
+  }
+]

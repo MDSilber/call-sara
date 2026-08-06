@@ -1,0 +1,65 @@
+[
+  {
+    "accounts": [
+      {
+        "account_id": "plaid-acct-checking",
+        "name": "Demo Checking",
+        "mask": "0766",
+        "type": "depository",
+        "subtype": "checking",
+        "balances": {"current": 4232.46, "available": 4232.46, "iso_currency_code": "USD"}
+      },
+      {
+        "account_id": "plaid-acct-card",
+        "name": "Demo Card",
+        "mask": "3333",
+        "type": "credit",
+        "subtype": "credit card",
+        "balances": {"current": 543.10, "available": 4456.90, "iso_currency_code": "USD"}
+      }
+    ],
+    "added": [
+      {
+        "transaction_id": "plaid-txn-006",
+        "account_id": "plaid-acct-checking",
+        "date": "2026-07-14",
+        "amount": 9.87,
+        "name": "CORNER BAKERY #42",
+        "merchant_name": "Corner Bakery",
+        "pending": false,
+        "pending_transaction_id": "plaid-txn-005-pending",
+        "payment_channel": "in store",
+        "iso_currency_code": "USD",
+        "personal_finance_category": {
+          "primary": "FOOD_AND_DRINK",
+          "detailed": "FOOD_AND_DRINK_RESTAURANT",
+          "confidence_level": "HIGH"
+        }
+      }
+    ],
+    "modified": [
+      {
+        "transaction_id": "plaid-txn-003",
+        "account_id": "plaid-acct-card",
+        "date": "2026-07-05",
+        "amount": 12.25,
+        "name": "BLUE BOTTLE COFFEE NYC",
+        "merchant_name": "Blue Bottle Coffee",
+        "pending": false,
+        "payment_channel": "in store",
+        "iso_currency_code": "USD",
+        "personal_finance_category": {
+          "primary": "FOOD_AND_DRINK",
+          "detailed": "FOOD_AND_DRINK_COFFEE",
+          "confidence_level": "VERY_HIGH"
+        }
+      }
+    ],
+    "removed": [
+      {"transaction_id": "plaid-txn-004", "account_id": "plaid-acct-card"},
+      {"transaction_id": "plaid-txn-999", "account_id": "plaid-acct-card"}
+    ],
+    "next_cursor": "cursor-round-2",
+    "has_more": false
+  }
+]

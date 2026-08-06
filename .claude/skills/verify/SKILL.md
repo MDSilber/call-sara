@@ -18,6 +18,27 @@ FINANCE_TEST_VENV=~/Finance/.venv \
 python3 skills/finance/tools/importers/tests/run_tests.py            # venv paths too
 ```
 
+The importers are shims into the `sara` package (skills/finance/sara/) —
+its own suite covers the canonical models, writer gates, Plaid mappers,
+and the ingest golden path, and the interpreter needs the package deps
+(pydantic; any vault venv after init has them, or `pip install -e
+'skills/finance/sara[dev]'` into a scratch venv):
+
+```bash
+cd skills/finance/sara
+python -m pytest tests/ -q                                   # hermetic slice
+FINANCE_TEST_VENV=~/Finance/.venv python -m pytest tests/ -q # + bean-check paths
+pyright && ruff check sara tests                             # strict, zero errors
+```
+
+The Plaid lane verifies with no network via the fixture seam:
+
+```bash
+SARA_PLAID_FIXTURE=skills/finance/sara/tests/fixtures \
+FINANCE_VAULT=<scratch-vault> tools/run ingest.py            # verification report
+# then the same with --write: entries land, cursor advances, vault commits
+```
+
 Then drive the surfaces against a scratch vault:
 
 ```bash
@@ -34,6 +55,7 @@ T=skills/finance/tools
 "$T/run" importers/chase_csv.py <activity.csv> <liability-account>
 "$T/run" importers/invest_ofx.py <file.qfx> [account]   # brokerage activity (INVSTMTMSGSRS)
 "$T/run" importers/holdings_ofx.py <file.qfx>           # positions -> price directives + holdings table
+"$T/run" ingest.py [--write]                             # Plaid sync (fixture seam above for offline)
 "$T/run" recategorize.py [--write]                       # rules.toml -> ledger rewrite loop
 bash skills/finance/scripts/update_prices.sh --vault "$V"  # informative exit when nothing is tagged
 bash skills/finance/scripts/dashboard.sh --vault "$V"      # fava on 127.0.0.1 (Ctrl-C to stop)

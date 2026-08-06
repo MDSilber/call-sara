@@ -5,3 +5,6 @@ inbox/
 __pycache__/
 *.pyc
 .DS_Store
+
+# Plaid credentials, access tokens, and sync cursors — NEVER in git.
+.secrets/

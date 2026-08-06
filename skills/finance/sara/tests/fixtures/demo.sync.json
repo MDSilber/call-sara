@@ -1,0 +1,129 @@
+[
+  {
+    "accounts": [
+      {
+        "account_id": "plaid-acct-checking",
+        "name": "Demo Checking",
+        "mask": "0766",
+        "type": "depository",
+        "subtype": "checking",
+        "balances": {"current": 4242.33, "available": 4200.00, "iso_currency_code": "USD"}
+      },
+      {
+        "account_id": "plaid-acct-card",
+        "name": "Demo Card",
+        "mask": "3333",
+        "type": "credit",
+        "subtype": "credit card",
+        "balances": {"current": 542.10, "available": 4457.90, "iso_currency_code": "USD"}
+      }
+    ],
+    "added": [
+      {
+        "transaction_id": "plaid-txn-001",
+        "account_id": "plaid-acct-checking",
+        "date": "2026-07-01",
+        "amount": 23.40,
+        "name": "WHOLE FOODS MARKET #123",
+        "merchant_name": "Whole Foods",
+        "pending": false,
+        "payment_channel": "in store",
+        "iso_currency_code": "USD",
+        "personal_finance_category": {
+          "primary": "FOOD_AND_DRINK",
+          "detailed": "FOOD_AND_DRINK_GROCERIES",
+          "confidence_level": "VERY_HIGH"
+        }
+      },
+      {
+        "transaction_id": "plaid-txn-002",
+        "account_id": "plaid-acct-checking",
+        "date": "2026-07-03",
+        "amount": -2500.00,
+        "name": "ACME PAYROLL DIRECT DEP",
+        "merchant_name": null,
+        "pending": false,
+        "payment_channel": "other",
+        "iso_currency_code": "USD",
+        "personal_finance_category": {
+          "primary": "INCOME",
+          "detailed": "INCOME_WAGES",
+          "confidence_level": "HIGH"
+        }
+      }
+    ],
+    "modified": [],
+    "removed": [],
+    "next_cursor": "cursor-page-1",
+    "has_more": true
+  },
+  {
+    "accounts": [
+      {
+        "account_id": "plaid-acct-checking",
+        "name": "Demo Checking",
+        "mask": "0766",
+        "type": "depository",
+        "subtype": "checking",
+        "balances": {"current": 4242.33, "available": 4200.00, "iso_currency_code": "USD"}
+      },
+      {
+        "account_id": "plaid-acct-card",
+        "name": "Demo Card",
+        "mask": "3333",
+        "type": "credit",
+        "subtype": "credit card",
+        "balances": {"current": 542.10, "available": 4457.90, "iso_currency_code": "USD"}
+      }
+    ],
+    "added": [
+      {
+        "transaction_id": "plaid-txn-003",
+        "account_id": "plaid-acct-card",
+        "date": "2026-07-05",
+        "amount": 11.25,
+        "name": "BLUE BOTTLE COFFEE NYC",
+        "merchant_name": "Blue Bottle Coffee",
+        "pending": false,
+        "payment_channel": "in store",
+        "iso_currency_code": "USD",
+        "personal_finance_category": {
+          "primary": "FOOD_AND_DRINK",
+          "detailed": "FOOD_AND_DRINK_COFFEE",
+          "confidence_level": "VERY_HIGH"
+        }
+      },
+      {
+        "transaction_id": "plaid-txn-004",
+        "account_id": "plaid-acct-card",
+        "date": "2026-07-10",
+        "amount": -500.00,
+        "name": "Payment Thank You - Web",
+        "merchant_name": null,
+        "pending": false,
+        "payment_channel": "online",
+        "iso_currency_code": "USD",
+        "personal_finance_category": {
+          "primary": "LOAN_PAYMENTS",
+          "detailed": "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT",
+          "confidence_level": "VERY_HIGH"
+        }
+      },
+      {
+        "transaction_id": "plaid-txn-005-pending",
+        "account_id": "plaid-acct-checking",
+        "date": "2026-07-12",
+        "amount": 9.87,
+        "name": "CORNER BAKERY - PENDING",
+        "merchant_name": "Corner Bakery",
+        "pending": true,
+        "payment_channel": "in store",
+        "iso_currency_code": "USD"
+      }
+    ],
+    "modified": [],
+    "removed": [],
+    "next_cursor": "cursor-final",
+    "has_more": false
+  }
+]

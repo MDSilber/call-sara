@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""Positions/prices view of an investment OFX/QFX.
+"""Sync every configured Plaid item into the vault (report-only by default).
 
-DEPRECATED SHIM — the tool now lives in the `sara` package
-(skills/finance/sara/sara/cli/holdings_ofx.py); this wrapper keeps the
-historical `tools/run importers/holdings_ofx.py` invocation working
-unchanged. Output is identical.
+SHIM — the daemon lives in the `sara` package (skills/finance/sara/sara/
+ingest.py); this wrapper keeps the `tools/run ingest.py` invocation working.
+Flags: [--write] [--item <alias>] [--verbose]. Run the module for the full
+usage text, config schema, and the verification-report contract.
 """
 import sys
 from pathlib import Path
 
-SARA_DIR = Path(__file__).resolve().parent.parent.parent / "sara"
+SARA_DIR = Path(__file__).resolve().parent.parent / "sara"
 sys.path.insert(0, str(SARA_DIR))
 
 try:
-    from sara.cli.holdings_ofx import main
+    from sara.ingest import main
 except ImportError as exc:  # an existing vault venv that predates the package
     raise SystemExit(
         f"the sara package (and its dependencies) aren't importable from this "

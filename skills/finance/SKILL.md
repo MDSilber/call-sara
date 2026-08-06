@@ -195,10 +195,15 @@ session starts already knowing them.
   what the optional phone connector serves; `integrations/cloudflare-mcp/`
   in this repo), `recategorize.py`,
   `rules.py`, `vault.py`,
-  `importers/{ofx,chase_csv,invest_ofx,holdings_ofx}.py`. The transaction
-  importers take `--write` (append after dry-run), `--all` (disable
-  dedupe), and `--since YYYY-MM-DD` (trim pre-snapshot history) —
-  `references/fetching.md` is the reference.
+  `importers/{ofx,chase_csv,invest_ofx,holdings_ofx}.py` (thin shims into
+  the `sara` package — `skills/finance/sara/`, the canonical ingestion
+  engine: frozen Decimal models, source mappers, and the one gated ledger
+  writer). The transaction importers take `--write` (append after
+  dry-run), `--all` (disable dedupe), and `--since YYYY-MM-DD` (trim
+  pre-snapshot history); `ingest.py` syncs every configured Plaid item
+  (report-only default, `--write` applies + commits) and
+  `python -m sara.link <alias>` links an institution locally —
+  `references/fetching.md` is the reference for both lanes.
 - `scripts/init_vault.sh` — scaffold a new vault from `vault-template/`.
 - `scripts/doctor.sh` — install/vault health check; run it when anything
   misbehaves.
@@ -219,3 +224,7 @@ session starts already knowing them.
 - `scripts/inbox-watch.plist.example` — launchd template that runs
   `inbox.py` when something lands in the drop zone (documented inside;
   never auto-installed).
+- `scripts/ingestd.plist.example` — launchd template for the daily Plaid
+  sync (`ingest.py --write`); documented inside, never auto-installed.
+  `run_checks.py` (plaid_freshness) and `doctor.sh` both watch for a feed
+  gone quiet.

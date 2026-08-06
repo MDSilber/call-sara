@@ -1,0 +1,120 @@
+[
+  {
+    "accounts": [
+      {
+        "account_id": "plaid-acct-brokerage",
+        "name": "Demo Brokerage",
+        "mask": "8642",
+        "type": "investment",
+        "subtype": "brokerage",
+        "balances": {"current": 2300.00, "available": null, "iso_currency_code": "USD"}
+      }
+    ],
+    "securities": [
+      {"security_id": "sec-tif", "ticker_symbol": "TIF", "name": "Test Index Fund", "type": "mutual fund"},
+      {"security_id": "sec-twc", "ticker_symbol": "TWC", "name": "Test Widget Corp", "type": "equity"},
+      {"security_id": "sec-sweep", "ticker_symbol": null, "name": "Cash Sweep Program", "type": "cash"}
+    ],
+    "investment_transactions": [
+      {
+        "investment_transaction_id": "vg-001",
+        "account_id": "plaid-acct-brokerage",
+        "security_id": "sec-tif",
+        "date": "2026-04-05",
+        "name": "BUY TEST INDEX FUND",
+        "quantity": 10.5,
+        "price": 40.00,
+        "amount": 420.00,
+        "fees": 0,
+        "type": "buy",
+        "subtype": "buy",
+        "iso_currency_code": "USD"
+      },
+      {
+        "investment_transaction_id": "vg-002",
+        "account_id": "plaid-acct-brokerage",
+        "security_id": "sec-tif",
+        "date": "2026-06-25",
+        "name": "SELL TEST INDEX FUND",
+        "quantity": -3.0,
+        "price": 42.00,
+        "amount": -126.00,
+        "fees": 0,
+        "type": "sell",
+        "subtype": "sell",
+        "iso_currency_code": "USD"
+      },
+      {
+        "investment_transaction_id": "vg-003",
+        "account_id": "plaid-acct-brokerage",
+        "security_id": "sec-twc",
+        "date": "2026-05-15",
+        "name": "TEST WIDGET CORP DIVIDEND",
+        "quantity": 0,
+        "price": 0,
+        "amount": -6.00,
+        "fees": 0,
+        "type": "cash",
+        "subtype": "dividend",
+        "iso_currency_code": "USD"
+      },
+      {
+        "investment_transaction_id": "vg-004",
+        "account_id": "plaid-acct-brokerage",
+        "security_id": "sec-tif",
+        "date": "2026-06-20",
+        "name": "REINVEST DIVIDEND TEST INDEX FUND",
+        "quantity": 0.31,
+        "price": 40.00,
+        "amount": 12.40,
+        "fees": 0,
+        "type": "buy",
+        "subtype": "dividend reinvestment",
+        "iso_currency_code": "USD"
+      },
+      {
+        "investment_transaction_id": "vg-005",
+        "account_id": "plaid-acct-brokerage",
+        "security_id": null,
+        "date": "2026-04-01",
+        "name": "ACH IN ELECTRONIC TRANSFER",
+        "quantity": 0,
+        "price": 0,
+        "amount": -2000.00,
+        "fees": 0,
+        "type": "cash",
+        "subtype": "contribution",
+        "iso_currency_code": "USD"
+      },
+      {
+        "investment_transaction_id": "vg-006",
+        "account_id": "plaid-acct-brokerage",
+        "security_id": "sec-sweep",
+        "date": "2026-06-30",
+        "name": "SWEEP INTEREST",
+        "quantity": 0,
+        "price": 0,
+        "amount": -0.42,
+        "fees": 0,
+        "type": "cash",
+        "subtype": "interest",
+        "iso_currency_code": "USD"
+      },
+      {
+        "investment_transaction_id": "vg-007",
+        "account_id": "plaid-acct-brokerage",
+        "security_id": "sec-twc",
+        "date": "2026-07-01",
+        "name": "STOCK DISTRIBUTION",
+        "quantity": 1.0,
+        "price": 0,
+        "amount": 0,
+        "fees": 0,
+        "type": "cash",
+        "subtype": "stock distribution",
+        "iso_currency_code": "USD"
+      }
+    ],
+    "total_investment_transactions": 7
+  }
+]

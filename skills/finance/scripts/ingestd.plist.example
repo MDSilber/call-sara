@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ingestd.plist.example — daily Plaid sync via launchd (macOS).
+
+  DOCUMENTED, NEVER AUTO-INSTALLED. The trust ramp comes first: run
+  `tools/run ingest.py` once by hand, read the verification report, re-run
+  with the write flag, and only then put it on a schedule.
+
+  Install (edit the three UPPERCASE placeholders first):
+    cp skills/finance/scripts/ingestd.plist.example \
+       ~/Library/LaunchAgents/com.callsara.ingestd.plist
+    launchctl load ~/Library/LaunchAgents/com.callsara.ingestd.plist
+
+  Watch it:
+    tail -f /tmp/sara-ingestd.log        # every run's verification report
+    launchctl list | grep callsara
+
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.callsara.ingestd.plist
+
+  Freshness is monitored independently: checks.py raises a plaid_freshness
+  finding when a configured item hasn't synced in >3 days (alert at >7), and
+  doctor.sh warns the same — a silently dead daemon never goes unnoticed.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.callsara.ingestd</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <!-- the vault venv's python (init_vault.sh installs sara + plaid there) -->
+    <string>/Users/YOURNAME/Finance/.venv/bin/python</string>
+    <string>/Users/YOURNAME/code/call-sara/skills/finance/tools/ingest.py</string>
+    <string>--write</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>FINANCE_VAULT</key>
+    <string>/Users/YOURNAME/Finance</string>
+  </dict>
+
+  <!-- daily at 07:15 local — after overnight bank posting, before coffee -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>7</integer>
+    <key>Minute</key>
+    <integer>15</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/sara-ingestd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/sara-ingestd.log</string>
+
+  <!-- never pile up runs; skip quietly when the laptop was asleep -->
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

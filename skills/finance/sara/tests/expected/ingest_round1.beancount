@@ -1,0 +1,74 @@
+2026-04-01 * "ACH IN ELECTRONIC TRANSFER" ""
+  ofx-type: "CONTRIBUTION"
+  import-hash: "e3d9d02df830e860"
+  plaid-id: "vg-005"
+  Assets:US:Demo:Brokerage8642   2000.00 USD
+  Assets:US:Transfers
+
+2026-04-05 * "BUY 10.500 TIF @ 40.00" ""
+  ofx-type: "BUYSTOCK"
+  import-hash: "2a40cc5277b300a7"
+  plaid-id: "vg-001"
+  Assets:US:Demo:Brokerage8642   10.500 TIF {40.00 USD}
+  Assets:US:Demo:Brokerage8642   -420.00 USD
+
+2026-05-15 * "DIV TWC" ""
+  ofx-type: "INCOME"
+  import-hash: "bf6239a6bb0bd960"
+  plaid-id: "vg-003"
+  Assets:US:Demo:Brokerage8642   6.00 USD
+  Income:US:Dividends
+
+2026-06-20 * "REINVEST DIV 0.310 TIF @ 40.00" ""
+  ofx-type: "REINVEST"
+  import-hash: "f7ea62c7ee795e77"
+  plaid-id: "vg-004"
+  Assets:US:Demo:Brokerage8642   0.310 TIF {40.00 USD}
+  Income:US:Dividends   -12.40 USD
+
+2026-06-25 * "SELL 3.000 TIF @ 42.00" ""
+  ofx-type: "SELLSTOCK"
+  import-hash: "d311b5c2fce7cff2"
+  plaid-id: "vg-002"
+  Assets:US:Demo:Brokerage8642   -3.000 TIF {} @ 42.00 USD  ; whole lots (FIFO if set) — broker lot data governs at tax time
+  Assets:US:Demo:Brokerage8642   126.00 USD
+  Income:US:Gains
+
+2026-06-30 * "INTEREST" ""
+  ofx-type: "INCOME"
+  import-hash: "7fcca6adc40ed771"
+  plaid-id: "vg-006"
+  Assets:US:Demo:Brokerage8642   0.42 USD
+  Income:US:Interest
+
+2026-07-01 * "Whole Foods" ""
+  plaid-type: "in store"
+  import-hash: "90ab0104d890f827"
+  plaid-id: "plaid-txn-001"
+  plaid-category: "FOOD_AND_DRINK_GROCERIES (very_high)"
+  Assets:US:Demo:Checking0766   -23.40 USD
+  Expenses:Food:Groceries
+
+2026-07-03 * "ACME PAYROLL DIRECT DEP" ""
+  plaid-type: "other"
+  import-hash: "af7683d1f38cf878"
+  plaid-id: "plaid-txn-002"
+  plaid-category: "INCOME_WAGES (high)"
+  Assets:US:Demo:Checking0766   2500.00 USD
+  Income:US:Other
+
+2026-07-05 * "Blue Bottle Coffee" ""
+  plaid-type: "in store"
+  import-hash: "b0f897a13f29316a"
+  plaid-id: "plaid-txn-003"
+  plaid-category: "FOOD_AND_DRINK_COFFEE (very_high)"
+  Liabilities:US:Demo:Card3333   -11.25 USD
+  Expenses:Food:Dining
+
+2026-07-10 * "Payment Thank You - Web" ""
+  plaid-type: "online"
+  import-hash: "d8bf0fe1d090be87"
+  plaid-id: "plaid-txn-004"
+  plaid-category: "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT (very_high)"
+  Liabilities:US:Demo:Card3333   500.00 USD
+  Assets:US:Transfers

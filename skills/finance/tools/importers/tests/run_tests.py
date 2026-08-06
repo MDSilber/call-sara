@@ -2,8 +2,12 @@
 """Golden-file regression tests for the importers (beangulp-style).
 
 Run:  python3 skills/finance/tools/importers/tests/run_tests.py
-      Plain python3 3.11+, nothing else — a scratch vault is built in a temp
-      dir, so no real vault is ever touched. Exit 0 = all pass.
+      Python 3.11+ with the sara package's deps importable (pydantic — any
+      vault venv after init_vault.sh has it, or `pip install pydantic`); a
+      scratch vault is built in a temp dir, so no real vault is ever
+      touched. Exit 0 = all pass. The importers under test are shims into
+      skills/finance/sara/ — this suite is the behavioral contract the
+      package rewrite was built against, and it drives the real new path.
 
 Optional: FINANCE_TEST_VENV=/path/to/a/vault/.venv (a venv holding beancount
 + beanquery, e.g. one made by scripts/init_vault.sh). When set, the

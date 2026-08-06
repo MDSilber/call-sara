@@ -123,6 +123,53 @@ if [ -f "$VAULT/ledger/main.beancount" ] && [ -f "$VAULT/CLAUDE.md" ] && [ -f "$
          "python3 -m venv $VAULT/.venv && $VAULT/.venv/bin/pip install beancount beanquery"
   fi
 
+  if "$VENV_PY" -c 'import sara, plaid' >/dev/null 2>&1; then
+    pass "vault .venv has the sara package + plaid-python (importers, ingest daemon)"
+  else
+    warn "sara package not importable from the vault venv — importers/ingest fall back to system python" \
+         "$VAULT/.venv/bin/pip install -e $SKILL_DIR/sara"
+  fi
+
+  # --- Plaid feed freshness (mirrors checks.py plaid_freshness) ----------
+  if grep -q '^\[sources\.plaid\.items\.' "$VAULT/rules.toml" 2>/dev/null; then
+    if [ -d "$VAULT/.secrets" ] && [ -z "$(find "$VAULT/.secrets" -maxdepth 0 -perm -0077 2>/dev/null)" ]; then
+      pass "vault .secrets/ exists and is owner-only (Plaid keys + cursors)"
+    else
+      warn "vault .secrets/ missing or too permissive" \
+           "mkdir -p $VAULT/.secrets && chmod 700 $VAULT/.secrets && chmod 600 $VAULT/.secrets/* 2>/dev/null"
+    fi
+    if git -C "$VAULT" check-ignore -q .secrets 2>/dev/null; then
+      pass "vault .gitignore covers .secrets/ (credentials can never commit)"
+    else
+      fail "vault .gitignore does NOT cover .secrets/ — Plaid tokens could reach git" \
+           "printf '.secrets/\\n' >> $VAULT/.gitignore"
+    fi
+    CURSORS="$VAULT/.secrets/plaid-cursors.json"
+    if [ -f "$CURSORS" ]; then
+      STALE_D=$(python3 - "$CURSORS" <<'PYFRESH'
+import json, sys
+from datetime import datetime
+try:
+    items = json.load(open(sys.argv[1])).get("items", {})
+    ages = [(datetime.now() - datetime.fromisoformat(v["last_synced"])).days
+            for v in items.values() if v.get("last_synced")]
+    print(max(ages) if ages else 9999)
+except Exception:
+    print(9999)
+PYFRESH
+)
+      if [ "${STALE_D:-9999}" -le 3 ]; then
+        pass "plaid sync fresh (oldest item synced ${STALE_D}d ago)"
+      else
+        warn "plaid sync stale — oldest configured item last synced ${STALE_D}d ago (watch >3d, alert >7d)" \
+             "tools/run ingest.py  (then --write); a broken link repairs FREE: python -m sara.link --repair <alias>"
+      fi
+    else
+      warn "plaid items configured but never synced (no cursor file yet)" \
+           "finish the trust ramp: tools/run ingest.py, read the report, then --write"
+    fi
+  fi
+
   if [ -d "$VAULT/inbox" ]; then
     STALE=$(find "$VAULT/inbox" -maxdepth 1 -type f -mtime +7 ! -name '.*' 2>/dev/null | wc -l | tr -d ' ')
     if [ "${STALE:-0}" -gt 0 ]; then

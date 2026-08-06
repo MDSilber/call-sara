@@ -69,6 +69,83 @@ past 7 days — nothing rots silently. To make filing automatic on arrival,
 `scripts/inbox-watch.plist.example` is a documented launchd recipe (never
 auto-installed). `inbox/` is gitignored, like `documents/`.
 
+## The Plaid lane — the feeds that pull themselves
+
+Manual imports stay the foundation; Plaid is the lane for accounts that
+should flow in daily without a browser session. Each household brings its
+own keys — no shared credentials, no hosted middleman, the tokens never
+leave the machine.
+
+**Getting keys (once, ~10 minutes).** Plaid's free Trial plan gives an
+individual real production access: no business registration, auto-approved
+after identity verification, 10 institution links for life, Transactions +
+Investments included. Sign up at dashboard.plaid.com; where it asks what
+you're building, this wording matches the product exactly:
+
+> Self-hosted personal finance system for my own household only. Read-only
+> aggregation of my own bank, credit card, and investment accounts into a
+> private plain-text ledger (beancount). Single user, no third parties, no
+> data resale, no money movement. Products: Transactions and Investments.
+> Expected volume: under 10 connected institutions, daily sync.
+
+Company/app name: "Call Sara (personal finance vault)" (your own name works
+too; it shows on bank consent screens). Website: your fork's GitHub URL.
+Expected users: "1 (myself); <10 Items." Choose the TRIAL plan, complete the
+ID check, and put the keys in `$VAULT/.secrets/plaid.env` (chmod 600):
+
+    PLAID_CLIENT_ID=...
+    PLAID_SECRET=...
+    PLAID_ENV=production
+
+**THE 10-SLOT RULE.** Trial allows 10 institution links ("Items") for LIFE,
+and removing an Item does NOT refund its slot. One Item per institution,
+and when a connection breaks, ALWAYS repair it in place:
+
+    python -m sara.link --repair <alias>     # update mode, costs nothing
+
+Never re-link a broken institution fresh; that burns a slot forever. The
+link tool enforces this (it refuses to double-link an alias and announces
+which slot a new link will spend).
+
+**Linking (Ally first — it's the simplest).**
+
+    python -m sara.link ally
+
+A local page opens (127.0.0.1 only), hands off to Plaid's own window, and
+when the bank approves, the access token lands in plaid.env and the exact
+`[sources.plaid.items.ally]` block for rules.toml prints, accounts
+discovered and ready to route. Paste it, name each account's ledger_account,
+done. OAuth institutions (Chase, Vanguard) additionally need
+`http://localhost:8484/` registered once as an Allowed redirect URI in the
+Plaid dashboard, and `PLAID_REDIRECT_URI=http://localhost:8484/` in
+plaid.env. Brokerages want `--products transactions,investments`.
+
+**The trust ramp is short by design.**
+
+    tools/run ingest.py            # report only: read the verification report
+    tools/run ingest.py --write    # same sync, applied
+
+Run it once, read the report, flip --write. The report reconciles every
+count (fetched = written + deduped + pending-excluded + unmapped, exactly,
+or nothing writes), lists every non-imported row with its reason, sums what
+lands per account, and compares Plaid's reported balance against the ledger
+after import (MATCH, or a DELTA with the opening-balance seed recipe).
+Pending transactions are excluded until they post; upstream corrections
+replace entries in place by plaid-id; upstream removals are reported loudly
+and never auto-deleted. Dedupe is the importers' own (plaid-id primary), so
+Plaid and manual imports of the same account never double-book.
+
+**On a schedule.** `scripts/ingestd.plist.example` is the documented launchd
+recipe (daily, never auto-installed). Freshness is watched from both sides:
+`run_checks.py` raises a `plaid_freshness` finding past 3 quiet days (alert
+past 7) and `doctor.sh` warns the same, so a dead daemon can't go unnoticed.
+
+**What stays manual (on purpose):** Shareworks and the 401(k)s (Fidelity
+NetBenefits, Empower) — no aggregator serves them reliably for individuals,
+so those stay on the browser-pull + inbox lane above. Cursors live in
+`$VAULT/.secrets/plaid-cursors.json` and only advance after a successful
+write; deleting the file just means the next sync re-fetches and dedupes.
+
 ## The workflow
 
 **1. Get in.** Load claude-in-chrome tools in ONE ToolSearch call
