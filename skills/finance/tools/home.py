@@ -1048,7 +1048,8 @@ SMALL_NUMS = ["zero", "One", "Two", "Three", "Four", "Five", "Six",
               "Seven", "Eight", "Nine"]
 
 
-def sara_line(pace: Pace, cards_state: str, cards: list[Card], more: int) -> str:
+def sara_line(pace: Pace, cards_state: str, cards: list[Card], more: int,
+              daypart: str = "morning") -> str:
     """One warm, honest sentence for the hero. States, never invents."""
     over = (pace.pace_delta or 0) > 0.10 * (pace.typical or float("inf"))
     if cards_state == "none":
@@ -1058,7 +1059,7 @@ def sara_line(pace: Pace, cards_state: str, cards: list[Card], more: int) -> str
         n_lbl = SMALL_NUMS[n_alerts] if n_alerts < 10 else str(n_alerts)
         verb = "wants" if n_alerts == 1 else "want"
         thing = "thing" if n_alerts == 1 else "things"
-        return (f"{n_lbl} {thing} {verb} a decision this morning — start at "
+        return (f"{n_lbl} {thing} {verb} a decision this {daypart} — start at "
                 f"the top of the list; the rest keeps.")
     if cards:
         n = len(cards) + more
@@ -2473,7 +2474,8 @@ def _pace_ctx(pace: Pace) -> dict:
 
 
 def _kpi_ctx(liquid: float, asof: date | None, pace: Pace,
-             net_mtd: float, wa: Walkaway | None) -> list[dict]:
+             net_mtd: float, wa: Walkaway | None,
+             surv_teaser: str = "") -> list[dict]:
     """The hero strip: the four numbers the household always sees first,
     each with its tiny window label. '—' + a reason, never a fake zero."""
     ledger_lbl = f"through {mon_d(asof)}" if asof else "ledger empty"
@@ -2491,15 +2493,20 @@ def _kpi_ctx(liquid: float, asof: date | None, pace: Pace,
                       "sub": f"needs {MIN_FULL_MONTHS} full months", "cls": ""})
     net_sub = (f"{month_name} 1–{pace.through_day} · in − out"
                if pace.through_day else f"{month_name} · nothing imported yet")
+    # a mid-month negative net is payday timing, not trouble — never red here;
+    # the closed month gets its honest color in the cheshbon card
+    if round(net_mtd) < 0 and pace.through_day:
+        net_sub += " · paydays land later in the month"
     tiles.append({"k": "Net this month", "v": delta0(net_mtd), "sub": net_sub,
-                  "cls": "pos" if round(net_mtd) > 0
-                  else ("neg" if round(net_mtd) < 0 else "")})
+                  "cls": "pos" if round(net_mtd) > 0 else ""})
     if wa:
         approx = "" if wa.src == "set" else "≈"
+        wa_sub = (f"of {approx}{m0(wa.target)} — the pot where "
+                  f"work turns optional")
+        if surv_teaser:
+            wa_sub += f" · {surv_teaser}"
         tiles.append({"k": "Walk-away", "v": pct_display(wa.pct),
-                      "sub": (f"of {approx}{m0(wa.target)} — the pot where "
-                              f"work turns optional"),
-                      "cls": ""})
+                      "sub": wa_sub, "cls": ""})
     else:
         tiles.append({"k": "Walk-away", "v": "—",
                       "sub": "needs a spend baseline", "cls": ""})
@@ -3079,6 +3086,7 @@ def build_page(now: datetime | None = None) -> str:
     else:
         stock_pct, stock_src = DEFAULT_STOCK_PCT, "the skill default"
     wig = wi_ctx = None
+    surv_teaser = ""
     if wa and wa.baseline:
         save = net_savings_baseline(wa.baseline.months)
         wig = whatif_grid(liquid, wa.baseline, save, today, goals,
@@ -3105,6 +3113,9 @@ def build_page(now: datetime | None = None) -> str:
                 "the ≈{} target; nothing more from the pot").format(
                 ev.college_year, m0(ev.college_529_path), m0(ev.college_cost))
         surv = wig["surv"]
+        _dsurv = surv["survived"][wig["def"]["ri"]]
+        surv_teaser = (f"history check: {_dsurv} of {surv['nSeq']} "
+                       f"since {surv['window'].split(', ')[1].split('–')[0]} — details in Play with it")
         wi_ctx = {
             "max_ri": wig["nRates"] - 1, "max_si": wig["nSpends"] - 1,
             "max_gi": wig["nGrowths"] - 1,
@@ -3175,13 +3186,13 @@ def build_page(now: datetime | None = None) -> str:
 
     return _ENV.from_string(PAGE_TEMPLATE).render(
         greet=f"Good {daypart}, {names}" if names else f"Good {daypart}",
-        sara=sara_line(pace, needs_state, cards, more),
+        sara=sara_line(pace, needs_state, cards, more, daypart),
         stamp=(f"Generated {today.strftime('%a %b %-d')}, "
                f"{now.strftime('%-I:%M %p').lower()}"),
         ledger_stamp=(f"Ledger through {mon_d(asof)}" if asof
                       else "Ledger empty"),
         checks_stamp=checks_stamp,
-        kpis=_kpi_ctx(liquid, asof, pace, ch["net_raw"], wa),
+        kpis=_kpi_ctx(liquid, asof, pace, ch["net_raw"], wa, surv_teaser),
         p=_pace_ctx(pace),
         mach=_machine_ctx(lane_status(today)),
         needs={"state": needs_state, "cards": cards, "more": more},
