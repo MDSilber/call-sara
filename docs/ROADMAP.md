@@ -24,6 +24,24 @@ the design; if yours doesn't fit, open an issue and describe its shape.
 
 ## Next — designed, queued
 
+- **The notification layer:** the checks already compute the alerts — this
+  delivers them: four tiers (interrupt · daily ledger email · the weekly
+  letter · celebrations), with materiality floors, quiet hours, silence
+  alarms (paycheck late, bill didn't post, sync gone stale), and every
+  push carrying the rule and ledger lines that triggered it. No
+  per-transaction spam, ever.
+- **Safe-to-spend and the named crunch:** the hero learns to say "lowest
+  point in the next 60 days: $412 on the 14th, the day rent hits — move
+  $X or shift bill Y." Forecast-derived, goal-aware, provably computed.
+- **Money watchdogs:** expected-state rules — the refund that didn't
+  arrive, the paycheck that's late, plus same-day keep-or-kill triage on
+  any first charge from a new recurring merchant (the only honest
+  version of "trial catching").
+- **Computed true expenses:** annual and semiannual lumps detected from
+  the ledger, published as a monthly-equivalent reserve, excluded from
+  pace baselines, with drift disclosure ("typical restaurant spend up
+  18% over 6 months") — sinking funds without the homework.
+
 - **K-1 / partnership / alternatives module:** distributions tracked
   continuously as cash; annual K-1s filed from the inbox into
   per-partnership basis facts; a reconciliation check that compares the
@@ -54,9 +72,11 @@ the design; if yours doesn't fit, open an issue and describe its shape.
 
 ## Someday — intended, undated
 
-- **Interactive home v2:** tick off an action on the dashboard and it
-  sticks — a tiny local serve mode with a few whitelisted write actions
-  through the same gated tools. No React empire; the same page, alive.
+- ~~**Interactive home v2**~~ — **shipped** as Sara App
+  (`dashboard.sh --app`): the local web app over the same verified
+  builders, with three whitelisted write actions (teach a rule, set a
+  goal, dismiss a finding) through the same gated tools. The static
+  pages stay for printing and mailing.
 - **Renewal radar:** every insurance policy, subscription, and rate on a
   re-shop calendar with the negotiation script attached (the method
   exists in the playbook; automation pending).
@@ -75,5 +95,9 @@ the design; if yours doesn't fit, open an issue and describe its shape.
 
 Things we've decided **against**, so you don't wait for them: hosting
 anyone's data (fork it — you are your own tenant), a SaaS, a mobile app
-(your phone talks to your books through MCP already), and Monte Carlo
-precision theater.
+(your phone talks to your books through MCP already), Monte Carlo
+precision theater, envelope/zero-based budgeting (a documented churn
+engine; pace-plus-watch-categories wins for non-budgeters), concierge
+bill negotiation for a cut of "savings" (keep 100% — the scripts and the
+browser-driving are yours), and streaks or daily-engagement pressure
+(celebrate real milestones; never manufacture guilt).
