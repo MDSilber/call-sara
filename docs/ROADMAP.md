@@ -1,21 +1,72 @@
 # Where this is headed
 
-Stuff we're actively building or have designed and queued. No promises, no
-dates — this is a personal project that grows when it grows.
+The honest map: **now** is being built, **next** is designed and queued,
+**someday** is stuff we genuinely intend but won't pretend has a date.
+It's a personal project — it grows when it grows. Real households drive
+the design; if yours doesn't fit, open an issue and describe its shape.
 
-- **Automated ingestion (in flight):** hub-and-spoke sources over one gated
-  writer; Plaid first (bring your own free keys), aggregator-agnostic config.
+## Now — in flight
+
+- **Automated ingestion:** hub-and-spoke sources over one gated writer —
+  every format (OFX, CSV, aggregator APIs) maps into canonical typed
+  records, one write path applies dedupe, continuity gates, and
+  validation. Plaid first (bring your own free keys — the walkthrough is
+  included), aggregator-agnostic config so SimpleFIN/SnapTrade slot in as
+  mappers. Report-only until you've read one run, autonomous after.
 - **Three-tier classification:** your payee rules always win → Plaid's
-  category signal fills gaps → a cheap batched model call handles the
-  weak-signal residue, with everything re-doable and provenance-tagged.
-- **K-1 / partnership module:** cash distributions tracked continuously via
-  ingestion; annual K-1s filed from the inbox into per-partnership basis
-  facts; a reconciliation check that compares the tax story to the cash
-  story per investment and flags drift.
-- **Multi-entity books:** a business ledger beside the household one
-  (consulting LLCs, side businesses), same skill and tooling driving both.
-- **Weekly digest delivery + document inbox watcher:** built, wiring into
-  households' own delivery choices.
+  category signal fills the gaps → a cheap batched model call judges the
+  weak-signal residue. Everything provenance-tagged and re-doable; the
+  review queue trends toward zero.
+- **The strict dialect:** the whole engine as a real typed package —
+  pyright strict, pydantic at every boundary, Decimal-only money paths
+  with a lint that bans float, property tests on the invariants, dual
+  computation gates that refuse to publish disagreeing numbers.
 
-Have a shape of household we don't handle? Open an issue — real cases like
-these drive the design.
+## Next — designed, queued
+
+- **K-1 / partnership module:** distributions tracked continuously as
+  cash; annual K-1s filed from the inbox into per-partnership basis
+  facts; a reconciliation check that compares the tax story to the cash
+  story and flags drift. (Driven by a real 20-K-1 household.)
+- **Multi-entity books:** an LLC/business ledger beside the household
+  one, same skill and tooling driving both, work-vs-personal splits that
+  survive an accountant's questions.
+- **Tax command center:** safe-harbor and estimated-tax checking against
+  your actual withholding, a year-end CPA handoff pack that assembles
+  itself, and equity-event support (vest calendars, standing sell rules,
+  per-lot term tracking — already half-built).
+- **Portfolio truth:** time-weighted returns vs a benchmark via beangrow,
+  allocation drift with dollars-to-move (built), and a rebalancing
+  proposal you can hand to your own judgment.
+- **Digest delivery + inbox watcher:** the weekly letter and the
+  file-this-for-me folder exist; wiring them to each household's own
+  delivery (mail, print, message) and watch daemons.
+- **Webhook-fast syncing:** for households running the optional Worker,
+  Plaid webhooks poke the home daemon — minutes-fresh books instead of
+  daily.
+
+## Someday — intended, undated
+
+- **Interactive home v2:** tick off an action on the dashboard and it
+  sticks — a tiny local serve mode with a few whitelisted write actions
+  through the same gated tools. No React empire; the same page, alive.
+- **Renewal radar:** every insurance policy, subscription, and rate on a
+  re-shop calendar with the negotiation script attached (the method
+  exists in the playbook; automation pending).
+- **The savings-hunt flywheel:** recurring sweeps for idle cash, fee
+  creep, unclaimed property, and card-perk expiry, feeding the wins
+  ledger automatically.
+- **Linux support:** the macOS-only bits (brew, launchd templates) get
+  cross-platform equivalents so a home server anywhere can run the
+  daemon.
+- **A source-author's guide:** writing a new institution mapper as a
+  documented afternoon project — fixtures, golden tests, and the
+  canonical-type contract as a stable public interface.
+- **CI in the open:** the whole gauntlet (suite, strict types, float ban,
+  cross-checks) running on every PR so contributors inherit the safety
+  culture for free.
+
+Things we've decided **against**, so you don't wait for them: hosting
+anyone's data (fork it — you are your own tenant), a SaaS, a mobile app
+(your phone talks to your books through MCP already), and Monte Carlo
+precision theater.
