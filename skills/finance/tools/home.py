@@ -1107,8 +1107,8 @@ CSS_TEMPLATE = """
   src:url(data:font/woff2;base64,__INTER_S__) format('woff2'); }
 
 :root { color-scheme:light;
-  --bg:#f6f6fa; --surface:#ffffff; --surface-2:#f1f0f8;
-  --border:rgba(49,42,124,.10); --border-strong:rgba(49,42,124,.22);
+  --bg:#fbfaf8; --surface:#ffffff; --surface-2:#f1f0f8;
+  --border:rgba(87,74,204,.13); --border-strong:rgba(49,42,124,.22);
   --ink:#151329; --ink-2:#4c4a63; --muted:#6e6c85;
   --grid:#eceaf4; --axis:#cfccdf;
   --accent:#6157ff; --accent-soft:rgba(97,87,255,.10); --link:#4d43e0;
@@ -1121,18 +1121,19 @@ CSS_TEMPLATE = """
   --rib-1:#6157ff; --rib-2:#9d8cff; --rib-3:#d97a06; --rib-4:#8579c9;
   --band-dep:#d02b4c; --band-hold:#8b82c8; --band-ahead:#067647;
   --hero-grad:linear-gradient(115deg,#6157ff 0%,#74c0fc 35%,#ff7eb6 68%,#ffb86b 100%);
-  --hero-wash:radial-gradient(120% 90% at 15% 0%,rgba(255,255,255,.30),transparent 55%);
-  --hero-scrim:linear-gradient(180deg,rgba(30,22,96,.34),rgba(30,22,96,.10) 62%,rgba(30,22,96,0));
-  --walk-grad:linear-gradient(180deg,#ffffff,#f6f5ff);
+  --hero-wash:radial-gradient(120% 90% at 15% 0%,rgba(255,255,255,.16),transparent 48%);
+  --hero-scrim:linear-gradient(115deg,rgba(30,22,96,.34) 0%,rgba(30,22,96,.12) 42%,rgba(30,22,96,0) 64%);
+  --walk-grad:linear-gradient(180deg,#ffffff,#f3f1ff);
   --walk-border:#e6e3fb;
   --bar-track:#ece9f8; --bar-fill:linear-gradient(90deg,#6157ff,#9d8cff);
-  --shadow-card:0 1px 2px rgba(49,42,124,.05),0 8px 24px rgba(49,42,124,.07);
-  --shadow-float:0 12px 32px rgba(49,42,124,.16);
+  --shadow-card:0 1px 2px rgba(49,42,124,.06),0 10px 30px rgba(76,60,220,.11);
+  --shadow-hover:0 4px 10px rgba(49,42,124,.08),0 18px 44px rgba(76,60,220,.17);
+  --shadow-float:0 6px 16px rgba(76,60,220,.14),0 26px 60px -10px rgba(76,60,220,.32);
 }
 @media screen and (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) { color-scheme:dark;
     --bg:#0a0e1e; --surface:#151d33; --surface-2:#1d2540;
-    --border:rgba(196,200,255,.13); --border-strong:rgba(196,200,255,.26);
+    --border:rgba(196,200,255,.16); --border-strong:rgba(196,200,255,.26);
     --ink:#e9ebfa; --ink-2:#b3b8d6; --muted:#8b91b2;
     --grid:#232c47; --axis:#39415f;
     --accent:#8f88ff; --accent-soft:rgba(143,136,255,.16); --link:#a9a3ff;
@@ -1144,19 +1145,20 @@ CSS_TEMPLATE = """
     --ideal:#767fa8; --code:#1c2440;
     --rib-1:#544ae4; --rib-2:#8d80f4; --rib-3:#c97e1e; --rib-4:#8074c4;
     --band-dep:#f0577a; --band-hold:#7b84cf; --band-ahead:#25a768;
-    --hero-grad:linear-gradient(115deg,#4a41d6 0%,#3c7ec2 35%,#d4548c 68%,#d98b3f 100%);
-    --hero-wash:radial-gradient(120% 90% at 15% 0%,rgba(255,255,255,.12),transparent 55%);
-    --hero-scrim:linear-gradient(180deg,rgba(6,8,30,.42),rgba(6,8,30,.16) 62%,rgba(6,8,30,0));
+    --hero-grad:linear-gradient(115deg,#5449ec 0%,#3f86d6 35%,#e0559a 68%,#e9953f 100%);
+    --hero-wash:radial-gradient(120% 90% at 15% 0%,rgba(255,255,255,.10),transparent 48%);
+    --hero-scrim:linear-gradient(115deg,rgba(6,8,30,.42) 0%,rgba(6,8,30,.16) 42%,rgba(6,8,30,0) 64%);
     --walk-grad:linear-gradient(180deg,#161d36,#181d3e);
     --walk-border:#2c3158;
     --bar-track:#242b4c; --bar-fill:linear-gradient(90deg,#6a61f0,#9d8cff);
-    --shadow-card:0 1px 2px rgba(0,0,0,.3),0 10px 28px rgba(0,0,0,.34);
-    --shadow-float:0 14px 36px rgba(0,0,0,.5);
+    --shadow-card:0 1px 2px rgba(0,0,0,.32),0 12px 32px rgba(0,0,0,.38);
+    --shadow-hover:0 4px 10px rgba(0,0,0,.35),0 18px 44px rgba(0,0,0,.5);
+    --shadow-float:0 8px 20px rgba(24,16,90,.45),0 28px 64px -10px rgba(0,0,0,.6);
   }
 }
 :root[data-theme="dark"] { color-scheme:dark;
   --bg:#0a0e1e; --surface:#131a2e; --surface-2:#1a2238;
-  --border:rgba(196,200,255,.10); --border-strong:rgba(196,200,255,.24);
+  --border:rgba(196,200,255,.14); --border-strong:rgba(196,200,255,.24);
   --ink:#e9ebfa; --ink-2:#b3b8d6; --muted:#8b91b2;
   --grid:#222b45; --axis:#39415f;
   --accent:#8f88ff; --accent-soft:rgba(143,136,255,.16); --link:#a9a3ff;
@@ -1168,21 +1170,22 @@ CSS_TEMPLATE = """
   --ideal:#767fa8; --code:#1c2440;
   --rib-1:#544ae4; --rib-2:#8d80f4; --rib-3:#c97e1e; --rib-4:#8074c4;
   --band-dep:#f0577a; --band-hold:#7b84cf; --band-ahead:#25a768;
-  --hero-grad:linear-gradient(115deg,#4a41d6 0%,#3c7ec2 35%,#d4548c 68%,#d98b3f 100%);
-  --hero-wash:radial-gradient(120% 90% at 15% 0%,rgba(255,255,255,.12),transparent 55%);
-  --hero-scrim:linear-gradient(180deg,rgba(6,8,30,.42),rgba(6,8,30,.16) 62%,rgba(6,8,30,0));
+  --hero-grad:linear-gradient(115deg,#5449ec 0%,#3f86d6 35%,#e0559a 68%,#e9953f 100%);
+  --hero-wash:radial-gradient(120% 90% at 15% 0%,rgba(255,255,255,.10),transparent 48%);
+  --hero-scrim:linear-gradient(115deg,rgba(6,8,30,.42) 0%,rgba(6,8,30,.16) 42%,rgba(6,8,30,0) 64%);
   --walk-grad:linear-gradient(180deg,#161d36,#181d3e);
   --walk-border:#2c3158;
   --bar-track:#242b4c; --bar-fill:linear-gradient(90deg,#6a61f0,#9d8cff);
-  --shadow-card:0 1px 2px rgba(0,0,0,.3),0 10px 28px rgba(0,0,0,.34);
-  --shadow-float:0 14px 36px rgba(0,0,0,.5);
+  --shadow-card:0 1px 2px rgba(0,0,0,.32),0 12px 32px rgba(0,0,0,.38);
+  --shadow-hover:0 4px 10px rgba(0,0,0,.35),0 18px 44px rgba(0,0,0,.5);
+  --shadow-float:0 8px 20px rgba(24,16,90,.45),0 28px 64px -10px rgba(0,0,0,.6);
 }
 
 * { box-sizing:border-box; margin:0; }
 html { -webkit-text-size-adjust:100%; }
 body { background:var(--bg); color:var(--ink);
   font:15px/1.5 'Inter',system-ui,-apple-system,'Segoe UI',sans-serif; }
-.wrap { max-width:1200px; margin:0 auto; padding:0 28px; }
+.wrap { max-width:1240px; margin:0 auto; padding:0 28px; }
 a { color:var(--link); text-decoration-thickness:1px; text-underline-offset:2px; }
 code { background:var(--code); border-radius:4px; padding:.08em .35em;
   font-size:.9em; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
@@ -1194,10 +1197,15 @@ code { background:var(--code); border-radius:4px; padding:.08em .35em;
 .pos { color:var(--pos); } .neg { color:var(--neg); }
 
 /* ---- the aurora hero band ---- */
+/* full-bleed, full-saturation; tall enough that the KPI strip and the top
+   of the first card row plunge into color, the way the approved mock does.
+   The slow pan lives on the wash layer so the gradient itself never zooms
+   (a scaled-up gradient crops its orange endpoint and reads washed out). */
 .hero { background:var(--hero-grad); color:#fff; position:relative;
-  padding:30px 0 96px; }
+  padding:42px 0 176px; }
 .hero::before { content:""; position:absolute; inset:0;
-  background:var(--hero-wash); pointer-events:none; }
+  background:var(--hero-wash); background-size:220% 190%;
+  background-position:0% 0%; pointer-events:none; }
 .hero::after { content:""; position:absolute; inset:0;
   background:var(--hero-scrim); pointer-events:none; }
 .hero-in { position:relative; z-index:1; }
@@ -1205,12 +1213,12 @@ code { background:var(--code); border-radius:4px; padding:.08em .35em;
   gap:20px; }
 .hi { font-size:13px; font-weight:600; letter-spacing:.05em;
   text-transform:uppercase; text-shadow:0 1px 2px rgba(21,15,74,.30); }
-.say { margin-top:8px; font-size:18px; line-height:1.45; font-weight:600;
+.say { margin-top:10px; font-size:19.5px; line-height:1.48; font-weight:600;
   max-width:62ch; letter-spacing:-.005em; text-wrap:balance;
-  text-shadow:0 1px 3px rgba(21,15,74,.30); }
+  text-shadow:0 1px 3px rgba(21,15,74,.32); }
 .hero-side { display:flex; align-items:center; gap:12px; flex:none; }
 .stamp { font-size:11.5px; line-height:1.5; color:#fff; text-align:right;
-  background:rgba(21,15,74,.50); padding:5px 12px; border-radius:10px; }
+  background:rgba(21,15,74,.40); padding:5px 12px; border-radius:10px; }
 .themebtn { background:rgba(21,15,74,.45); color:#fff;
   border:1px solid rgba(255,255,255,.55); border-radius:999px; padding:3px 12px;
   font:12.5px 'Inter',system-ui,sans-serif; cursor:pointer;
@@ -1223,8 +1231,8 @@ code { background:var(--code); border-radius:4px; padding:.08em .35em;
 
 /* ---- the floating KPI strip ---- */
 .kpis { display:grid; grid-template-columns:repeat(4,1fr); background:var(--surface);
-  border-radius:14px; box-shadow:var(--shadow-float); border:1px solid var(--border);
-  margin-top:-64px; position:relative; z-index:2; padding:18px 0; }
+  border-radius:16px; box-shadow:var(--shadow-float); border:1px solid var(--border);
+  margin-top:-118px; position:relative; z-index:2; padding:20px 0; }
 .kpi { padding:2px 24px; border-left:1px solid var(--grid); min-width:0; }
 .kpi:first-child { border-left:none; }
 .kk { font-size:11.5px; font-weight:600; color:var(--muted);
@@ -1247,7 +1255,7 @@ main { padding-bottom:44px; }
 .sidecol { display:flex; flex-direction:column; gap:18px; min-width:0;
   align-self:start; }
 .card { background:var(--surface); border:1px solid var(--border);
-  border-radius:14px; padding:20px 22px; box-shadow:var(--shadow-card);
+  border-radius:16px; padding:20px 22px; box-shadow:var(--shadow-card);
   break-inside:avoid; min-width:0; }
 .card.walk { background:var(--walk-grad); border-color:var(--walk-border); }
 .cardhead { display:flex; justify-content:space-between; align-items:baseline;
@@ -1491,6 +1499,30 @@ footer p { max-width:68ch; margin-inline:auto; text-wrap:pretty; }
 footer p + p { margin-top:4px; }
 footer .tagline { color:var(--ink-2); }
 
+/* ---- quiet delight: all motion behind prefers-reduced-motion, and the
+   entrance uses a backwards fill only, so the resting state (print, reduced
+   motion, JS-less) is always the fully visible one ---- */
+@keyframes rise { from { opacity:0; transform:translateY(10px); } }
+@keyframes aurora-pan { from { background-position:0% 0%; }
+  to { background-position:100% 60%; } }
+@media (prefers-reduced-motion: no-preference) {
+  .hero::before { animation:aurora-pan 48s ease-in-out infinite alternate; }
+  .kpis { animation:rise .5s cubic-bezier(.2,.7,.3,1) backwards; }
+  .card { animation:rise .55s cubic-bezier(.2,.7,.3,1) backwards; }
+  main > .grid:nth-of-type(1) .card { animation-delay:.05s; }
+  main > .grid:nth-of-type(2) .card { animation-delay:.1s; }
+  main > .grid:nth-of-type(3) .card { animation-delay:.15s; }
+  main > .grid:nth-of-type(4) .card { animation-delay:.2s; }
+  main > .grid:nth-of-type(5) .card { animation-delay:.25s; }
+  .card { transition:transform .18s ease, box-shadow .18s ease; }
+  .card:hover { transform:translateY(-2px); box-shadow:var(--shadow-hover); }
+  .lanes li, .needs li, .moves li { transition:background .15s ease; }
+}
+.lanes li, .needs li, .moves li { border-radius:10px;
+  margin-inline:-10px; padding-inline:10px; }
+.lanes li:hover, .needs li:hover, .moves li:hover {
+  background:var(--accent-soft); }
+
 @media (max-width:960px) {
   .g-pace, .g-needs, .g-walk, .g-chesh, .g-nwt { grid-template-columns:1fr; }
   .kpis { grid-template-columns:1fr 1fr; row-gap:14px; }
@@ -1501,8 +1533,8 @@ footer .tagline { color:var(--ink-2); }
 }
 @media (max-width:560px) {
   .wrap { padding:0 16px; }
-  .hero { padding-top:22px; }
-  .kpis { grid-template-columns:1fr 1fr; padding:12px 0; }
+  .hero { padding-top:24px; padding-bottom:124px; }
+  .kpis { grid-template-columns:1fr 1fr; padding:12px 0; margin-top:-88px; }
   .kpi { padding:2px 16px; }
   .kv { font-size:24px; }
   .phero { font-size:33px; }
@@ -1515,11 +1547,12 @@ footer .tagline { color:var(--ink-2); }
   .lanetag { order:4; width:max-content; margin-left:19px; padding:2px 9px;
     background:var(--surface-2); border-radius:999px; }
 }
-@media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
+@media (prefers-reduced-motion: reduce) {
+  * { transition:none !important; animation:none !important; } }
 @media print {
   body { background:#fff; }
   .themebtn, .tv { display:none; }
-  .card, .kpis { border-color:#ddd; box-shadow:none; }
+  .card, .kpis { border-color:#ddd; box-shadow:none; animation:none; }
   .wrap { max-width:none; padding:0; }
   * { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
 }
@@ -1537,6 +1570,18 @@ JS_TEMPLATE = """
   }
   function cssv(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+  function fade(hex, a) {  // '#rrggbb' -> 'rgba(r,g,b,a)' for gradient stops
+    var h = hex.replace('#', '');
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    var n = parseInt(h, 16);
+    return 'rgba(' + (n >> 16 & 255) + ',' + (n >> 8 & 255) + ',' +
+      (n & 255) + ',' + a + ')';
+  }
+  function areaGrad(varName, top) {  // soft vertical wash under a data line
+    return { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [
+      { offset: 0, color: fade(cssv(varName), top) },
+      { offset: 1, color: fade(cssv(varName), 0) }] };
   }
 
   // theme: auto -> light -> dark, persisted; charts re-skin on every change
@@ -1671,8 +1716,8 @@ JS_TEMPLATE = """
       if (P.actual.length) opt.series.push({
         name: 'spent, day by day', type: 'line', data: P.actual,
         symbol: 'none', color: cssv('--accent'),
-        lineStyle: { width: 2.5, cap: 'round' },
-        areaStyle: { opacity: 0.07 },
+        lineStyle: { width: 3, cap: 'round' },
+        areaStyle: { color: areaGrad('--accent', 0.22) },
         emphasis: { disabled: true }, z: 2
       });
       if (P.now) opt.series.push(nowDot(P.now.xy, P.now.label, P.now.side));
@@ -1712,8 +1757,8 @@ JS_TEMPLATE = """
       var market = {
         name: 'at market prices', type: 'line', data: N.market, symbol: 'none',
         color: cssv('--accent'),
-        lineStyle: { width: 2.5, cap: 'round' },
-        areaStyle: { opacity: 0.07 },
+        lineStyle: { width: 3, cap: 'round' },
+        areaStyle: { color: areaGrad('--accent', 0.22) },
         emphasis: { disabled: true }, z: 2
       };
       if (N.seam !== null) market.markLine = {  // where at-cost becomes market
@@ -1894,8 +1939,8 @@ JS_TEMPLATE = """
     };
     opt.series = [{
       name: 'saving as usual', type: 'line', data: WI.paths[s.pathKey][gi],
-      symbol: 'none', lineStyle: { width: 2.5, color: cssv('--accent') },
-      areaStyle: { color: cssv('--accent'), opacity: 0.07 },
+      symbol: 'none', lineStyle: { width: 3, color: cssv('--accent') },
+      areaStyle: { color: areaGrad('--accent', 0.22) },
       emphasis: { disabled: true }, z: 2, markLine: ml,
       markPoint: wiDots(dots)
     }];
