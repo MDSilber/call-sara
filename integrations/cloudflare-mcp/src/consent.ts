@@ -96,7 +96,15 @@ async function renderForm(
   const name = esc((client.clientName ?? "Unnamed client").slice(0, NAME_MAX));
   const origin = esc(new URL(oauthRequest.redirectUri).origin);
   const scopes = esc((oauthRequest.scope.length ? oauthRequest.scope : SCOPES).join(", "));
-  const deny = esc(errorRedirect(oauthRequest, "access_denied").headers.get("location") ?? "/");
+  const denyRaw = errorRedirect(oauthRequest, "access_denied").headers.get("location") ?? "/";
+  // open registration means redirect URIs are hostile input: only http(s)
+  // schemes may render as a link; anything else falls back to a dead end
+  let denySafe = "/";
+  try {
+    const u = new URL(denyRaw, oauthRequest.redirectUri);
+    if (u.protocol === "https:" || u.protocol === "http:") denySafe = u.toString();
+  } catch { /* keep the safe fallback */ }
+  const deny = esc(denySafe);
   return page(
     `Approve ${name}?`,
     `<div class="card">
