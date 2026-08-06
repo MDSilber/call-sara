@@ -185,3 +185,20 @@ amount = 300
 cadence = "monthly"
 day = 15
 commodity = "AGGRX"
+
+# ---------------------------------------------------------------------------
+# Allocation targets — THESIS.md's "80/20 equities/bonds" encoded for the
+# drift strip + the allocation_drift check. Scored over invested dollars
+# above the cushion; the 529 rides its own glide path and stays out.
+# ---------------------------------------------------------------------------
+[allocation_targets]
+reserve_usd = 40000         # the six-month cushion in the Ally HYSA
+band_pts = 5
+exclude_account_re = "529"
+
+[allocation_targets.classes]
+equity = 80                 # the thesis states one equity number, no US/intl
+bonds = 20                  # split — commodity metadata rolls up into these
+
+[allocation_targets.map]
+BND = "bonds"               # metadata says bond_us; name it what the thesis does

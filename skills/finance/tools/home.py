@@ -22,6 +22,21 @@ liquid net-worth curve)? Then the month's cheshbon with its category ribbon
 and the project envelopes. EVERY figure carries its window label; every
 delta names its comparison.
 
+Wave 2 grows the long-game story: the walk-away card carries a
+HISTORY CHECK (every complete 40-year stretch of markets since 1871,
+replayed on the thesis's own stock/bond mix via market_history.py — counts,
+never decimal percents), a Rich/Broke/Dead-style outcome-band chart behind
+a disclosure, a guardrail-in-dollars rescue sentence searched over history's
+failing sequences, the unspent-money flip side, and three LIFE-EVENT
+toggles (house / one paycheck keeps coming / college) whose transforms are
+precomputed per combination — the two quiet house selects step through a
+small precomputed lattice, so JS still only indexes. The net-worth card
+explains WHY the month moved (markets vs saved vs spent — flows from the
+ledger, market effect as the residual, suppressed rather than mislabeled
+when boundary prices are missing or stale), and a "Vs the thesis" card
+scores the live mix against rules.toml [allocation_targets] (allocation.py),
+loud only when a class leaves its band.
+
 Money honesty, rendered: Python computes and formats every dollar; JS
 receives chart geometry (plain numbers) and display strings only — no
 toFixed, no float math on money, no compact notation on real values. Whole
@@ -58,13 +73,17 @@ import jinja2
 from markupsafe import Markup, escape
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vault import REPORTS, VAULT, amount, dated_bullets, household, query  # noqa: E402
+from vault import (REPORTS, VAULT, amount, dated_bullets, household,  # noqa: E402
+                   illiquid_currency_regex, query)
 from reports import liquid_balances, paper_value  # noqa: E402
-from webview import (MONTH_ABBR, action_queue, code_spans,  # noqa: E402
+from webview import (MONTH_ABBR, _units, action_queue, code_spans,  # noqa: E402
                      deadline_items, latest_ledger_date, month_label,
-                     networth_series, nice_ticks, parse_findings)
+                     networth_series, nice_ticks, parse_findings,
+                     price_history)
 from checks import goals as goals_config  # noqa: E402
 from checks import lane_status  # noqa: E402
+from allocation import allocation_view  # noqa: E402
+from market_history import RETIREMENT_YEARS, survival_tables  # noqa: E402
 
 ASSETS = Path(__file__).resolve().parent / "assets"
 MONTH_FULL = ["", "January", "February", "March", "April", "May", "June",
@@ -354,8 +373,16 @@ def walkaway(liquid: float, paper: float, baseline: Baseline | None,
 # ----------------------------------------------------------- what-if grid
 WHATIF_RATES = [round(3.0 + 0.1 * i, 1) for i in range(21)]     # 3.0–5.0%
 WHATIF_GROWTHS = [round(0.5 * i, 1) for i in range(17)]         # 0–8% real
-WHATIF_SPEND_STEP = 5_000       # slider step for annual spend
+WHATIF_SPEND_POINTS = 21        # ~this many spend steps across 0.5–1.5× burn
+SPEND_STEP_LADDER = (2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000)
 WHATIF_MAX_YEARS = 40           # projection horizon; beyond = "not within 40"
+DEFAULT_STOCK_PCT = 70.0        # history-replay mix until targets are declared
+HOUSE_DOWN_BURN_MULT = 1.5      # house preset ≈ 1.5× a year of burn, $25k-rounded
+HOUSE_YEARS_OUT = 5             # ...bought this many years out, absent a plan
+HOUSE_AMOUNT_MULTS = (0.75, 1.0, 1.25)   # the quiet select's three amounts
+HOUSE_YEAR_OFFSETS = (-2, 0, 2)          # ...and its three purchase years
+COLLEGE_AGE = 18
+COLLEGE_FALLBACK_COST = 400_000  # today's-dollar private-college placeholder
 
 
 def net_savings_baseline(months: list[YM]) -> float:
@@ -379,138 +406,469 @@ def net_savings_baseline(months: list[YM]) -> float:
     return median(nets) if nets else 0.0
 
 
+def salary_streams(months: list[YM]) -> list[tuple[str, float]]:
+    """Per salary account: employer label + median monthly net posted to
+    the ledger over the baseline-window months that saw any posting.
+    Largest stream first."""
+    rows = query("SELECT account, year, month, sum(convert(position,'USD')) AS v "
+                 "WHERE account ~ 'Salary' GROUP BY account, year, month")
+    keep = set(months)
+    per: dict[str, list[float]] = {}
+    for r in rows:
+        try:
+            ym = (int(r["year"]), int(r["month"]))
+        except (TypeError, ValueError):
+            continue
+        if ym in keep:
+            per.setdefault(r["account"], []).append(-amount(r["v"]))
+    out = []
+    for acct, vals in per.items():
+        vals = [v for v in vals if v > 0]
+        if not vals:
+            continue
+        segs = [s for s in acct.split(":") if s and s != "Salary"]
+        out.append((segs[-1] if segs else acct, median(vals)))
+    return sorted(out, key=lambda kv: -kv[1])
+
+
+class LifeEvents(NamedTuple):
+    """The three toggles' presets, derived from the vault (or the named
+    fallback). Dollars are today's dollars; months count from today."""
+    house_amounts: list[int]        # the quiet select's options, preset included
+    house_years: list[int]          # calendar years, preset included
+    house_def_a: int                # index of the preset amount
+    house_def_y: int
+    house_src: str
+    partner_monthly: float | None   # smaller salary stream, $/mo net (ledger)
+    partner_label: str
+    college_year: int | None        # calendar year of the college lump
+    college_lump: float             # net of the 529's current path; 0 = covered
+    college_cost: float
+    college_529_path: float
+    college_src: str
+
+
+PEOPLE_BORN = re.compile(r"^born:\s*(\d{4})-(\d{2})-(\d{2})", re.M)
+PEOPLE_NAME = re.compile(r"^name:\s*(.+)$", re.M)
+TARGET_YEAR = re.compile(r"(20\d{2})")
+
+
+def _youngest_person(today: date) -> tuple[str, int] | None:
+    """(first name, birth year) of the youngest person in facts/people/."""
+    best: tuple[date, str] | None = None
+    people = VAULT / "facts" / "people"
+    if not people.is_dir():
+        return None
+    for f in sorted(people.rglob("*.md")):
+        try:
+            txt = f.read_text()
+        except OSError:
+            continue
+        m = PEOPLE_BORN.search(txt)
+        if not m:
+            continue
+        try:
+            born = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            continue
+        if born > today:
+            continue
+        nm = PEOPLE_NAME.search(txt)
+        name = (nm.group(1).strip().split()[0] if nm
+                else f.parent.name.capitalize())
+        if best is None or born > best[0]:
+            best = (born, name)
+    return (best[1], best[0].year) if best else None
+
+
+def life_events(today: date, burn_annual: float, months: list[YM],
+                goals: dict, edu_accounts: list["EduAccount"],
+                edu_pace: float | None) -> LifeEvents:
+    # house: a declared plan (facts/goals house_downpayment + house_year)
+    # wins; else a stated derivation from the household's own burn
+    down = _as_float(goals.get("house_downpayment"))
+    year = _as_float(goals.get("house_year"))
+    if down and down > 0:
+        down = round(down)                # the declared number, verbatim
+        house_src = "the down-payment goal in facts/goals"
+    else:
+        down = max(25_000,               # derived: stated multiple, $25k-round
+                   round(burn_annual * HOUSE_DOWN_BURN_MULT / 25_000) * 25_000)
+        house_src = (f"a placeholder ≈{HOUSE_DOWN_BURN_MULT:g}× a year of "
+                     f"burn — set house_downpayment in facts/goals to pin it")
+    year_cal = (int(year) if year and year > today.year
+                else today.year + HOUSE_YEARS_OUT)
+    amounts = sorted({down} | {max(5_000, round(down * m / 5_000) * 5_000)
+                               for m in HOUSE_AMOUNT_MULTS if m != 1.0})
+    years = sorted({max(today.year + 1, year_cal + off)
+                    for off in HOUSE_YEAR_OFFSETS})
+
+    # partner: the smaller of the two biggest salary streams keeps coming
+    streams = salary_streams(months)
+    partner_monthly, partner_label = None, ""
+    if len(streams) >= 2:
+        partner_label, partner_monthly = min(streams[:2], key=lambda kv: kv[1])
+
+    # college: the youngest kid turns 18 (facts/people), else the 529's
+    # own target year, read off the account or portfolio name
+    college_year, college_src = None, ""
+    kid = _youngest_person(today)
+    if kid:
+        college_year = kid[1] + COLLEGE_AGE
+        college_src = f"the year {kid[0]} turns {COLLEGE_AGE}"
+    else:
+        for a in edu_accounts:
+            m = TARGET_YEAR.search(a.account) or TARGET_YEAR.search(a.kid)
+            if m:
+                college_year = int(m.group(1))
+                college_src = "the 529's target year"
+                break
+    lump = cost = path529 = 0.0
+    if college_year and college_year > today.year:
+        cost = _as_float(goals.get("education_target")) or 0.0
+        if cost <= 0:
+            cost = COLLEGE_FALLBACK_COST
+            college_src += (" · the cost is a private-college placeholder — "
+                            "set education_target to pin it")
+        months_to = max(0, (college_year - today.year) * 12 - today.month + 8)
+        path529 = (sum(a.value for a in edu_accounts)
+                   + (edu_pace or 0.0) * months_to)
+        lump = max(0.0, cost - path529)
+    else:
+        college_year = None
+    return LifeEvents(
+        house_amounts=amounts, house_years=years,
+        house_def_a=amounts.index(down) if down in amounts else len(amounts) // 2,
+        house_def_y=(years.index(year_cal) if year_cal in years
+                     else len(years) // 2),
+        house_src=house_src, partner_monthly=partner_monthly,
+        partner_label=partner_label, college_year=college_year,
+        college_lump=round1k(lump), college_cost=cost,
+        college_529_path=path529, college_src=college_src)
+
+
 def _months_to_target(liquid: float, monthly_save: float, target: float,
-                      growth_pct: float) -> float | None:
-    """Months until liquid + monthly savings, compounding monthly at the
-    given annual real growth, first reaches target. Closed form (verified
-    independently by the ground-truth table); None = not within the horizon."""
-    if liquid >= target:
+                      growth_pct: float,
+                      events: tuple | list = ()) -> float | None:
+    """First month from which the projected balance sits at/above target
+    and no later life event knocks it back under. `events` = (month, lump)
+    pairs — dollars leaving the path at that month. Closed form inside each
+    inter-event regime (verified independently by the ground-truth table);
+    None = not within the horizon."""
+    if target <= 0:
         return 0.0
     horizon = WHATIF_MAX_YEARS * 12
-    if growth_pct <= 0:
-        if monthly_save <= 0:
-            return None
-        m = (target - liquid) / monthly_save
-        return m if m <= horizon else None
+    evs = sorted((m, a) for m, a in events if 0 < m <= horizon and a > 0)
     f = (1.0 + growth_pct / 100.0) ** (1.0 / 12.0)
-    k = monthly_save / (f - 1.0)
-    if liquid + k <= 0:        # savings drain faster than growth can lift
-        return None
-    m = math.log((target + k) / (liquid + k)) / math.log(f)
-    return m if 0 <= m <= horizon else None
+
+    def grow(b0: float, months: float) -> float:
+        if growth_pct <= 0:
+            return b0 + monthly_save * months
+        g = f ** months
+        return b0 * g + monthly_save * (g - 1.0) / (f - 1.0)
+
+    def cross(b0: float, m0: float, m1: float) -> float | None:
+        if b0 >= target:
+            return m0
+        if growth_pct <= 0:
+            if monthly_save <= 0:
+                return None
+            m = m0 + (target - b0) / monthly_save
+            return m if m < m1 else None
+        k = monthly_save / (f - 1.0)
+        if b0 + k <= 0:            # drains faster than growth can lift
+            return None
+        m = m0 + math.log((target + k) / (b0 + k)) / math.log(f)
+        return m if m < m1 else None
+
+    bounds: list[float] = [0.0] + [float(m) for m, _ in evs] + [float(horizon)]
+    bals = [liquid]
+    for i, (m, lump) in enumerate(evs):
+        bals.append(grow(bals[i], m - bounds[i]) - lump)
+
+    def cross_req(b0: float, m0: float, m1: float, req: float,
+                  me: float) -> float | None:
+        """First m in [m0, m1) where the balance covers `req` dollars due at
+        month me, growing alone in between: B(m) ≥ req · f^(m−me)."""
+        if growth_pct <= 0:
+            if b0 >= req:
+                return m0
+            if monthly_save <= 0:
+                return None
+            m = m0 + (req - b0) / monthly_save
+            return m if m < m1 else None
+        k = monthly_save / (f - 1.0)
+        coeff = (b0 + k) - req * f ** (m0 - me)
+        if coeff <= 0:
+            return None
+        m = (m0 if k <= coeff
+             else m0 + math.log(k / coeff) / math.log(f))
+        return m if m < m1 else None
+
+    # a crossing is the walk-away month only if the pot ALSO pre-funds every
+    # later life event: growing alone from that month, it must absorb each
+    # remaining lump and still sit at the target (post-walk-away spending is
+    # the survival replay's job; this guards the lumps).
+    for i in range(len(bounds) - 1):
+        cands = [cross(bals[i], bounds[i], bounds[i + 1])]
+        for e in range(i, len(evs)):
+            req = target + sum(
+                evs[k][1] * (f ** (evs[e][0] - evs[k][0])
+                             if growth_pct > 0 else 1.0)
+                for k in range(i, e + 1))
+            cands.append(cross_req(bals[i], bounds[i], bounds[i + 1],
+                                   req, float(evs[e][0])))
+        if all(c is not None for c in cands):
+            c = max(c for c in cands if c is not None)
+            return c if c <= horizon else None
+    return None
 
 
 def _years_or_none(months: float | None) -> float | None:
     return None if months is None else round(months / 12.0, 1)
 
 
+def _spend_axis(annual_burn: float) -> list[int]:
+    """Spend-dial steps across 0.5–1.5× the true burn: ~21 points snapped
+    to a human step (the resolution the grid's size budget allows)."""
+    raw = annual_burn / WHATIF_SPEND_POINTS
+    step = next((s for s in SPEND_STEP_LADDER if s >= raw),
+                SPEND_STEP_LADDER[-1])
+    lo = max(step, int(round(annual_burn * 0.5 / step)) * step)
+    hi = max(lo + step, int(round(annual_burn * 1.5 / step)) * step)
+    return list(range(lo, hi + 1, step))
+
+
+def _event_list(ev: LifeEvents, today: date, h: int, c: int,
+                ai: int, yi: int) -> list[tuple[int, float]]:
+    """The (month, lump) list a toggle state implies, months from today
+    (events land mid-year of their calendar year)."""
+    out = []
+    if h:
+        m = max(1, (ev.house_years[yi] - today.year) * 12 - today.month + 7)
+        out.append((m, float(ev.house_amounts[ai])))
+    if c and ev.college_year and ev.college_lump > 0:
+        m = max(1, (ev.college_year - today.year) * 12 - today.month + 8)
+        out.append((m, ev.college_lump))
+    return out
+
+
 def whatif_grid(liquid: float, baseline: Baseline, monthly_save: float,
-                today: date) -> dict:
-    """The full precomputed scenario space for the "Play with it" dials.
-    Python owns every dollar figure; the page's JS only indexes this grid.
-    Display strings ride pre-formatted; numbers exist solely for chart
-    geometry (markLines, paths, milestone dots). The spend dial centers on
-    the TRUE BURN (mean of the baseline window) — the ledger's own answer,
-    not a hand-set guess. Per cell, three arrival horizons: `years` (saving
-    as usual), `coast` (growth alone, $0 more saved — the coast stat), and
-    `half` (when the saving path crosses the halfway mark)."""
+                today: date, goals: dict, edu_accounts: list["EduAccount"],
+                edu_pace: float | None, stock_pct: float,
+                stock_src: str) -> dict:
+    """The full precomputed scenario space: the "Play with it" dials, the
+    three life-event toggles, and the walk-away history replay. Python owns
+    every dollar figure AND every sequence replay; the page's JS only
+    indexes this grid (keys are concatenated index digits, nothing more).
+
+    Layout: `tg[p]` = target family per partner state; `years[hKey+p+c]` =
+    arrival horizons (hKey carries the quiet-select lattice, "h1a2y0");
+    `coast`/`half` ride the base state only — milestones hide under
+    toggles; `paths[hKey+c]` = projection curves (partner moves the target
+    line, not the curve); `surv` = the historical-sequence tables — counts
+    and bands per withdrawal rate (pot-normalized replays, so survival
+    depends only on the rate and the mix), guardrail + unspent medians
+    scaled to cell dollars here. The spend dial centers on the TRUE BURN."""
     annual = baseline.burn * 12
-    step = WHATIF_SPEND_STEP
-    lo = max(step, int(round(annual * 0.5 / step)) * step)
-    hi = max(lo + step, int(round(annual * 1.5 / step)) * step)
-    spends = list(range(lo, hi + 1, step))
+    spends = _spend_axis(annual)
+    ev = life_events(today, annual, baseline.months, goals,
+                     edu_accounts, edu_pace)
+    surv = survival_tables(WHATIF_RATES, stock_pct)
+    n_r, n_s = len(WHATIF_RATES), len(spends)
 
-    target_n, target_s, gap_s, pct_s = [], [], [], []
-    half_n, half_s = [], []
-    for r in WHATIF_RATES:
-        tn_row, ts_row, gap_row, pct_row = [], [], [], []
-        hn_row, hs_row = [], []
-        for sp in spends:
-            t = round1k(sp / (r / 100.0))
-            tn_row.append(t)
-            ts_row.append("≈" + m0(t))
-            hn_row.append(t / 2.0)
-            hs_row.append("≈" + m0(t / 2.0))
-            gap = t - liquid
-            gap_row.append(("past it by " + m0(-gap)) if gap <= 0
-                           else (m0(gap) + " to go"))
-            pct_row.append(f"{min(999.0, 100.0 * liquid / t):.0f}%")
-        target_n.append(tn_row)
-        target_s.append(ts_row)
-        half_n.append(hn_row)
-        half_s.append(hs_row)
-        gap_s.append(gap_row)
-        pct_s.append(pct_row)
+    # ---- target family, per partner state -------------------------------
+    p_states = ["0"] + (["1"] if ev.partner_monthly else [])
+    partner_annual = (ev.partner_monthly or 0.0) * 12
+    tg: dict[str, dict] = {}
+    for p in p_states:
+        tN, tS, gap, pct = [], [], [], []
+        for r in WHATIF_RATES:
+            tn_r, ts_r, gp_r, pc_r = [], [], [], []
+            for sp in spends:
+                wbase = max(0.0, sp - (partner_annual if p == "1" else 0.0))
+                if wbase <= 0:
+                    tn_r.append(0.0)
+                    ts_r.append("$0 — the paycheck covers this spend")
+                    gp_r.append("nothing to bridge")
+                    pc_r.append("—")
+                    continue
+                t = round1k(wbase / (r / 100.0))
+                tn_r.append(t)
+                ts_r.append("≈" + m0(t))
+                g = t - liquid
+                gp_r.append(("past it by " + m0(-g)) if g <= 0
+                            else (m0(g) + " to go"))
+                pc_r.append(f"{min(999.0, 100.0 * liquid / t):.0f}%")
+            tN.append(tn_r)
+            tS.append(ts_r)
+            gap.append(gp_r)
+            pct.append(pc_r)
+        tg[p] = {"targetN": tN, "target": tS, "gap": gap, "pct": pct}
 
-    # per-cell horizons, all closed-form: saving as usual, growth alone
-    # ($0 more saved = the coast stat), and the halfway crossing
-    years, coast, half = [], [], []
-    for ri in range(len(WHATIF_RATES)):
-        y_r, c_r, h_r = [], [], []
-        for si in range(len(spends)):
-            t = target_n[ri][si]
-            y_r.append([_years_or_none(
-                _months_to_target(liquid, monthly_save, t, g))
-                for g in WHATIF_GROWTHS])
-            c_r.append([_years_or_none(
-                _months_to_target(liquid, 0.0, t, g))
-                for g in WHATIF_GROWTHS])
-            h_r.append([_years_or_none(
-                _months_to_target(liquid, monthly_save, t / 2.0, g))
-                for g in WHATIF_GROWTHS])
-        years.append(y_r)
-        coast.append(c_r)
-        half.append(h_r)
+    # halfway strings ride the base state only
+    half_n = [[tg["0"]["targetN"][ri][si] / 2.0 for si in range(n_s)]
+              for ri in range(n_r)]
+    half_s = [["≈" + m0(v) for v in row] for row in half_n]
 
-    # projected balance paths, one per growth setting, yearly points —
-    # the saving-as-usual path and its growth-alone ($0 saved) twin
-    paths, paths0, path_tips, ymaps = [], [], [], []
-    global_target_max = max(max(row) for row in target_n)
+    def horizon_grid(target_n, save, events):
+        return [[[_years_or_none(_months_to_target(
+            liquid, save, target_n[ri][si], g, events))
+            for g in WHATIF_GROWTHS] for si in range(n_s)]
+            for ri in range(n_r)]
+
+    # ---- arrival horizons per toggle state ------------------------------
+    college_on = ev.college_year is not None and ev.college_lump > 0
+    c_states = ["0", "1"] if college_on else ["0"]
+    h_keys = ["h0"] + [f"h1a{ai}y{yi}"
+                       for ai in range(len(ev.house_amounts))
+                       for yi in range(len(ev.house_years))]
+    years: dict[str, list] = {}
+    for hk in h_keys:
+        h, ai, yi = (0, 0, 0) if hk == "h0" else (1, int(hk[3]), int(hk[5]))
+        for p in p_states:
+            for c in c_states:
+                evts = _event_list(ev, today, h, int(c), ai, yi)
+                years[f"{hk}p{p}c{c}"] = horizon_grid(
+                    tg[p]["targetN"], monthly_save, evts)
+    coast = horizon_grid(tg["0"]["targetN"], 0.0, [])
+    half = [[[_years_or_none(_months_to_target(
+        liquid, monthly_save, half_n[ri][si], g))
+        for g in WHATIF_GROWTHS] for si in range(n_s)] for ri in range(n_r)]
+
+    # ---- projection paths per house/college state -----------------------
+    def balance_at(months, f, g, save, events):
+        if g <= 0:
+            bal = liquid + save * months
+        else:
+            grown = f ** months
+            bal = liquid * grown + save * (grown - 1.0) / (f - 1.0)
+        for em, lump in events:
+            if em <= months:
+                bal -= lump * (f ** (months - em) if g > 0 else 1.0)
+        return max(0.0, round(bal))
+
+    paths: dict[str, list] = {}
+    ptips: dict[str, list] = {}
+    pdots: dict[str, list] = {}
+    pmax: dict[str, list] = {}
+    paths0 = []                      # growth-alone twin, base state only
     for g in WHATIF_GROWTHS:
         f = (1.0 + g / 100.0) ** (1.0 / 12.0)
-        pts, pts0, tips = [], [], []
-        for yr in range(WHATIF_MAX_YEARS + 1):
-            m = yr * 12
-            if g <= 0:
-                bal, bal0 = liquid + monthly_save * m, liquid
-            else:
-                grown = f ** m
-                bal = liquid * grown + monthly_save * (grown - 1) / (f - 1)
-                bal0 = liquid * grown
-            bal, bal0 = max(0.0, round(bal)), max(0.0, round(bal0))
-            pts.append([yr, bal])
-            pts0.append([yr, bal0])
-            tips.append({"t": "today" if yr == 0 else f"in {yr} years",
-                         "rows": [["≈" + m0(bal), "saving as usual"],
-                                  ["≈" + m0(bal0), "growth alone, $0 saved"]]})
-        paths.append(pts)
-        paths0.append(pts0)
-        path_tips.append(tips)
-        ymaps.append(yaxis_payload(
-            0, max(pts[-1][1], pts0[-1][1], global_target_max)))
+        paths0.append([[yr, balance_at(yr * 12, f, g, 0.0, [])]
+                       for yr in range(WHATIF_MAX_YEARS + 1)])
+    for hk in h_keys:
+        h, ai, yi = (0, 0, 0) if hk == "h0" else (1, int(hk[3]), int(hk[5]))
+        for c in c_states:
+            evts = _event_list(ev, today, h, int(c), ai, yi)
+            key = f"{hk}c{c}"
+            pp, tt, dd, mm = [], [], [], []
+            for gi, g in enumerate(WHATIF_GROWTHS):
+                f = (1.0 + g / 100.0) ** (1.0 / 12.0)
+                pts = [[yr, balance_at(yr * 12, f, g, monthly_save, evts)]
+                       for yr in range(WHATIF_MAX_YEARS + 1)]
+                pp.append(pts)
+                tt.append(["≈" + m0(v) for _, v in pts])
+                dd.append([{"coord": [round(em / 12.0, 1),
+                                      balance_at(em, f, g, monthly_save, evts)],
+                            "lbl": delta0(-lump)}
+                           for em, lump in evts])
+                mx = max(v for _, v in pts)
+                mm.append(max(mx, max(v for _, v in paths0[gi])
+                              if key == "h0c0" else 0))
+            paths[key] = pp
+            ptips[key] = tt
+            pdots[key] = dd
+            pmax[key] = mm
+
+    # ---- y-axis pool: deduplicated nice scales, indexed per state -------
+    ymaps_pool: list[dict] = []
+    pool_seen: dict[tuple, int] = {}
+    ymap_idx: dict[str, list[int]] = {}
+    for key, mm in pmax.items():
+        for p in p_states:
+            tmax = max((max(row) for row in tg[p]["targetN"]), default=0.0)
+            idxs = []
+            for gi in range(len(WHATIF_GROWTHS)):
+                y = yaxis_payload(0, max(mm[gi], tmax, liquid, 1.0))
+                sig = (y["min"], y["max"])
+                if sig not in pool_seen:
+                    pool_seen[sig] = len(ymaps_pool)
+                    ymaps_pool.append(y)
+                idxs.append(pool_seen[sig])
+            ymap_idx[f"{key}p{p}"] = idxs
+
+    # ---- history replay, scaled to cell dollars -------------------------
+    guard_trig: dict[str, list] = {}
+    guard_cut: dict[str, list] = {}
+    unspent: dict[str, list] = {}
+    for p in p_states:
+        gt, gc, un = [], [], []
+        for ri in range(n_r):
+            g = surv.guard[ri]
+            uf = surv.unspent_frac[ri]
+            gt_r, gc_r, un_r = [], [], []
+            for si in range(n_s):
+                pot = tg[p]["targetN"][ri][si]
+                wbase = max(0.0, spends[si]
+                            - (partner_annual if p == "1" else 0.0))
+                if pot <= 0:
+                    gt_r.append(None)
+                    gc_r.append(None)
+                    un_r.append(None)
+                    continue
+                gt_r.append(m0(round1k(pot * g.trigger_frac)) if g else None)
+                gc_r.append("≈" + m0(round(wbase * (1 - g.cut_frac) / 12))
+                            + "/mo" if g else None)
+                un_r.append("≈" + m0(round1k(pot * uf)) if uf else None)
+            gt.append(gt_r)
+            gc.append(gc_r)
+            un.append(un_r)
+        guard_trig[p] = gt
+        guard_cut[p] = gc
+        unspent[p] = un
+
+    mix_lbl = f"{stock_pct:.0f}/{100 - stock_pct:.0f} stock/bond mix ({stock_src})"
+    surv_ctx = {
+        "survived": surv.survived, "nSeq": surv.n_seq, "bands": surv.bands,
+        "bandY": {"min": 0, "max": surv.n_seq, "step": surv.n_seq / 4,
+                  "labels": {str(surv.n_seq): f"all {surv.n_seq}", "0": "0"}},
+        "bandX": {"0": "walk-away",
+                  **{str(x): f"{x} yrs in" for x in (10, 20, 30)},
+                  "40": "40"},
+        "guardTrig": guard_trig, "guardCut": guard_cut, "unspent": unspent,
+        "window": (f"{surv.n_seq} starts, {surv.start_lo}–{surv.start_hi}, "
+                   f"data through {surv.data_hi}"),
+        "mix": mix_lbl,
+    }
 
     xticks = {str(y): ("today" if y == 0 else f"{y} yrs")
               for y in range(0, WHATIF_MAX_YEARS + 1, 10)}
-    # calendar-year labels for the milestone dots: offset -> "2041" / "’41"
     xyear = {str(y): str(today.year + y)
              for y in range(WHATIF_MAX_YEARS + 1)}
     xyear_s = {k: "’" + v[2:] for k, v in xyear.items()}
-    nearest_si = min(range(len(spends)), key=lambda i: abs(spends[i] - annual))
+    nearest_si = min(range(n_s), key=lambda i: abs(spends[i] - annual))
     return {
         "rates": [f"{r:.1f}%" for r in WHATIF_RATES],
         "spends": [f"{m0(sp)}/yr" for sp in spends],
         "growths": [f"{g:.1f}% real" for g in WHATIF_GROWTHS],
-        "nRates": len(WHATIF_RATES), "nSpends": len(spends),
-        "nGrowths": len(WHATIF_GROWTHS),
-        "targetN": target_n, "target": target_s,
-        "halfN": half_n, "halfS": half_s,
-        "gap": gap_s, "pct": pct_s,
+        "nRates": n_r, "nSpends": n_s, "nGrowths": len(WHATIF_GROWTHS),
+        "tg": tg, "halfN": half_n, "halfS": half_s,
         "years": years, "coast": coast, "half": half,
-        "paths": paths, "paths0": paths0, "pathTips": path_tips,
-        "ymaps": ymaps, "xticks": xticks, "xyear": xyear, "xyearS": xyear_s,
+        "paths": paths, "pathTips": ptips, "pathDots": pdots, "paths0": paths0,
+        "paths0Tips": [["≈" + m0(v) for _, v in pts] for pts in paths0],
+        "ymapsPool": ymaps_pool, "ymapIdx": ymap_idx,
+        "surv": surv_ctx,
+        "ev": {"houseAmts": [m0(a) for a in ev.house_amounts],
+               "houseYears": [str(y) for y in ev.house_years],
+               "houseDefA": ev.house_def_a, "houseDefY": ev.house_def_y,
+               "partner": ev.partner_monthly is not None,
+               "college": college_on},
+        "xticks": xticks, "xyear": xyear, "xyearS": xyear_s,
         "maxYears": WHATIF_MAX_YEARS,
         "def": {"ri": WHATIF_RATES.index(4.0), "si": nearest_si,
                 "gi": WHATIF_GROWTHS.index(4.0)},
+        "_ev": ev,      # template context only; stripped before the island
     }
 
 
@@ -760,6 +1118,7 @@ CSS_TEMPLATE = """
   --edu-fill:linear-gradient(90deg,#0d9488,#2bbcab);
   --ideal:#8d87b8; --code:#efedf8;
   --rib-1:#6157ff; --rib-2:#9d8cff; --rib-3:#d97a06; --rib-4:#8579c9;
+  --band-dep:#d02b4c; --band-hold:#8b82c8; --band-ahead:#067647;
   --hero-grad:linear-gradient(115deg,#6157ff 0%,#74c0fc 35%,#ff7eb6 68%,#ffb86b 100%);
   --hero-wash:radial-gradient(120% 90% at 15% 0%,rgba(255,255,255,.30),transparent 55%);
   --hero-scrim:linear-gradient(180deg,rgba(30,22,96,.34),rgba(30,22,96,.10) 62%,rgba(30,22,96,0));
@@ -783,6 +1142,7 @@ CSS_TEMPLATE = """
     --edu-fill:linear-gradient(90deg,#0f9c8d,#2bbcab);
     --ideal:#767fa8; --code:#1c2440;
     --rib-1:#544ae4; --rib-2:#8d80f4; --rib-3:#c97e1e; --rib-4:#8074c4;
+    --band-dep:#f0577a; --band-hold:#7b84cf; --band-ahead:#25a768;
     --hero-grad:linear-gradient(115deg,#4a41d6 0%,#3c7ec2 35%,#d4548c 68%,#d98b3f 100%);
     --hero-wash:radial-gradient(120% 90% at 15% 0%,rgba(255,255,255,.12),transparent 55%);
     --hero-scrim:linear-gradient(180deg,rgba(6,8,30,.42),rgba(6,8,30,.16) 62%,rgba(6,8,30,0));
@@ -806,6 +1166,7 @@ CSS_TEMPLATE = """
   --gold-fill:linear-gradient(90deg,#c97e1e,#e2a04b);
   --ideal:#767fa8; --code:#1c2440;
   --rib-1:#544ae4; --rib-2:#8d80f4; --rib-3:#c97e1e; --rib-4:#8074c4;
+  --band-dep:#f0577a; --band-hold:#7b84cf; --band-ahead:#25a768;
   --hero-grad:linear-gradient(115deg,#4a41d6 0%,#3c7ec2 35%,#d4548c 68%,#d98b3f 100%);
   --hero-wash:radial-gradient(120% 90% at 15% 0%,rgba(255,255,255,.12),transparent 55%);
   --hero-scrim:linear-gradient(180deg,rgba(6,8,30,.42),rgba(6,8,30,.16) 62%,rgba(6,8,30,0));
@@ -881,6 +1242,7 @@ main { padding-bottom:44px; }
 .g-walk { grid-template-columns:1.4fr 1fr; }
 .g-chesh { grid-template-columns:1.4fr 1fr; }
 .g-solo { grid-template-columns:1fr; }
+.g-nwt { grid-template-columns:1.55fr 1fr; }
 .sidecol { display:flex; flex-direction:column; gap:18px; min-width:0;
   align-self:start; }
 .card { background:var(--surface); border:1px solid var(--border);
@@ -1006,6 +1368,71 @@ main { padding-bottom:44px; }
 .wi-formula { color:var(--muted); font-size:12px; margin-top:10px;
   max-width:68ch; }
 
+/* life-event toggles + the walk-away history disclosure */
+.events { border:1px solid var(--grid); border-radius:12px; margin:14px 0 0;
+  padding:8px 14px 12px; }
+.evhead { color:var(--muted); font-size:12px; padding:0 6px; }
+.evrow { display:flex; gap:10px; align-items:baseline; padding:7px 0 0;
+  font-size:13px; line-height:1.5; color:var(--ink-2); cursor:pointer; }
+.evrow input { accent-color:var(--accent); flex:none; width:15px; height:15px;
+  transform:translateY(2px); cursor:pointer; }
+.evrow b { color:var(--ink); font-weight:600; }
+.evrow.evdone { color:var(--muted); cursor:default; }
+.evsel { font:inherit; font-size:12.5px; font-variant-numeric:tabular-nums;
+  color:var(--ink); background:var(--surface-2);
+  border:1px solid var(--border-strong); border-radius:7px; padding:2px 5px; }
+.evsrc { color:var(--muted); font-size:11.5px; }
+.evnote { margin:9px 0 0; max-width:66ch; }
+.survline { color:var(--ink-2); font-size:12.5px; margin-top:9px; max-width:68ch; }
+.survline b { font-weight:600; }
+.wi-bands { margin-top:14px; padding-top:12px; border-top:1px solid var(--grid); }
+.wi-bands > summary { cursor:pointer; color:var(--muted); }
+.wi-bands > summary:hover { color:var(--ink-2); }
+#band-chart { height:216px; }
+.bandlede { color:var(--ink-2); font-size:13px; margin-top:12px; max-width:68ch; }
+.bandlede b { font-weight:600; }
+.bandlegend { margin-top:4px; }
+.sw.band-dep { background:var(--band-dep); }
+.sw.band-hold { background:var(--band-hold); }
+.sw.band-ahead { background:var(--band-ahead); }
+.bandcap { color:var(--muted); font-size:12px; margin-top:8px; max-width:68ch; }
+.guardline { color:var(--ink-2); font-size:12.5px; margin-top:8px; max-width:68ch; }
+.guardline b { font-weight:600; }
+
+/* net-worth attribution: why it moved */
+.attr { margin-top:12px; }
+.attr-row { margin-top:7px; }
+.attr-line { font-size:12.5px; color:var(--ink-2); max-width:76ch; }
+.attr-line b { font-weight:600; font-size:13px; }
+.attr-win { color:var(--muted); }
+.attr-sup { color:var(--muted); font-size:12px; margin-top:8px; max-width:72ch; }
+.attrbar { display:flex; gap:2px; height:8px; border-radius:999px;
+  overflow:hidden; margin-top:5px; max-width:420px; }
+.attrseg { min-width:6px; }
+.attrseg.mkt { background:var(--accent); }
+.attrseg.in { background:var(--pos); }
+.attrseg.out { background:var(--neg); }
+
+/* vs-the-thesis drift strip */
+.drift { margin-top:2px; }
+.driftrow { display:grid; grid-template-columns:minmax(104px,max-content) 1fr;
+  gap:3px 12px; padding:9px 0 10px; border-top:1px solid var(--grid);
+  align-items:center; }
+.driftrow:first-child { border-top:none; padding-top:4px; }
+.dlabel { font-size:13px; font-weight:600; }
+.dtrack { position:relative; height:8px; border-radius:999px;
+  background:var(--bar-track); }
+.dfill { position:absolute; top:0; bottom:0; left:0; border-radius:999px;
+  background:var(--axis); }
+.dfill.over, .dfill.under { background:var(--warn-dot); }
+.dtick { position:absolute; top:-3px; bottom:-3px; width:2px;
+  background:var(--ink-2); border-radius:1px; opacity:.75; }
+.dnum { grid-column:2; font-size:12px; color:var(--muted); }
+.dnum b { color:var(--ink-2); font-size:12.5px; font-weight:600; }
+.dnum b.over, .dnum b.under, .ddelta { color:var(--warn); font-weight:600; }
+.concline { color:var(--ink-2); font-size:12.5px; margin-top:12px;
+  max-width:68ch; }
+
 /* stats (cheshbon) */
 .statrow { display:flex; gap:28px; flex-wrap:wrap; margin-top:10px;
   align-items:flex-end; }
@@ -1064,7 +1491,7 @@ footer p + p { margin-top:4px; }
 footer .tagline { color:var(--ink-2); }
 
 @media (max-width:960px) {
-  .g-pace, .g-needs, .g-walk, .g-chesh { grid-template-columns:1fr; }
+  .g-pace, .g-needs, .g-walk, .g-chesh, .g-nwt { grid-template-columns:1fr; }
   .kpis { grid-template-columns:1fr 1fr; row-gap:14px; }
   .kpi:nth-child(3) { border-left:none; }
   .hero-top { flex-direction:column; }
@@ -1308,35 +1735,53 @@ JS_TEMPLATE = """
     }
     buildWhatif();
   }
-  // ---- what-if dials: JS only INDEXES the Python-precomputed grid ----
+  // ---- what-if dials + life events: JS only INDEXES the Python grid ----
+  // (keys into DATA.whatif are concatenated index digits; every dollar
+  // string and every replay count was precomputed server-side)
   var WI = DATA.whatif;
-  var wiChart = null;
+  var wiChart = null, bandChart = null;
+  function byId(id) { return document.getElementById(id); }
   var wiEls = {
-    rate: document.getElementById('wi-rate'),
-    spend: document.getElementById('wi-spend'),
-    growth: document.getElementById('wi-growth'),
-    rateV: document.getElementById('wi-rate-v'),
-    spendV: document.getElementById('wi-spend-v'),
-    growthV: document.getElementById('wi-growth-v'),
-    target: document.getElementById('wi-target'),
-    gap: document.getElementById('wi-gap'),
-    pct: document.getElementById('wi-pct'),
-    years: document.getElementById('wi-years'),
-    coast: document.getElementById('wi-coast'),
-    fold: document.getElementById('wi-fold'),
-    reset: document.getElementById('wi-reset'),
-    chart: document.getElementById('wi-chart')
+    rate: byId('wi-rate'), spend: byId('wi-spend'), growth: byId('wi-growth'),
+    rateV: byId('wi-rate-v'), spendV: byId('wi-spend-v'), growthV: byId('wi-growth-v'),
+    target: byId('wi-target'), gap: byId('wi-gap'), pct: byId('wi-pct'),
+    years: byId('wi-years'), coast: byId('wi-coast'), surv: byId('wi-surv'),
+    fold: byId('wi-fold'), reset: byId('wi-reset'), chart: byId('wi-chart'),
+    evHouse: byId('ev-house'), evHouseA: byId('ev-house-a'), evHouseY: byId('ev-house-y'),
+    evPartner: byId('ev-partner'), evCollege: byId('ev-college'), evNote: byId('ev-note'),
+    bands: byId('wi-bands'), bandChart: byId('band-chart'), bandLede: byId('band-lede'),
+    guard: byId('guard-line'), unspent: byId('unspent-line'), bandTable: byId('band-table')
   };
   function buildWhatif() {
     if (!WI || !wiEls.chart) return;
     wiChart = echarts.init(wiEls.chart, null, { renderer: 'svg' });
     charts.push(wiChart);
+    if (wiEls.bandChart) {
+      bandChart = echarts.init(wiEls.bandChart, null, { renderer: 'svg' });
+      charts.push(bandChart);
+    }
     wiUpdate();
   }
   function calyr(years, short) {  // Python-made calendar labels, by offset
     return (short ? WI.xyearS : WI.xyear)[String(Math.round(years))] || '';
   }
-  function wiDots(dots) {  // milestone dots: coords + strings all precomputed
+  function wiState() {
+    var s = {
+      ri: +wiEls.rate.value, si: +wiEls.spend.value, gi: +wiEls.growth.value,
+      h: wiEls.evHouse && wiEls.evHouse.checked ? 1 : 0,
+      p: wiEls.evPartner && wiEls.evPartner.checked ? 1 : 0,
+      c: (wiEls.evCollege && wiEls.evCollege.checked
+          && !wiEls.evCollege.disabled) ? 1 : 0
+    };
+    s.hKey = s.h ? 'h1a' + (+wiEls.evHouseA.value) + 'y' + (+wiEls.evHouseY.value)
+      : 'h0';
+    s.pKey = s.p ? '1' : '0';
+    s.cKey = s.c ? '1' : '0';
+    s.pathKey = s.hKey + 'c' + s.cKey;
+    s.anyEv = !!(s.h || s.p || s.c);
+    return s;
+  }
+  function wiDots(dots) {  // milestone/event dots: coords + strings precomputed
     return {
       symbol: 'circle', symbolSize: 9, z: 4,
       itemStyle: { color: cssv('--accent'), borderColor: cssv('--surface'),
@@ -1353,86 +1798,220 @@ JS_TEMPLATE = """
   }
   function wiUpdate() {
     if (!WI || !wiChart) return;
-    var ri = +wiEls.rate.value, si = +wiEls.spend.value, gi = +wiEls.growth.value;
+    var s = wiState();
+    var ri = s.ri, si = s.si, gi = s.gi;
+    var T = WI.tg[s.pKey];
     wiEls.rateV.textContent = WI.rates[ri];
     wiEls.spendV.textContent = WI.spends[si];
     wiEls.growthV.textContent = WI.growths[gi];
     wiEls.rate.setAttribute('aria-valuetext', WI.rates[ri]);
     wiEls.spend.setAttribute('aria-valuetext', WI.spends[si]);
     wiEls.growth.setAttribute('aria-valuetext', WI.growths[gi]);
-    wiEls.target.textContent = WI.target[ri][si];
-    wiEls.gap.textContent = WI.gap[ri][si];
-    wiEls.pct.textContent = WI.pct[ri][si];
-    var y = WI.years[ri][si][gi];   // Python-computed; null = beyond horizon
+    wiEls.target.textContent = T.target[ri][si];
+    wiEls.gap.textContent = T.gap[ri][si];
+    wiEls.pct.textContent = T.pct[ri][si];
+    if (wiEls.evNote) wiEls.evNote.hidden = !s.anyEv;
+    var pot = T.targetN[ri][si];
+    var y = WI.years[s.hKey + 'p' + s.pKey + 'c' + s.cKey][ri][si][gi];
     wiEls.years.textContent = y === null ? 'not within ' + WI.maxYears + ' yrs'
       : (y === 0 ? 'already there' : '≈' + y + ' yrs');
-    var c = WI.coast[ri][si][gi];   // the coast stat: $0 more saved
+    var c = s.anyEv ? null : WI.coast[ri][si][gi];  // coast: base state only
     if (wiEls.coast) {
       wiEls.coast.textContent =
-        c === 0 ? '' :
+        s.anyEv || c === 0 ? '' :
         c === null ? ('Growth alone would not get there within ' +
                       WI.maxYears + ' yrs — the saving is doing the lifting.') :
         ('Even with $0 more saved, growth alone gets there in ≈' + c +
          ' yrs (' + calyr(c, false) + ').');
       wiEls.coast.hidden = !wiEls.coast.textContent;
     }
+    // the history check: survival depends on the rate alone (pot-normalized)
+    var S = WI.surv;
+    if (wiEls.surv) {
+      if (pot > 0) {
+        wiEls.surv.innerHTML = 'History check: at a ' + esc(WI.rates[ri]) +
+          ' draw, <b>' + S.survived[ri] + ' of ' + S.nSeq +
+          '</b> of history’s 40-year retirements finished with money ' +
+          'left. The verdict fold below has the whole picture.';
+        wiEls.surv.hidden = false;
+      } else {
+        wiEls.surv.hidden = true;
+      }
+    }
     var ml = {
       symbol: 'none', silent: true,
       label: { fontFamily: FONT, fontSize: 11 },
-      data: [{
-        yAxis: WI.targetN[ri][si],
+      data: pot > 0 ? [{
+        yAxis: pot,
         lineStyle: { color: cssv('--ink-2'), type: 'dashed', width: 1 },
-        label: { formatter: 'target ' + WI.target[ri][si],
-                 position: 'insideStartTop', color: cssv('--ink-2') }
-      }]
+        label: { formatter: 'target ' + T.target[ri][si],
+                 position: 'insideEndTop', color: cssv('--ink-2') }
+      }] : []
     };
-    var h = WI.half[ri][si][gi];
     var dots = [];
-    if (h !== null && h > 0 && (y === null || h < y)) dots.push({
-      coord: [h, WI.halfN[ri][si]], lbl: 'halfway ' + calyr(h, true),
-      tipT: 'halfway — ' + WI.halfS[ri][si], tipY: h,
-      label: { position: 'right' }  // clear of the target line above it
+    if (!s.anyEv) {                       // milestones: base state only
+      var h = WI.half[ri][si][gi];
+      if (h !== null && h > 0 && (y === null || h < y)) dots.push({
+        coord: [h, WI.halfN[ri][si]], lbl: 'halfway ' + calyr(h, true),
+        tipT: 'halfway — ' + WI.halfS[ri][si], tipY: h,
+        label: { position: 'right' }
+      });
+    }
+    if (y !== null && y > 0 && pot > 0) dots.push({
+      coord: [y, pot], lbl: 'target ' + calyr(y, true),
+      tipT: 'target — ' + T.target[ri][si], tipY: y
     });
-    if (y !== null && y > 0) dots.push({
-      coord: [y, WI.targetN[ri][si]], lbl: 'target ' + calyr(y, true),
-      tipT: 'target — ' + WI.target[ri][si], tipY: y
-    });
+    var evDots = WI.pathDots[s.pathKey][gi];
+    for (var di = 0; di < evDots.length; di++) {
+      dots.push({
+        coord: evDots[di].coord, lbl: evDots[di].lbl,
+        tipT: 'life event ' + evDots[di].lbl, tipY: evDots[di].coord[0],
+        label: { position: 'bottom' },
+        itemStyle: { color: cssv('--warn-dot'), borderColor: cssv('--surface'),
+                     borderWidth: 2 }
+      });
+    }
     var coastDots = [];
-    if (c !== null && c > 0) coastDots.push({
-      coord: [c, WI.targetN[ri][si]], lbl: '$0-saved ' + calyr(c, true),
-      tipT: 'growth alone reaches ' + WI.target[ri][si], tipY: c
+    if (!s.anyEv && c !== null && c > 0 && pot > 0) coastDots.push({
+      coord: [c, pot], lbl: '$0-saved ' + calyr(c, true),
+      tipT: 'growth alone reaches ' + T.target[ri][si], tipY: c
     });
+    var tips = WI.pathTips[s.pathKey][gi];
     var opt = baseOption();
-    opt.grid = { left: 62, right: 20, top: 36, bottom: 26 };
+    // narrow screens wrap the legend onto two lines — start the grid lower
+    opt.grid = { left: 62, right: 20,
+                 top: wiEls.chart.clientWidth < 520 ? 66 : 36, bottom: 26 };
     opt.legend = legendBox();
     opt.xAxis = xValAxis(WI.maxYears, WI.xticks);
-    opt.yAxis = valAxis(WI.ymaps[gi]);
+    opt.yAxis = valAxis(WI.ymapsPool[WI.ymapIdx[s.pathKey + 'p' + s.pKey][gi]]);
     opt.tooltip.formatter = function (ps) {
-      return tipHtml(WI.pathTips[gi][ps[0].dataIndex]);
+      var i = ps[0].dataIndex;
+      var rows = [[tips[i], 'saving as usual']];
+      if (!s.anyEv) rows.push([WI.paths0Tips[gi][i], 'growth alone, $0 saved']);
+      return tipHtml({ t: i === 0 ? 'today' : 'in ' + i + ' years',
+                       rows: rows });
     };
     opt.series = [{
-      name: 'saving as usual', type: 'line', data: WI.paths[gi],
+      name: 'saving as usual', type: 'line', data: WI.paths[s.pathKey][gi],
       symbol: 'none', lineStyle: { width: 2.5, color: cssv('--accent') },
       areaStyle: { color: cssv('--accent'), opacity: 0.07 },
       emphasis: { disabled: true }, z: 2, markLine: ml,
       markPoint: wiDots(dots)
-    }, {
+    }];
+    if (!s.anyEv) opt.series.push({
       name: 'growth alone, $0 saved', type: 'line', data: WI.paths0[gi],
       symbol: 'none', color: cssv('--ideal'),
       lineStyle: { width: 2, type: 'dotted' },
       emphasis: { disabled: true }, z: 1,
       markPoint: wiDots(coastDots)
-    }];
+    });
     wiChart.setOption(opt, true);
+    bandsUpdate(s, pot);
+  }
+  function bandsUpdate(s, pot) {
+    var S = WI.surv;
+    if (!S || !wiEls.bands) return;
+    var ri = s.ri, si = s.si;
+    var B = S.bands[ri];
+    if (wiEls.bandLede) {
+      wiEls.bandLede.innerHTML = pot > 0
+        ? ('At a ' + esc(WI.rates[ri]) + ' draw from a pot of ' +
+           esc(WI.tg[s.pKey].target[ri][si]) + ': <b>' + S.survived[ri] +
+           ' of ' + S.nSeq + '</b> starts finished the 40 years with money ' +
+           'left · <b>' + B[B.length - 1][2] + '</b> ended 2×+ ' +
+           'ahead · <b>' + B[B.length - 1][0] + '</b> ran out.')
+        : 'The paycheck covers this spend — no pot is being drawn down.';
+    }
+    var gT = S.guardTrig[s.pKey][ri][si];
+    var gC = S.guardCut[s.pKey][ri][si];
+    var un = S.unspent[s.pKey][ri][si];
+    if (wiEls.guard) {
+      wiEls.guard.hidden = !(pot > 0);
+      wiEls.guard.innerHTML = !(pot > 0) ? '' : (gT
+        ? ('The rescue, sized on history’s worst cases: if the pot ever ' +
+           'fell to <b>' + esc(gT) + '</b>, trimming spending to <b>' +
+           esc(gC) + '</b> until it recovered would have saved every start ' +
+           'year since 1871.')
+        : ('Every one of the ' + S.nSeq + ' start years made it at this ' +
+           'draw — no spending trim was ever needed.'));
+    }
+    if (wiEls.unspent) {
+      wiEls.unspent.hidden = !(pot > 0 && un);
+      wiEls.unspent.innerHTML = (pot > 0 && un)
+        ? ('The flip side: in the median surviving run you’d end with ' +
+           '<b>' + esc(un) + '</b> unspent after 40 years — oversaving ' +
+           'is a risk too.')
+        : '';
+    }
+    if (wiEls.bandTable) {
+      var rows = '';
+      for (var k = 4; k < B.length; k += 5) {
+        rows += '<tr><td>' + (k + 1) + '</td><td>' + B[k][0] + '</td><td>' +
+          B[k][1] + '</td><td>' + B[k][2] + '</td></tr>';
+      }
+      wiEls.bandTable.innerHTML = rows;
+    }
+    if (!bandChart) return;
+    function seriesOf(idx, nm, colorVar) {
+      var data = [[0, idx === 1 ? S.nSeq : 0]];  // at walk-away: all holding
+      for (var k = 0; k < B.length; k++) data.push([k + 1, B[k][idx]]);
+      return {
+        name: nm, type: 'line', stack: 'starts', data: data, symbol: 'none',
+        color: cssv(colorVar), lineStyle: { width: 0 },
+        areaStyle: { color: cssv(colorVar), opacity: 1 },
+        emphasis: { disabled: true }
+      };
+    }
+    var o = baseOption();
+    o.grid = { left: 56, right: 14, top: 12, bottom: 26 };
+    o.xAxis = {
+      type: 'value', min: 0, max: B.length,
+      axisLabel: { color: cssv('--muted'), fontSize: 11, fontFamily: FONT,
+                   formatter: function (v) { return S.bandX[String(v)] || ''; } },
+      interval: 10, splitLine: { show: false },
+      axisLine: { lineStyle: { color: cssv('--axis') } },
+      axisTick: { show: false }
+    };
+    o.yAxis = {
+      type: 'value', min: 0, max: S.nSeq, interval: S.bandY.step,
+      axisLabel: { color: cssv('--muted'), fontSize: 11, fontFamily: FONT,
+                   formatter: function (v) { return S.bandY.labels[String(v)] || ''; } },
+      splitLine: { show: false }, axisLine: { show: false },
+      axisTick: { show: false }
+    };
+    o.tooltip.formatter = function (ps) {
+      var i = ps[0].dataIndex;         // 0 = walk-away day; B is years 1..40
+      if (!i) return tipHtml({ t: 'at walk-away', rows:
+        [[String(S.nSeq), 'starts, all holding']] });
+      return tipHtml({ t: i + (i > 1 ? ' years in' : ' year in'),
+                       rows: [[String(B[i - 1][0]), 'had run out'],
+                              [String(B[i - 1][1]), 'still holding'],
+                              [String(B[i - 1][2]), '2×+ ahead']] });
+    };
+    // depleted pinned to the baseline so the scary share reads instantly
+    o.series = [seriesOf(0, 'ran out', '--band-dep'),
+                seriesOf(1, 'still holding', '--band-hold'),
+                seriesOf(2, '2×+ ahead', '--band-ahead')];
+    bandChart.setOption(o, true);
   }
   if (WI && wiEls.rate) {
-    [wiEls.rate, wiEls.spend, wiEls.growth].forEach(function (el) {
-      el.addEventListener('input', wiUpdate);
+    [wiEls.rate, wiEls.spend, wiEls.growth].forEach(function (elm) {
+      elm.addEventListener('input', wiUpdate);
+    });
+    [wiEls.evHouse, wiEls.evPartner, wiEls.evCollege,
+     wiEls.evHouseA, wiEls.evHouseY].forEach(function (elm) {
+      if (elm) elm.addEventListener('change', wiUpdate);
     });
     if (wiEls.reset) wiEls.reset.addEventListener('click', function () {
       wiEls.rate.value = WI.def.ri;
       wiEls.spend.value = WI.def.si;
       wiEls.growth.value = WI.def.gi;
+      if (wiEls.evHouse) wiEls.evHouse.checked = false;
+      if (wiEls.evPartner) wiEls.evPartner.checked = false;
+      if (wiEls.evCollege && !wiEls.evCollege.disabled)
+        wiEls.evCollege.checked = false;
+      if (wiEls.evHouseA) wiEls.evHouseA.value = String(WI.ev.houseDefA);
+      if (wiEls.evHouseY) wiEls.evHouseY.value = String(WI.ev.houseDefY);
       wiUpdate();
     });
     if (wiEls.fold) {
@@ -1443,6 +2022,9 @@ JS_TEMPLATE = """
         if (wiEls.fold.open && wiChart) { wiChart.resize(); wiUpdate(); }
       });
     }
+    if (wiEls.bands) wiEls.bands.addEventListener('toggle', function () {
+      if (wiEls.bands.open && bandChart) { bandChart.resize(); wiUpdate(); }
+    });
   }
 
   applyTheme(theme);
@@ -1618,6 +2200,7 @@ try { var t = localStorage.getItem('sara-home-theme');
     <div class="herolab">to the target, at the current dials</div>
     <p class="coastline" id="wi-coast"></p>
     <p class="wi-quiet">target <b id="wi-target"></b> · <b id="wi-gap"></b> · <b id="wi-pct"></b> of the way</p>
+    <p class="survline" id="wi-surv" hidden></p>
   </div>
   <details class="wi-fold" id="wi-fold" open>
     <summary><span class="ck">Play with it · what-if, not advice</span></summary>
@@ -1632,9 +2215,50 @@ try { var t = localStorage.getItem('sara-home-theme');
         <span class="dval num" id="wi-growth-v"></span>
         <input id="wi-growth" type="range" min="0" max="{{ wi.max_gi }}" step="1" value="{{ wi.def_gi }}"></div>
     </div>
+    <fieldset class="events">
+      <legend class="evhead">Life events — flip what’s coming</legend>
+      <label class="evrow"><input type="checkbox" id="ev-house">
+        <span class="evtext">We buy a home —
+          <select id="ev-house-a" class="evsel" aria-label="down payment">
+            {% for a in wi.house_amts %}<option value="{{ loop.index0 }}"{{ ' selected' if loop.index0 == wi.house_def_a }}>{{ a }}</option>{% endfor %}
+          </select> down, in
+          <select id="ev-house-y" class="evsel" aria-label="purchase year">
+            {% for y in wi.house_years %}<option value="{{ loop.index0 }}"{{ ' selected' if loop.index0 == wi.house_def_y }}>{{ y }}</option>{% endfor %}
+          </select>
+          <span class="evsrc">({{ wi.house_src }})</span></span></label>
+      {% if wi.partner_lbl %}
+      <label class="evrow"><input type="checkbox" id="ev-partner">
+        <span class="evtext">{{ wi.partner_lbl }}</span></label>
+      {% endif %}
+      {% if wi.college_lbl %}
+      <label class="evrow{{ ' evdone' if wi.college_covered }}"><input type="checkbox" id="ev-college"{{ ' disabled' if wi.college_covered }}>
+        <span class="evtext">{{ wi.college_lbl }}</span></label>
+      {% endif %}
+      <p class="evsrc evnote" id="ev-note" hidden>With a life event on, the
+      halfway/coast extras step aside — the curve, the target line and the
+      history check carry the story.</p>
+    </fieldset>
     <div class="wi-actions"><button id="wi-reset" class="themebtn" type="button">↺ reset to your numbers</button></div>
     <div id="wi-chart" class="chart" role="img"
          aria-label="Hypothetical projection of liquid net worth toward the dialed target"></div>
+  </details>
+  <details class="wi-bands" id="wi-bands">
+    <summary><span class="ck">If you walked away with this — history’s verdict</span></summary>
+    <p class="bandlede num" id="band-lede"></p>
+    <div id="band-chart" class="chart chart-sm" role="img"
+         aria-label="For each year of a 40-year retirement, how many historical start years had run out of money, were still holding, or were two times ahead or more"></div>
+    <div class="riblegend bandlegend">
+      <span class="li"><span class="sw band-dep" aria-hidden="true"></span>ran out</span>
+      <span class="li"><span class="sw band-hold" aria-hidden="true"></span>still holding</span>
+      <span class="li"><span class="sw band-ahead" aria-hidden="true"></span>2×+ ahead</span>
+    </div>
+    <p class="bandcap">{{ wi.bands_cap }}</p>
+    <p class="guardline num" id="guard-line"></p>
+    <p class="guardline num" id="unspent-line"></p>
+    <details class="tv"><summary>View as table</summary>
+    <table><caption>Of the {{ wi.n_seq }} historical starts ({{ wi.surv_window }}), how many had run out, were holding, or sat 2×+ ahead, by years into retirement — at the dialed withdrawal rate.</caption>
+    <thead><tr><th>Years in</th><th>Ran out</th><th>Holding</th><th>2×+ ahead</th></tr></thead>
+    <tbody id="band-table"></tbody></table></details>
   </details>
   <details class="wi-how"><summary>How it works</summary>
   <p class="wi-formula">{{ wi.formula }}</p></details>
@@ -1675,11 +2299,32 @@ try { var t = localStorage.getItem('sara-home-theme');
 </div>
 </div>
 
-<section class="card" style="margin-top:18px">
+<div class="grid g-nwt">
+<section class="card">
   {{ cardhead('Net worth — the long line', nw.sub, nw.window) }}
   <p class="heromini num">{{ nw.liquid }}</p>
   <p class="herolab">liquid net worth — {{ nw.asof }}</p>
   {% if nw.delta %}<div class="chiprow"><span class="chip{{ ' ' + nw.delta.cls if nw.delta.cls }}">{{ nw.delta.body }}</span></div>{% endif %}
+  {% if attr %}
+  <div class="attr">
+    {% for a in attr.rows %}
+    {% if a.suppressed %}
+    <p class="attr-sup"><span class="attr-win num">{{ a.window }}</span> · {{ a.suppressed }}</p>
+    {% else %}
+    <div class="attr-row">
+      <p class="attr-line"><span class="attr-win num">{{ a.window }}</span>
+        <b class="num{{ ' ' + a.cls if a.cls }}">{{ a.delta }}</b>
+        <span class="attr-body num">— {{ a.body }}{{ a.note }}</span></p>
+      {% if a.segs %}
+      <div class="attrbar" role="img" aria-label="{{ a.aria }}">
+        {% for s in a.segs %}<span class="attrseg {{ s.cls }}" style="width:{{ s.width }}%"></span>{% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
   {% if nw.has_chart %}
   <div id="nw-chart" class="chart" role="img" aria-label="Liquid net worth by month"></div>
   {{ tablewin('Liquid net worth at each month end; the endpoint is the headline at the latest prices.',
@@ -1689,6 +2334,28 @@ try { var t = localStorage.getItem('sara-home-theme');
   in the ledger and the curve appears.</div>
   {% endif %}
 </section>
+<section class="card">
+  {{ cardhead('Vs the thesis', thesis.sub or 'The written target mix, scored against the live portfolio.', thesis.window or '') }}
+  {% if thesis.nudge %}
+  <div class="nudge">{{ thesis.nudge }}</div>
+  {% else %}
+  <div class="drift">
+    {% for r in thesis.rows %}
+    <div class="driftrow">
+      <span class="dlabel">{{ r.label }}</span>
+      <div class="dtrack"><span class="dfill{{ ' ' + r.state if r.state }}" style="width:{{ r.fill }}%"></span><span class="dtick" style="left:{{ r.tick }}%"></span></div>
+      <span class="dnum num"><b class="{{ r.state }}">{{ r.now }}</b> <span class="dtarget">{{ r.target }} {{ r.band }}</span>{% if r.delta %} <span class="ddelta {{ r.state }}">{{ r.delta }}</span>{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% if thesis.conc %}<p class="concline num">{{ thesis.conc }}</p>{% endif %}
+  {% if thesis.notes %}<p class="goalfoot">{{ thesis.notes }}</p>{% endif %}
+  {{ tablewin('Current allocation vs the written targets, over invested dollars.',
+              ['Class', 'Value', 'Now', 'Target'],
+              thesis.rows | map(attribute='trow') | list) }}
+  {% endif %}
+</section>
+</div>
 
 <div class="grid {{ 'g-chesh' if env_rows else 'g-solo' }}">
 <section class="card">
@@ -2055,6 +2722,199 @@ def _networth_ctx(series: list[dict], baseline_cut: int, liquid: float,
     }
 
 
+
+# ------------------------------------------------- net-worth attribution
+PRICE_FRESH_DAYS = 10   # a boundary valued on prices older than this is suppressed
+
+
+STALE_SHARE_MAX = 2.0   # suppress once > this % of value rides stale prices
+
+
+def _held_priced() -> list[tuple[str, float]]:
+    """(commodity, units) currently held in liquid accounts whose value
+    rides a moving price (constant-$1 money markets exempt; never-priced
+    holdings sit at cost and the est flag owns that story)."""
+    ph = price_history()
+    excl = illiquid_currency_regex()
+    rows = query("SELECT currency, sum(units(position)) AS u "
+                 "WHERE account ~ '^(Assets|Liabilities)' GROUP BY currency")
+    out = []
+    for r in rows:
+        cur = r["currency"] or ""
+        if cur == "USD" or (excl and re.match(excl, cur)):
+            continue
+        units = _units(r["u"], cur)
+        if abs(units) < 1e-6:
+            continue
+        pts = ph.get(cur)
+        if not pts or all(abs(px - 1.0) < 1e-9 for _, px in pts):
+            continue
+        out.append((cur, units))
+    return out
+
+
+def _boundary_staleness(boundary: date, held: list[tuple[str, float]],
+                        ph: dict, liquid: float) -> tuple[float, int, date | None]:
+    """Price staleness at a valuation boundary, dollar-weighted: what share
+    of liquid value rides a price older than PRICE_FRESH_DAYS, and how old
+    is the freshest boundary-wide mark (worst age among still-fresh-enough
+    holdings, for the "valued at <date> prices" note). Holdings with no
+    price on or before the boundary don't count — they sit at cost and the
+    est flag owns that story."""
+    stale_value, worst, oldest = 0.0, 0, None
+    for cur, units in held:
+        pts = [(pd, px) for pd, px in ph.get(cur, []) if pd <= boundary]
+        if not pts:
+            continue
+        pd_last, px_last = pts[-1]
+        age = (boundary - pd_last).days
+        if age > PRICE_FRESH_DAYS:
+            stale_value += abs(units * px_last)
+        elif age > worst:
+            worst, oldest = age, pd_last
+    share = 100.0 * stale_value / liquid if liquid else 0.0
+    return share, worst, oldest
+
+
+def _attribution_ctx(series: list[dict], asof: date | None) -> dict | None:
+    """"Why it moved": this month and the last closed month, each split into
+    markets vs saved vs spent. Saved/spent come from the ledger's booked
+    postings; the market effect is the residual of the valuation change
+    minus ALL booked flows — so the parts reconcile to the dollar by
+    construction. A month whose boundary valuation leans on cost basis or
+    stale prices is suppressed, never mislabeled."""
+    if len(series) < 2:
+        return None
+    ph = price_history()
+    held = _held_priced()
+    liquid_now = series[-1]["v"] or 1.0
+    by_ym = {(pt["d"].year, pt["d"].month): i for i, pt in enumerate(series)}
+    cur_ym = (series[-1]["d"].year, series[-1]["d"].month)
+    prev_ym = (cur_ym[0] - 1, 12) if cur_ym[1] == 1 else (cur_ym[0], cur_ym[1] - 1)
+    rows = []
+    for ym, closed in ((cur_ym, False), (prev_ym, True)):
+        i = by_ym.get(ym)
+        if not i:                       # absent, or no prior point to diff from
+            continue
+        p0, p1 = series[i - 1], series[i]
+        name = MONTH_FULL[ym[1]]
+        window = (f"{name}, closed" if closed
+                  else f"{MONTH_ABBR[ym[1]]} 1–{p1['d'].day} so far")
+        if p0["est"] or p1["est"]:
+            which = "opening" if p0["est"] else "closing"
+            rows.append({"window": window, "suppressed":
+                         f"{name} can’t be split honestly — its {which} "
+                         f"valuation leans on cost basis (no dated prices "
+                         f"yet). A price mark unlocks it."})
+            continue
+        share0, age0, old0 = _boundary_staleness(p0["d"], held, ph, liquid_now)
+        share1, _, _ = _boundary_staleness(p1["d"], held, ph, liquid_now)
+        if max(share0, share1) > STALE_SHARE_MAX:
+            rows.append({"window": window, "suppressed":
+                         f"{name} can’t be split honestly — "
+                         f"{max(share0, share1):.0f}% of holdings ride "
+                         f"prices older than {PRICE_FRESH_DAYS} days at its "
+                         f"boundary. A fresh price mark unlocks it."})
+            continue
+        inc, exp = month_in_out(ym)
+        dmv = p1["v"] - p0["v"]
+        flow = p1["flow"]
+        market = dmv - flow
+        other = flow - (inc - exp)
+        bits = [f"markets {delta0(market)}", f"saved {delta0(inc)}",
+                f"spent {MINUS}{m0(exp)}" if round(exp) else "spent $0"]
+        if abs(round(other)) >= 1:
+            bits.append(f"other flows {delta0(other)}")
+        note = ""
+        if age0 > 2 and old0:
+            note = f" Start valued at {mon_d(old0)} prices."
+        mags = [abs(market), inc, exp]
+        total = sum(mags) or 1.0
+        segs = None
+        if round(total):
+            segs = [{"cls": kind, "width": f"{max(1.5, 100.0 * v / total):.1f}"}
+                    for kind, v in (("mkt", abs(market)), ("in", inc),
+                                    ("out", exp)) if round(v)]
+        rows.append({
+            "window": window, "suppressed": None,
+            "delta": delta0(dmv),
+            "cls": "good" if round(dmv) > 0 else ("bad" if round(dmv) < 0 else ""),
+            "body": " · ".join(bits) + ".", "note": note, "segs": segs,
+            "aria": f"{window}: liquid moved {delta0(dmv)} — " + ", ".join(bits),
+        })
+    if not rows or all(r.get("suppressed") for r in rows):
+        # keep at most one quiet line when nothing is attributable
+        rows = rows[:1]
+    return {"rows": rows} if rows else None
+
+
+# ---------------------------------------------------------- vs the thesis
+def _thesis_ctx(view, asof: date | None) -> dict:
+    """The drift strip: declared target mix vs the live portfolio, loud only
+    when a class sits outside its band, plus the concentration line."""
+    if view is None:
+        return {"rows": [], "nudge":
+                "No target mix declared yet. Tell Sara the household’s "
+                "target allocation (it becomes [allocation_targets] in "
+                "rules.toml) and this card starts scoring drift against it."}
+    if view.invested <= 0:
+        return {"rows": [], "nudge":
+                "Targets are declared, but no classed holdings are on file "
+                "yet — import an investment statement and the drift strip "
+                "wakes up."}
+    scale = max(max(r.share_pct, r.target_pct) for r in view.rows) or 1.0
+    rows = []
+    for r in view.rows:
+        state = "over" if (r.out_of_band and r.drift_pts > 0) else (
+            "under" if r.out_of_band else "")
+        rows.append({
+            "label": r.label, "state": state,
+            "now": f"{r.share_pct:.0f}%", "value": m0(r.value),
+            "target": f"target {r.target_pct:g}",
+            "band": f"±{r.band_pts:g}",
+            "fill": f"{max(1.0, min(100.0, 100.0 * r.share_pct / scale)):.1f}",
+            "tick": f"{max(0.0, min(100.0, 100.0 * r.target_pct / scale)):.1f}",
+            "delta": ((("+" if r.drift_pts > 0 else MINUS)
+                       + f"{abs(r.drift_pts):.0f} pts")
+                      if r.out_of_band else ""),
+            "trow": (r.label, m0(r.value), f"{r.share_pct:.0f}%",
+                     f"{r.target_pct:g}% ±{r.band_pts:g}"),
+        })
+    notes = []
+    if view.reserve_short > 0.5:
+        notes.append(f"The {m0(view.reserve_usd)} cash reserve is short by "
+                     f"{m0(view.reserve_short)}.")
+    elif view.reserve_usd > 0:
+        notes.append(f"Cash above the {m0(view.reserve_usd)} reserve: "
+                     f"≈{m0(view.cash_above_reserve)} — outside the scored "
+                     f"mix, waiting on the thesis’s own deployment rules.")
+    if view.excluded_value > 0.5:
+        notes.append(f"≈{m0(view.excluded_value)} rides its own glide path "
+                     f"(excluded accounts) and stays out.")
+    if view.unclassified:
+        syms = ", ".join(s for s, _ in view.unclassified[:3])
+        notes.append(f"Unclassed holdings ({syms}) sit outside the strip — "
+                     f"map them in rules.toml [allocation_targets.map].")
+    conc = []
+    if view.top:
+        sym, val, pct = view.top
+        conc.append(f"Biggest single position: {sym} — {pct:.0f}% of liquid "
+                    f"({m0(val)}).")
+    if view.employer:
+        syms, val, pct = view.employer
+        conc.append(f"Employer stock: {syms} — "
+                    f"{'under 1' if pct < 1 else f'{pct:.0f}'}% of liquid "
+                    f"({m0(val)}).")
+    return {
+        "rows": rows, "nudge": None,
+        "sub": (f"Invested dollars vs the written targets — scored over "
+                f"≈{m0(view.invested)} invested."),
+        "window": f"through {mon_d(asof)}" if asof else "",
+        "notes": " ".join(notes), "conc": " ".join(conc),
+        "any_out": any(r["state"] for r in rows),
+    }
+
+
 def _cheshbon_ctx(pace: Pace) -> dict:
     """This month's money in vs out, how last month closed, and the category
     ribbon (top spenders + Other, 2px surface gaps, legend carries the
@@ -2211,17 +3071,61 @@ def build_page(now: datetime | None = None) -> str:
         if last_m < pace.cur:
             pace = spend_pace(today, asof, totals, month=last_m)
     wa = walkaway(liquid, paper, true_spend_baseline(today, totals), goals)
+    edu_accounts = education_accounts()
+    edu_pace = education_pace(edu_accounts) if edu_accounts else None
+    alloc = allocation_view()
+    if alloc and alloc.stock_pct > 0:
+        stock_pct, stock_src = alloc.stock_pct, "your declared targets"
+    else:
+        stock_pct, stock_src = DEFAULT_STOCK_PCT, "the skill default"
     wig = wi_ctx = None
     if wa and wa.baseline:
         save = net_savings_baseline(wa.baseline.months)
-        wig = whatif_grid(liquid, wa.baseline, save, today)
+        wig = whatif_grid(liquid, wa.baseline, save, today, goals,
+                          edu_accounts, edu_pace, stock_pct, stock_src)
         b = wa.baseline
+        ev = wig["_ev"]
+        if ev.partner_monthly:
+            partner_lbl = Markup(
+                "One paycheck keeps coming — <b>{}</b>, ≈{}/mo net into the "
+                "ledger (the smaller stream, median over the baseline "
+                "window)").format(ev.partner_label, m0(ev.partner_monthly))
+        else:
+            partner_lbl = None
+        college_lbl = None
+        if ev.college_year and ev.college_lump > 0:
+            college_lbl = Markup(
+                "College paid from the pot — <b>≈{} more in {}</b> ({}; the "
+                "529’s current path covers ≈{} of the ≈{} cost)").format(
+                m0(ev.college_lump), ev.college_year, ev.college_src,
+                m0(ev.college_529_path), m0(ev.college_cost))
+        elif ev.college_year:
+            college_lbl = Markup(
+                "College in {} — the 529’s current path (≈{}) already covers "
+                "the ≈{} target; nothing more from the pot").format(
+                ev.college_year, m0(ev.college_529_path), m0(ev.college_cost))
+        surv = wig["surv"]
         wi_ctx = {
             "max_ri": wig["nRates"] - 1, "max_si": wig["nSpends"] - 1,
             "max_gi": wig["nGrowths"] - 1,
             "def_ri": wig["def"]["ri"], "def_si": wig["def"]["si"],
             "def_gi": wig["def"]["gi"],
             "liquid": m0(liquid),
+            "house_amts": wig["ev"]["houseAmts"],
+            "house_years": wig["ev"]["houseYears"],
+            "house_def_a": ev.house_def_a, "house_def_y": ev.house_def_y,
+            "house_src": ev.house_src,
+            "partner_lbl": partner_lbl, "college_lbl": college_lbl,
+            "college_covered": (ev.college_year is not None
+                                and ev.college_lump <= 0),
+            "n_seq": surv["nSeq"], "surv_window": surv["window"],
+            "surv_mix": surv["mix"],
+            "bands_cap": (f"Replaying every complete {RETIREMENT_YEARS}-year "
+                          f"stretch of markets since 1871 ({surv['window']}) "
+                          f"on a {surv['mix']}. Each column splits those "
+                          f"starts by where they stood that many years into "
+                          f"retirement; spending keeps its purchasing power "
+                          f"(real dollars). Counts, not forecasts."),
             "formula": (f"Target = a year of spending ÷ the withdrawal rate. "
                         f"The spend dial starts at your true burn, "
                         f"≈{m0(b.burn * 12)}/yr — what the last "
@@ -2231,12 +3135,22 @@ def build_page(now: datetime | None = None) -> str:
                         f"growth and adds your median net savings, "
                         f"≈{m0(save)}/mo ({len(b.months)} full months, "
                         f"{window_label(b.months)}); the dotted twin saves "
-                        f"$0 — growth alone. Hypothetical only — taxes, "
-                        f"raises, and market reality not included; the "
-                        f"thesis, not this toy, sets policy."),
+                        f"$0 — growth alone. Life events are one honest "
+                        f"arithmetic move each: a house down payment leaves "
+                        f"the curve in its year, college subtracts what the "
+                        f"529’s path won’t cover, and “one paycheck keeps "
+                        f"coming” shrinks the target to cover only the "
+                        f"spending the paycheck doesn’t — the replay then "
+                        f"assumes event money was set aside before anyone "
+                        f"walked away. The history check replays "
+                        f"{surv['window']} on a {surv['mix']}: spend the "
+                        f"dialed % of the pot in year one, the same real "
+                        f"dollars every year after. Counts, not promises — "
+                        f"the past is a witness, not a guarantee. "
+                        f"Hypothetical only — taxes, raises, and market "
+                        f"reality not included; the thesis, not this toy, "
+                        f"sets policy."),
         }
-    edu_accounts = education_accounts()
-    edu_pace = education_pace(edu_accounts) if edu_accounts else None
     series, baseline_cut = networth_series(liquid, asof)
     cards, more, needs_state = needs_you(today)
     ch = _cheshbon_ctx(pace)
@@ -2251,7 +3165,8 @@ def build_page(now: datetime | None = None) -> str:
             checks_stamp = f" · checks from {date.fromisoformat(cd).strftime('%b %-d')}"
 
     island = {"pace": _pace_chart_data(pace), "nw": _nw_chart_data(series, asof),
-              "whatif": wig}
+              "whatif": ({k: v for k, v in wig.items() if k != "_ev"}
+                         if wig else None)}
     # '<' escaped so no payee can smuggle a </script> into the island
     island_json = json.dumps(island, separators=(",", ":")).replace("<", "\\u003c")
     css = (CSS_TEMPLATE
@@ -2278,6 +3193,8 @@ def build_page(now: datetime | None = None) -> str:
         edu=_education_ctx(edu_accounts, edu_pace, goals, today),
         wins=_wins_ctx(saras_wins(today), today),
         nw=_networth_ctx(series, baseline_cut, liquid, asof),
+        attr=_attribution_ctx(series, asof),
+        thesis=_thesis_ctx(alloc, asof),
         ch=ch,
         env_rows=_envelope_rows(project_envelopes(goals)),
         projects_sub=("Each project's tagged spending against the budget "

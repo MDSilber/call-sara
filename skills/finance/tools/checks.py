@@ -1068,9 +1068,35 @@ def _record_crossed(key, values):
         path.write_text(new)
 
 
+# ---------------------------------------------------------- allocation drift
+def allocation_drift():
+    """Score the live mix against rules.toml [allocation_targets]; a finding
+    per class outside its band. Silent until targets are declared."""
+    from allocation import allocation_view
+    view = allocation_view()
+    if view is None or view.invested <= 0:
+        return []
+    out = []
+    for r in view.rows:
+        if not r.out_of_band:
+            continue
+        toward = "over" if r.drift_pts > 0 else "under"
+        move = abs(view.invested * r.target_pct / 100.0 - r.value)
+        out.append(finding(
+            "allocation_drift", "watch",
+            f"{r.label} {r.share_pct:.0f}% of invested vs the {r.target_pct:.0f}% "
+            f"target (band ±{r.band_pts:.0f})",
+            f"~{money(move)} {toward}weight across ~{money(view.invested)} invested "
+            f"(cash and the reserve sit outside the mix). New contributions can "
+            f"lean the other way before anything needs selling; if a bundled "
+            f"fund (target-date) drives this, the honest fix may be revising "
+            f"the written target instead. Direction, not an order."))
+    return out
+
+
 ALL = [concentration, deadlines, anomaly, subscriptions, reconciliation, coverage,
        review_queue, goals_status, milestones, fixed_balances, lanes,
-       projected_shortfall, cash_drag]
+       projected_shortfall, cash_drag, allocation_drift]
 
 
 def run_all():

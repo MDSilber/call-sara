@@ -175,3 +175,33 @@ ignore_account_regex = "Childcare|Cash|Uncategorized|Investment-Loss|Taxes|Insur
 # kind = "floor"
 # account = "Assets:US:Ally:Savings9876"
 # amount = 20000
+
+# ---------------------------------------------------------------------------
+# Allocation targets (optional) — declare the household's target mix and the
+# home page grows a drift strip (current vs target per class, colored only
+# when out of band) and the allocation_drift check starts scoring it.
+# Targets are % of INVESTED dollars above the reserve; classes sum to 100.
+# Commodities are classed by the ledger's own asset_allocation_* metadata
+# (fava's convention) when present; the [allocation_targets.map] fills gaps
+# and wins conflicts. Class names "cash" and "other" are reserved and never
+# drift-scored. The declared equity share also sets the stock/bond mix the
+# walk-away history replay uses (70/30 until targets exist).
+#
+# [allocation_targets]
+# reserve_usd = 50000         # fixed-dollar cash reserve, netted from cash first
+# band_pts = 5                # drift band, +/- points (per-class override below)
+# exclude_account_re = "529"  # accounts on their own glide path (optional)
+# employer_stock = ["ACME"]   # single-issuer positions worth naming (optional)
+#
+# [allocation_targets.classes]
+# equity_us = 70
+# equity_intl = 20
+# fixed_income = 10           # or: fixed_income = { target_pct = 10, band_pts = 3 }
+#
+# [allocation_targets.map]
+# VTI = "equity_us"
+# SPAXX = "cash"
+# [allocation_targets.map.FDKLX]   # a target-date fund splits across classes
+# equity_us = 54
+# equity_intl = 36
+# fixed_income = 10

@@ -186,9 +186,11 @@ def networth_series(liquid_now, asof):
     cum = {}  # currency -> [units, cost]
     points = []
     for y, m in months:
+        flow = 0.0  # the month's booked flow: postings at cost, all currencies
         for cur, (du, dc) in per_month[(y, m)].items():
             u, c = cum.setdefault(cur, [0.0, 0.0])
             cum[cur] = [u + du, c + dc]
+            flow += du if cur == "USD" else dc
         d = date(y, m, monthrange(y, m)[1])
         total, at_cost = 0.0, 0.0
         for cur, (u, c) in cum.items():
@@ -199,7 +201,7 @@ def networth_series(liquid_now, asof):
                 total += u * px[-1] if px else c
                 if not px:
                     at_cost += abs(c)
-        points.append({"d": d, "v": round(total, 2),
+        points.append({"d": d, "v": round(total, 2), "flow": round(flow, 2),
                        "est": at_cost > COST_SHARE_EST * max(abs(total), 1.0)})
     # the last month is partial (data reaches asof, not month end): date it
     # honestly and pin it to the headline valuation — the headline is the
