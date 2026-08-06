@@ -13,6 +13,9 @@ import type { Env } from "./types";
 
 const DOMAINS: ((server: McpServer, env: Env) => void)[] = [registerFinanceDomain];
 
+/** OAuth scopes this server publishes — one read scope per domain. */
+export const SCOPES: string[] = ["finance:read"];
+
 export function buildServer(env: Env): McpServer {
   const server = new McpServer({
     name: env.SERVER_NAME ?? "personal-mcp",

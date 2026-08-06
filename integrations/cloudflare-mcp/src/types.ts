@@ -1,14 +1,24 @@
+import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
+
 /** Worker bindings. Secrets come from `wrangler secret put`; vars from wrangler.toml. */
 export interface Env {
   /** Identity shown to MCP clients (wrangler.toml var). */
   SERVER_NAME?: string;
-  /** Bearer token MCP clients must present. Secret; unset = server refuses all calls. */
+  /**
+   * The owner token. Secret; unset = server refuses all access. Presented as a
+   * static bearer by CLI/agent clients, or pasted ONCE into the OAuth consent
+   * screen by browser-driven clients (claude.ai / the iOS app).
+   */
   SARA_MCP_TOKEN?: string;
   /** Fine-grained PAT, read-only Contents on the vault repo. Secret; unset = dev fixture mode. */
   GITHUB_TOKEN?: string;
   GITHUB_OWNER?: string;
   GITHUB_REPO?: string;
   GITHUB_BRANCH?: string;
+  /** OAuth state storage (workers-oauth-provider): tokens/codes hashed, props encrypted. */
+  OAUTH_KV: KVNamespace;
+  /** Injected by OAuthProvider into handlers it invokes. */
+  OAUTH_PROVIDER: OAuthHelpers;
 }
 
 /**

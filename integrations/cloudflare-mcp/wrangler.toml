@@ -4,11 +4,19 @@
 name = "personal-mcp"
 main = "src/index.ts"
 compatibility_date = "2026-06-11"
-compatibility_flags = ["nodejs_compat"]
+# global_fetch_strictly_public = SSRF protection for OAuth client-metadata fetches (CIMD)
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 
 # Workers Logs — `wrangler tail` shows the structured log lines.
 [observability]
 enabled = true
+
+# OAuth state (tokens/codes hashed, props encrypted — see workers-oauth-provider).
+# One-time setup:  npx wrangler kv namespace create OAUTH_KV   → paste the id here.
+# Any placeholder id works for local `wrangler dev` (local simulator).
+[[kv_namespaces]]
+binding = "OAUTH_KV"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
 
 [vars]
 # Identity shown to MCP clients.

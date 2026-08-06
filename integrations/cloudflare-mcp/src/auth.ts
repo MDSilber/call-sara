@@ -1,25 +1,31 @@
 /**
- * Auth middleware: a static bearer gate, checked before any MCP traffic.
+ * Auth: one owner secret (SARA_MCP_TOKEN), honored two ways.
  *
- * This is the shipped default — simple, robust, and enough for a single-user
- * server whose token lives only in your MCP client config. The MCP spec's
- * fuller authorization story for remote servers is OAuth 2.1; to upgrade,
- * wrap the handler with Cloudflare's `workers-oauth-provider` (see README
- * "Harden it") — this middleware is the one seam to swap. Cloudflare Access
- * in front of the Worker is the zero-code belt-and-suspenders alternative.
+ * 1. OAuth 2.1 (primary — what claude.ai and the phone apps speak): the
+ *    OAuthProvider in index.ts owns discovery, registration, and tokens;
+ *    the consent screen (consent.ts) approves a client when the owner
+ *    pastes this secret once. After that, real audience-bound tokens flow.
+ * 2. Static bearer (kept for CLI/agents/curl): `Authorization: Bearer
+ *    <SARA_MCP_TOKEN>` straight at /mcp. Wired through the provider's
+ *    resolveExternalToken hook, which runs only after its own token lookup
+ *    fails. The secret is locally minted, grants access only to this
+ *    Worker, and is never forwarded anywhere — the GitHub PAT stays a
+ *    separate Worker secret.
+ *
+ * Fail-closed: with SARA_MCP_TOKEN unset, both paths refuse.
  */
 import type { Env } from "./types";
 
 const encoder = new TextEncoder();
 
 /** Constant-time equality via SHA-256 digests (uniform length and timing). */
-async function tokensMatch(presented: string, expected: string): Promise<boolean> {
-  const [a, b] = await Promise.all([
-    crypto.subtle.digest("SHA-256", encoder.encode(presented)),
-    crypto.subtle.digest("SHA-256", encoder.encode(expected)),
-  ]);
-  const av = new Uint8Array(a);
-  const bv = new Uint8Array(b);
+async function timingSafeEqual(a: string, b: string): Promise<boolean> {
+  const [av, bv] = (
+    await Promise.all([
+      crypto.subtle.digest("SHA-256", encoder.encode(a)),
+      crypto.subtle.digest("SHA-256", encoder.encode(b)),
+    ])
+  ).map((buf) => new Uint8Array(buf)) as [Uint8Array, Uint8Array];
   let diff = 0;
   for (let i = 0; i < av.length; i++) {
     diff |= (av[i] ?? 0) ^ (bv[i] ?? 0);
@@ -27,33 +33,29 @@ async function tokensMatch(presented: string, expected: string): Promise<boolean
   return diff === 0;
 }
 
-function deny(status: number, error: string, headers: Record<string, string> = {}): Response {
-  return new Response(JSON.stringify({ error }), {
-    status,
-    headers: { "content-type": "application/json", ...headers },
-  });
+/** Does `presented` match the configured owner token? Unset token = never. */
+export async function ownerTokenMatches(
+  presented: string | null | undefined,
+  env: Env
+): Promise<boolean> {
+  if (!env.SARA_MCP_TOKEN || !presented) {
+    return false;
+  }
+  return timingSafeEqual(presented, env.SARA_MCP_TOKEN);
 }
 
 /**
- * Returns a Response to short-circuit with, or undefined to let the request
- * through. CORS preflights pass (they carry no credentials by design).
+ * resolveExternalToken hook: accept the owner's static bearer at /mcp.
+ * Returning null yields the provider's generic 401 challenge (which also
+ * carries the resource-metadata pointer OAuth discovery needs).
  */
-export async function requireBearer(request: Request, env: Env): Promise<Response | undefined> {
-  if (request.method === "OPTIONS") {
-    return undefined;
+export async function resolveOwnerBearer(args: {
+  token: string;
+  env: Env;
+}): Promise<{ props: Record<string, unknown> } | null> {
+  if (!(await ownerTokenMatches(args.token, args.env))) {
+    return null;
   }
-  const expected = env.SARA_MCP_TOKEN;
-  if (!expected) {
-    console.log(JSON.stringify({ event: "auth_unconfigured" }));
-    return deny(503, "Server not configured: set the SARA_MCP_TOKEN secret.");
-  }
-  const header = request.headers.get("authorization") ?? "";
-  const presented = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
-  if (!presented || !(await tokensMatch(presented, expected))) {
-    console.log(JSON.stringify({ event: "auth_reject" }));
-    return deny(401, "Unauthorized: present the bearer token.", {
-      "www-authenticate": 'Bearer realm="personal-mcp"',
-    });
-  }
-  return undefined;
+  console.log(JSON.stringify({ event: "auth_static_bearer" }));
+  return { props: { userId: "owner", authorizedVia: "static-bearer" } };
 }

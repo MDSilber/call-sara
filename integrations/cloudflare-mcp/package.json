@@ -1,6 +1,6 @@
 {
   "name": "personal-mcp",
-  "description": "Your personal remote MCP server on Cloudflare Workers — finance domain included, read-only, vault served straight from its private GitHub repo",
+  "description": "Your personal remote MCP server on Cloudflare Workers \u2014 finance domain included, read-only, vault served straight from its private GitHub repo",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@cloudflare/workers-oauth-provider": "^0.10.1",
     "@modelcontextprotocol/sdk": "1.30.0",
     "@modelcontextprotocol/server": "2.0.0",
     "agents": "^0.20.1",

@@ -18,7 +18,7 @@ add your own next to it (see "Adding a domain").
 
 ```
 Claude (iOS / claude.ai / Claude Code)
-   │  streamable HTTP + bearer token
+   │  streamable HTTP · OAuth 2.1 (or a static bearer)
    ▼
 Cloudflare Worker  /mcp        ← this directory
    │  GitHub Contents API (raw), fine-grained read-only PAT, ~60s ETag cache
@@ -68,28 +68,38 @@ npx wrangler login       # pick your PERSONAL account, not any work account
 npx wrangler whoami      # verify the account shown is yours before deploying
 ```
 
-**4. Set the two secrets.**
+**4. Create the OAuth-state KV namespace (one time).**
+
+```bash
+npx wrangler kv namespace create OAUTH_KV
+```
+
+Paste the printed `id` into `wrangler.toml` under `[[kv_namespaces]]`.
+(It stores OAuth grants — tokens and codes hashed, session props
+encrypted. Any placeholder id works for local `wrangler dev`.)
+
+**5. Set the two secrets.**
 
 ```bash
 npx wrangler secret put GITHUB_TOKEN     # paste the PAT from step 1
-openssl rand -base64 32                  # generate a strong bearer token…
-npx wrangler secret put SARA_MCP_TOKEN   # …and paste it here (save it for step 6)
+openssl rand -base64 32                  # generate the owner token…
+npx wrangler secret put SARA_MCP_TOKEN   # …and paste it here (save it for step 7)
 ```
 
-**5. Deploy.**
+**6. Deploy.**
 
 ```bash
 npm run deploy           # prints https://<name>.<subdomain>.workers.dev
 ```
 
-**6. Connect Claude.**
+**7. Connect Claude.**
 - **Claude iOS app / claude.ai:** Settings → Connectors → Add custom
-  connector. URL: `https://<your-worker>.workers.dev/mcp`. In the
-  dialog's advanced/request-headers section add header `Authorization`
-  with value `Bearer <your SARA_MCP_TOKEN>` (word "Bearer", space,
-  token). If your app build only offers OAuth fields there, connect via
-  Claude Code below, or put Cloudflare Access in front (see "Harden it").
-- **Claude Code:**
+  connector. URL: `https://<your-worker>.workers.dev/mcp`. Leave the
+  OAuth fields **empty** — the server supports discovery and dynamic
+  client registration, so Claude wires itself up. On connect, a browser
+  page opens ("… wants read-only access"): paste your `SARA_MCP_TOKEN`
+  once and hit Approve. Tokens refresh on their own after that.
+- **Claude Code / scripts / agents** (static bearer, no OAuth dance):
 
 ```bash
 claude mcp add --transport http sara https://<your-worker>.workers.dev/mcp \
@@ -105,7 +115,7 @@ answers from the vault's own numbers, with the snapshot date attached.
 URL=https://<your-worker>.workers.dev/mcp
 TOKEN=<your SARA_MCP_TOKEN>
 
-# no token → 401
+# no token → 401 (the WWW-Authenticate header carries the OAuth discovery pointer)
 curl -s -o /dev/null -w '%{http_code}\n' -X POST "$URL" \
   -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
@@ -145,19 +155,30 @@ and every tool shouts when it's more than a week stale. The Worker also
 re-checks GitHub with an ETag after ~60s, so a push shows up within a
 minute.
 
-## Harden it
+## How auth works (and hardening)
 
-- The shipped gate is a single static bearer token, checked
-  constant-time before any MCP traffic (`src/auth.ts`). Rotate it by
-  re-running `wrangler secret put SARA_MCP_TOKEN`.
+- **OAuth 2.1, single-owner consent.** Cloudflare's
+  `workers-oauth-provider` owns discovery (`/.well-known/*`), open
+  dynamic client registration + client-ID metadata documents, PKCE, the
+  token endpoint, and bearer validation on `/mcp`. Registration is open
+  by design (that's what lets claude.ai's dialog work with empty
+  fields) but grants NOTHING: the only identity step is the
+  `/authorize` consent screen, which approves a client when you paste
+  `SARA_MCP_TOKEN` — one paste per client, constant-time checked,
+  refresh tokens after that. There are no accounts and no cookies;
+  possession of the owner secret IS the approval.
+- **Static bearer, still first-class.** `Authorization: Bearer
+  <SARA_MCP_TOKEN>` at `/mcp` keeps working for CLI/agents/curl (wired
+  through the provider's `resolveExternalToken` hook, tried only after
+  its own tokens fail). Same secret, two doors.
+- Rotate the owner token with `wrangler secret put SARA_MCP_TOKEN` —
+  existing OAuth grants keep working (revoke by deleting the KV
+  namespace's grants or the namespace itself); the static path and new
+  consents use the new token immediately.
 - Belt and suspenders: put **Cloudflare Access** in front of the Worker
-  (Zero Trust → Access → Applications → your workers.dev route) — a
-  service token or identity check runs before a request ever reaches the
-  code, and revocation is instant.
-- The MCP spec's full authorization story for remote servers is OAuth
-  2.1; `src/auth.ts` is the one seam to swap for Cloudflare's
-  `workers-oauth-provider` if this ever serves more than you.
-- Blast radius if the bearer leaks anyway: read-only numbers from
+  (Zero Trust → Access → Applications → your workers.dev route) — an
+  identity check runs before a request ever reaches the code.
+- Blast radius if the owner token leaks anyway: read-only numbers from
   `summary.json` plus `facts/`/`reports/` text. The PAT is the tighter
   secret — it lives only in Worker secrets, is scoped to one repo,
   read-only, and expires.
@@ -176,9 +197,11 @@ That's the whole pattern. Smart-home next? `home_lights_status` awaits.
 
 ## Files
 
-- `src/index.ts` — entry: bearer gate, then the streamable-HTTP MCP
-  handler (`createMcpHandler` from Cloudflare's agents SDK) at `/mcp`
-- `src/auth.ts` — the bearer middleware (the auth seam)
+- `src/index.ts` — entry: the OAuthProvider wrapping the
+  streamable-HTTP MCP handler (`createMcpHandler` from Cloudflare's
+  agents SDK) at `/mcp`
+- `src/auth.ts` — the owner-token check + static-bearer hook (the auth seam)
+- `src/consent.ts` — the `/authorize` paste-to-approve consent screen
 - `src/github.ts` — GitHub Contents fetcher, ETag + 60s TTL cache,
   dev-fixture fallback
 - `src/server.ts` — the domain registry
