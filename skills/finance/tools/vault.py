@@ -108,6 +108,38 @@ def money(x):
     return f"-${abs(x):,.0f}" if x < 0 else f"${x:,.0f}"
 
 
+# ------------------------------------------------------------------ owners
+# The household-lens convention: each account's `open` directive may carry
+# `owner: "<name>"` metadata — household-chosen lowercase names (matching
+# facts/people/ files) plus the shared name "joint". Accounts without the
+# metadata roll up under OWNER_UNASSIGNED. See references/querying.md.
+OWNER_JOINT = "joint"
+OWNER_UNASSIGNED = "unassigned"
+_owners_cache = None
+
+
+def account_owners():
+    """account -> owner from `owner:` metadata on open directives.
+
+    Reads the #accounts table so zero-posting accounts still map. Names are
+    household-authored DATA (lowercased, stripped) — never interpreted.
+    Empty dict when the ledger declares no owners (the pre-owner vault
+    shape); every owner surface stays dormant then.
+    """
+    global _owners_cache
+    if _owners_cache is None:
+        rows = query("SELECT account, getitem(open_meta(account), 'owner') AS owner "
+                     "FROM #accounts")
+        _owners_cache = {r["account"]: owner for r in rows
+                         if (owner := (r["owner"] or "").strip().lower())}
+    return _owners_cache
+
+
+def owner_label(owner):
+    """Display form of an owner name: 'danny' -> 'Danny' (None passes through)."""
+    return owner[:1].upper() + owner[1:] if owner else None
+
+
 # ------------------------------------------------------------------- facts
 DATED_BULLET = re.compile(r"^- (\d{4}-\d{2}-\d{2}) — (.+)$", re.M)
 

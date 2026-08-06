@@ -108,6 +108,29 @@ note = "cash withdrawals"
 "Fees & Adjustments" = "Expenses:Fees"
 
 # ---------------------------------------------------------------------------
+# The classifier (optional) — tools/run classify.py works the review queue in
+# three tiers: [[payee_rules]] above always win, then Plaid's banked category
+# signal (high confidence only), then a cheap batched claude-haiku pass over
+# the residue ($VAULT/.secrets/anthropic.env must hold ANTHROPIC_API_KEY for
+# that tier; without it the model tier quietly skips). Dry-run by default;
+# every machine move carries `classifier:` metadata and survives bean-check
+# or the whole run rolls back. Defaults shown — the table is optional.
+# ---------------------------------------------------------------------------
+# [classification]
+# tier2 = true                     # the Plaid-signal tier
+# tier3 = true                     # the model tier (needs the key above)
+# plaid_min_confidence = "high"    # or "very_high"
+# model_min_confidence = 0.8       # model guesses below this stay in review
+# model = "claude-haiku-4-5"
+
+# Point Plaid's detailed categories at YOUR chart — overrides/extends the
+# shipped table (sara/plaid_map.py), which only targets template accounts.
+# A mapping applies only when the target account is open in this ledger.
+# [plaid_category_map]
+# "FOOD_AND_DRINK_COFFEE" = "Expenses:Food:Coffee"
+# "RENT_AND_UTILITIES_RENT" = "Expenses:Housing:Rent"
+
+# ---------------------------------------------------------------------------
 # Anomaly-check tuning (optional). Payee/account patterns to ignore when
 # hunting for surprising charges — bank-rail noise that isn't merchant spend.
 # ---------------------------------------------------------------------------

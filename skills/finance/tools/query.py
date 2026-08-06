@@ -3,8 +3,10 @@
 
 Usage:  tools/run query.py <command> [args]
 
-  networth                 liquid net worth (+ paper if configured)
-  balances                 per-account USD balances
+  networth [--by-owner]    liquid net worth (+ paper if configured);
+                           --by-owner splits it by account `owner:` metadata
+  balances                 per-account USD balances (+ owner column when
+                           the ledger declares owners)
   positions                holdings by commodity, valued in USD
   spend [YYYY|YYYY-MM]     spend by category for a year or month (default: current year)
   cashflow [YYYY]          income vs expenses by month for a year
@@ -22,7 +24,8 @@ from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vault import amount, illiquid_currency_regex, money, query, shadow_currency  # noqa: E402
+from vault import (OWNER_JOINT, OWNER_UNASSIGNED, account_owners, amount,  # noqa: E402
+                   illiquid_currency_regex, money, query, shadow_currency)
 from checks import goals  # noqa: E402
 
 
@@ -33,7 +36,50 @@ def bql_str(s):
     return str(s).replace("'", "''")
 
 
-def cmd_networth(_):
+def _liquid_by_account():
+    """Per-account liquid USD — the same query `balances` prints, as data."""
+    excl = bql_str(illiquid_currency_regex() or "") or None
+    where = "account ~ '^(Assets|Liabilities)'" + (f" AND NOT currency ~ '{excl}'" if excl else "")
+    out = []
+    for r in query(f"SELECT account, sum(convert(position,'USD')) AS v WHERE {where} "
+                   f"GROUP BY account ORDER BY account"):
+        cell = r["v"] or ""
+        v = amount(cell, "USD") if "USD" in cell else 0.0
+        if abs(v) >= 0.005:
+            out.append((r["account"], v))
+    return out
+
+
+def _print_by_owner():
+    """The owner lens: liquid net worth split by account `owner:` metadata,
+    joint shown as its own slice, plus a 50/50-attributed line (a display
+    convention, not an agreement) when the household has exactly two people."""
+    owners = account_owners()
+    if not owners:
+        print("\nNo `owner:` metadata on any account — tag opens in "
+              "ledger/accounts.beancount (see references/querying.md).")
+        return
+    sums, counts = {}, {}
+    for acct, v in _liquid_by_account():
+        who = owners.get(acct, OWNER_UNASSIGNED)
+        sums[who] = sums.get(who, 0.0) + v
+        counts[who] = counts.get(who, 0) + 1
+
+    def rank(who):
+        return (2 if who == OWNER_UNASSIGNED else 1 if who == OWNER_JOINT else 0, who)
+
+    print("\nBy owner (account `owner:` metadata; liquid only):")
+    for who in sorted(sums, key=rank):
+        n = counts[who]
+        print(f"{money(sums[who]):>14}  {who:<12} ({n} account{'s' if n != 1 else ''})")
+    people = [w for w in sorted(sums, key=rank) if w not in (OWNER_JOINT, OWNER_UNASSIGNED)]
+    if len(people) == 2 and OWNER_JOINT in sums:
+        half = sums[OWNER_JOINT] / 2
+        attributed = " · ".join(f"{w} {money(sums[w] + half)}" for w in people)
+        print(f"50/50-attributed (joint split evenly — convention, not law): {attributed}")
+
+
+def cmd_networth(args):
     excl = bql_str(illiquid_currency_regex() or "") or None
     where = "account ~ '^(Assets|Liabilities)'" + (f" AND NOT currency ~ '{excl}'" if excl else "")
     rows = query(f"SELECT root(account,1) AS r, sum(convert(position,'USD')) AS v "
@@ -48,22 +94,27 @@ def cmd_networth(_):
         # rightly refuses to read the units as dollars
         pv = amount(p[0]["v"], shadow_currency()) if p and p[0].get("v") else 0.0
         print(f"Illiquid paper (not counted): {money(pv)}   combined {money(a + liab + pv)}")
+    if "--by-owner" in args:
+        _print_by_owner()
 
 
 def cmd_balances(_):
     excl = bql_str(illiquid_currency_regex() or "") or None
     where = "account ~ '^(Assets|Liabilities)'" + (f" AND NOT currency ~ '{excl}'" if excl else "")
+    owners = account_owners()  # empty on a pre-owner ledger: column stays off
     for r in query(f"SELECT account, sum(convert(position,'USD')) AS v WHERE {where} "
                    f"GROUP BY account ORDER BY account"):
         cell = r["v"] or ""
         if not cell.strip():
             continue
+        who = f"  {owners.get(r['account'], OWNER_UNASSIGNED)}" if owners else ""
         if "USD" not in cell:
-            print(f"{'(unpriced)':>14}  {r['account']}   {' '.join(cell.split())}")
+            print(f"{'(unpriced)':>14}  {r['account']}   {' '.join(cell.split())}{who}")
             continue
         v = amount(cell, "USD")
         if abs(v) >= 0.005:
-            print(f"{money(v):>14}  {r['account']}")
+            acct = f"{r['account']:<44}" if owners else r["account"]
+            print(f"{money(v):>14}  {acct}{who}")
 
 
 def cmd_positions(_):

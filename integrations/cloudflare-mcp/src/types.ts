@@ -46,7 +46,14 @@ export interface Summary {
   };
   balances: {
     window: string;
-    accounts: { account: string; usd: number }[];
+    accounts: { account: string; usd: number; owner?: string | null }[];
+  };
+  /** The household lens (summary.py `_owners`) — absent from pre-owner summaries. */
+  owners?: {
+    window: string;
+    convention: string;
+    owners: { owner: string; liquid: number; accounts: number }[];
+    split_5050: { note: string; owners: { owner: string; liquid: number }[] } | null;
   };
   positions: {
     window: string;

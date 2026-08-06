@@ -1,8 +1,15 @@
 """Sync every configured Plaid item into the vault — Sara's ingest daemon.
 
 Usage:
-  python -m sara.ingest [--write] [--item <alias>] [--verbose]
+  python -m sara.ingest [--write] [--item <alias>] [--verbose] [--classify]
   (or: tools/run ingest.py — same flags)
+
+--classify runs the three-tier classifier (sara.classify) over the review
+queue after a successful --write sync, before reports regenerate and the
+vault commits — so freshly landed transactions get their rules/Plaid/model
+pass in the same run. Ignored in report-only mode; a classifier failure
+never un-lands the sync (it warns and leaves the queue for a manual
+`tools/run classify.py`).
 
 REPORT-ONLY BY DEFAULT: fetches, maps, dedupes, and prints the verification
 report below, writing NOTHING. The staged-trust ramp is deliberately short —
@@ -97,7 +104,7 @@ from sara.vault import (
     write_secret_file,
 )
 
-FLAGS = frozenset({"--write", "--verbose"})
+FLAGS = frozenset({"--write", "--verbose", "--classify"})
 ZERO = Decimal(0)
 INVEST_FIRST_LOOKBACK_DAYS = 730  # first sync reaches back two years
 INVEST_OVERLAP_DAYS = 5  # re-fetch overlap; dedupe makes it free
@@ -505,6 +512,7 @@ def main(argv: list[str] | None = None) -> None:
     reject_unknown_flags(argv, FLAGS, usage)
     write = "--write" in argv
     verbose = "--verbose" in argv
+    classify_after = "--classify" in argv
     require_vault()
     items = plaid_items()
     if not items:
@@ -548,6 +556,8 @@ def main(argv: list[str] | None = None) -> None:
         print(f"report only — {total_new} new entr{'y' if total_new == 1 else 'ies'}"
               + (f" + {n_repl} in-place replacement(s)" if n_repl else "")
               + " would be written. Re-run with --write to apply.")
+        if classify_after:
+            print("(--classify runs only after a --write sync — nothing classified.)")
         sys.exit(1 if hard_errors else 0)
 
     # ---- apply ----
@@ -574,9 +584,21 @@ def main(argv: list[str] | None = None) -> None:
             item["investments_through"] = run.invest_through
         item["last_synced"] = datetime.now().isoformat(timespec="seconds")
     save_cursors(cursors)
+    classified = 0
+    if classify_after:
+        # After the sync landed and cursors saved, never before: a classifier
+        # failure must cost nothing but a warning and a still-full queue.
+        from sara.classify import run_classification
+        print()
+        try:
+            classified = run_classification(write=True).applied
+        except SystemExit as e:
+            err(f"; WARNING: classification failed after ingest — the sync itself "
+                f"landed; run tools/run classify.py by hand ({e})")
     regenerate_reports()
     commit_vault(f"sara ingest: {len(entries)} new"
                  + (f", {len(replacements)} replaced" if replacements else "")
+                 + (f", {classified} classified" if classified else "")
                  + f" ({', '.join(sorted(r.alias for r in runs if not r.hard_error))})")
     sys.exit(1 if hard_errors else 0)
 

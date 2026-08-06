@@ -18,9 +18,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from crosscheck import ensure_crosschecks  # noqa: E402
-from vault import (REPORTS, VAULT, amount, dated_bullets, query,  # noqa: E402
-                   shadow_currency)
-from reports import liquid_balances, paper_value, spend_matrix  # noqa: E402
+from vault import (OWNER_JOINT, OWNER_UNASSIGNED, REPORTS, VAULT, account_owners,  # noqa: E402
+                   amount, dated_bullets, query, shadow_currency)
+from reports import liquid_balances, owner_rollup, paper_value, spend_matrix  # noqa: E402
 from webview import _units, latest_ledger_date, networth_series, parse_findings  # noqa: E402
 from checks import goals as goals_config  # noqa: E402
 from checks import lane_status  # noqa: E402
@@ -81,6 +81,35 @@ def _networth(balances, unpriced, liquid, paper, asof, series):
                         "at_cost": p["est"]} for p in series],
         },
     }
+
+
+OWNER_CONVENTION = ("owner: metadata on each account's open directive; "
+                    f"'{OWNER_JOINT}' is shared, '{OWNER_UNASSIGNED}' means untagged")
+
+
+def _owners(balances, asof):
+    """The owner lens: per-owner liquid + account counts from the SAME
+    balances rows as the headline (crosscheck holds the slice sum to liquid
+    net worth to the cent). split_5050 is the two-person convenience view —
+    joint split evenly — and rides only when exactly two people are tagged."""
+    slices = owner_rollup(balances)
+    window = f"through {asof.isoformat()}" if asof else "ledger empty"
+    if not slices:
+        return {"window": window, "convention": OWNER_CONVENTION,
+                "owners": [], "split_5050": None}
+    people = [(who, v) for who, v, _n in slices
+              if who not in (OWNER_JOINT, OWNER_UNASSIGNED)]
+    joint = next((v for who, v, _n in slices if who == OWNER_JOINT), 0.0)
+    split = None
+    if len(people) == 2:
+        split = {"note": ("joint split evenly between the two people — "
+                          "a display convention, not an agreement"),
+                 "owners": [{"owner": who, "liquid": v + joint / 2}
+                            for who, v in people]}
+    return {"window": window, "convention": OWNER_CONVENTION,
+            "owners": [{"owner": who, "liquid": v, "accounts": n}
+                       for who, v, n in slices],
+            "split_5050": split}
 
 
 def _positions():
@@ -325,9 +354,11 @@ def build_summary(now: datetime | None = None) -> dict:
         "generated_at": now.isoformat(timespec="seconds"),
         "ledger_through": asof,
         "networth": _networth(balances, unpriced, liquid, paper, asof, series),
+        "owners": _owners(balances, asof),
         "balances": {
             "window": f"through {asof.isoformat()}" if asof else "ledger empty",
-            "accounts": [{"account": a, "usd": v} for a, v in balances],
+            "accounts": [{"account": a, "usd": v,
+                          "owner": account_owners().get(a)} for a, v in balances],
         },
         "positions": {
             "window": f"through {asof.isoformat()}" if asof else "ledger empty",

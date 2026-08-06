@@ -51,7 +51,8 @@ down, and "later" is an answer she actually respects:
   statements, writes down who you are, hands you a real assessment.
 - **Level two** — the books sync themselves: your own free Plaid keys,
   a verification report you'll actually read, then a daily pull while
-  you sleep.
+  you sleep. Leftover uncategorized stuff has an autopilot too — your
+  rules, then Plaid's guess, then a cheap haiku call, dry-run first.
 - **Level three** — Sara everywhere: the little local app, her weekly
   letter, her voice on your phone with your real numbers.
 
@@ -77,6 +78,11 @@ per-launch token the page carries, so random browser tabs can't poke
 it. The static pages still exist because you can't email a server to
 your spouse.
 
+Two-of-you bonus: tag accounts with `owner:` metadata (you, them,
+joint) and the whole system learns whose is whose — `query.py networth
+--by-owner` splits the pot, the money map labels the boxes, and Sara
+starts addressing whoever's money it actually is.
+
 The fava view ships with chart dashboards (net worth, allocation donuts,
 income vs expenses) plus fava-investor's tax-loss-harvest and allocation
 pages — see the Dashboards and Investor tabs in the sidebar (the
@@ -92,7 +98,7 @@ terms of use. Your call, your account.
 
 ## Where your data actually goes
 
-Your disk and your private git remote. That's the design. The seven
+Your disk and your private git remote. That's the design. The eight
 honest exceptions, in full:
 
 1. Whatever Sara reads in a session enters Claude's model context, same
@@ -104,6 +110,9 @@ honest exceptions, in full:
 6. Savings research sends merchant terms (never identities) to web search.
 7. If you set up the optional Plaid feeds, your transactions flow from
    your bank through Plaid's API (under your own keys) to your disk.
+8. If you give Sara an Anthropic API key for the categorizer's model
+   tier, uncategorized payees/amounts (never balances, never account
+   numbers) go to the Claude API under your key. No key, no calls.
 
 Account numbers are last-4 only. Statements never enter git. A
 fail-closed gitleaks scanner blocks any commit that breaks the rules.
@@ -133,6 +142,12 @@ it, then you flip `--write`. Your keys, your machine, no middleman, and the
 10 lifetime Plaid links are guarded so you never burn one by accident
 (broken connections repair for free). Statements you still drag in by hand
 work exactly like before, same ledger, same dedupe.
+
+For the spreadsheet-brained: every reports run also drops
+`reports/analytics.duckdb` — your whole ledger as a real SQL database
+(parquet twins included, cross-checked to the cent before it's allowed to
+exist) — and `docs/notebooks/first-questions.ipynb` asks it the first
+three questions.
 
 ## How it's built
 

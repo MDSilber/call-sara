@@ -140,6 +140,30 @@ recipe (daily, never auto-installed). Freshness is watched from both sides:
 `run_checks.py` raises a `plaid_freshness` finding past 3 quiet days (alert
 past 7) and `doctor.sh` warns the same, so a dead daemon can't go unnoticed.
 
+**The review queue works itself.** `tools/run classify.py` re-decides
+everything sitting in Expenses:Uncategorized / Income:US:Other in three
+tiers, cheapest and most trusted first: the household's `[[payee_rules]]`
+always win; then Plaid's own category signal (the `plaid-category:`
+metadata every synced entry banks) applies at high confidence, mapped
+through a shipped table that rules.toml `[plaid_category_map]`
+overrides/extends — and only into accounts this vault actually opens; then
+a batched claude-haiku call judges the residue against the real chart plus
+the household's own rules and recent history, applying only at ≥ 0.8
+confidence and printing weaker guesses as suggestions. Dry-run by default,
+`--write` applies through the same atomic + bean-check rewrite as
+recategorize (all-or-nothing), and every machine move carries `classifier:`
+metadata (`"rule"`, `"plaid:FOOD_AND_DRINK_COFFEE"`, `"haiku:0.91"`) so it
+is auditable and re-doable. The model tier arms only when
+`$VAULT/.secrets/anthropic.env` holds `ANTHROPIC_API_KEY=sk-...` (0600;
+`.secrets/` is gitignored) — without it, tiers 1–2 still run and the
+report says how to enable it. Costs print per run (a few hundredths of a
+dollar for a full queue); `--skip-model` keeps a run free, `--model-limit N`
+caps a first try. Machine passes never write rules — teach rules through
+the review flow, and the report names recurring residue worth one
+(`"SQ *CAFE" seen 6x`). `tools/run ingest.py --write --classify` chains it
+onto every sync so the queue trends toward zero on its own; `[classification]`
+in rules.toml tunes or disables tiers.
+
 **What stays manual (on purpose):** Shareworks and the 401(k)s (Fidelity
 NetBenefits, Empower) — no aggregator serves them reliably for individuals,
 so those stay on the browser-pull + inbox lane above. Cursors live in

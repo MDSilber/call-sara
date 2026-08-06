@@ -53,6 +53,13 @@ the design; if yours doesn't fit, open an issue and describe its shape.
   year rather than a pot — every asset scored by what it pays you,
   summed against your income goal, with allocation-over-time snapshots
   as a free byproduct. Same books, different physics.
+- **The household lens:** whose money is whose, without splitting the
+  books. Foundation shipped: `owner:` metadata on ledger accounts,
+  per-owner rollups (`networth --by-owner`, the summary.json owners
+  section, owner labels across the money map and balances views), all
+  held to the headline by the cross-check gate. Remaining: a per-person
+  lens UI (filter any room to one owner) and owner-routed notifications
+  once the notification layer lands.
 - **Multi-entity books:** an LLC/business ledger beside the household
   one, same skill and tooling driving both, work-vs-personal splits that
   survive an accountant's questions.

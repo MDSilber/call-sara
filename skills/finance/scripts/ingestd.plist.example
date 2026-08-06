@@ -35,6 +35,11 @@
     <string>/Users/YOURNAME/Finance/.venv/bin/python</string>
     <string>/Users/YOURNAME/code/call-sara/skills/finance/tools/ingest.py</string>
     <string>--write</string>
+    <!-- optional: run the three-tier classifier (rules -> Plaid signal ->
+         claude-haiku) over the review queue after each sync. Try it by hand
+         first (tools/run classify.py), then uncomment:
+    <string>--classify</string>
+    -->
   </array>
 
   <key>EnvironmentVariables</key>

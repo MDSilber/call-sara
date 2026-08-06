@@ -2,9 +2,22 @@
 ; Naming: Assets:US:<Institution>:<Name><last4> | Liabilities:US:<Institution>:Card<last4>
 ;         Income:US:<Source> | Expenses:<Category>[:Subcategory]
 
+; Every account's open directive carries `owner:` metadata — the household
+; lens. Owners are the household's own lowercase names (match facts/people/
+; file names) plus "joint" for shared accounts; the vocabulary comes from the
+; household, not this template. It powers `query.py networth --by-owner` and
+; `balances`, the owners section of reports/summary.json, and the owner
+; labels on the home page's money map — and the cross-check gate proves the
+; per-owner slices re-add to liquid net worth to the cent. Untagged accounts
+; roll up as "unassigned"; when unsure, use "joint".
+
 ; --- Bank & cards (add as institutions are onboarded), e.g.
-; 2025-01-01 open Assets:US:<Bank>:Checking1234        USD  ; <owner>
-; 2025-01-01 open Liabilities:US:<Bank>:Card5678       USD  ; <owner>
+; 2025-01-01 open Assets:US:<Bank>:Checking1234        USD
+;   owner: "alex"
+; 2025-01-01 open Assets:US:<Bank>:Savings9876         USD  ; shared emergency fund
+;   owner: "joint"
+; 2025-01-01 open Liabilities:US:<Bank>:Card5678       USD
+;   owner: "jordan"
 
 ; --- Investments (add as institutions are onboarded) ---
 

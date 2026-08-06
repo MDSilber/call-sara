@@ -30,7 +30,8 @@ from pathlib import Path
 import jinja2
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vault import REPORTS, amount, dated_bullets, household, query  # noqa: E402
+from vault import (OWNER_JOINT, REPORTS, account_owners, amount,  # noqa: E402
+                   dated_bullets, household, owner_label, query)
 from webview import latest_ledger_date  # noqa: E402
 from checks import lane_status  # noqa: E402
 from home import (Pace, delta0, m0, mon_d, monthly_expense_totals,  # noqa: E402
@@ -102,14 +103,36 @@ def _plain(markup) -> str:
     return html_mod.unescape(re.sub(r"<[^>]+>", "", str(markup))).strip()
 
 
-def _needs_beat(nxt: dict) -> dict | None:
+def _needs_owner(texts: list[str], lanes: list[dict]) -> str | None:
+    """Whose hands a needs-item is for, from account `owner:` metadata:
+    an account path in the item text maps directly; a lane NAME in the
+    text maps through the lane's declared account (lane names already
+    carry the person — the metadata makes it formal). Exactly one
+    non-joint owner -> their display name; joint, several, or none ->
+    None, and the beat stays addressed to the household."""
+    owners = account_owners()
+    if not owners:
+        return None
+    hits = {who for acct, who in owners.items()
+            if any(acct in t for t in texts)}
+    hits |= {owners[lane["account"]] for lane in lanes
+             if lane["account"] in owners and lane["name"]
+             and any(lane["name"] in t for t in texts)}
+    hits.discard(OWNER_JOINT)
+    return owner_label(next(iter(hits))) if len(hits) == 1 else None
+
+
+def _needs_beat(nxt: dict, lanes: list[dict]) -> dict | None:
     """Beat 2 — the one thing that wants a human, straight from the home
     page's Next-line builder (same precedence: alert, then nearest dated
-    obligation). Quiet weeks drop the beat — the verdict already says so."""
+    obligation). Owner-specific items say whose hands (`who`). Quiet weeks
+    drop the beat — the verdict already says so."""
     if nxt["quiet"]:
         return None
-    return {"text": nxt["text"], "text_plain": _plain(nxt["text"]),
-            "meta": nxt["meta"]}
+    text_plain = _plain(nxt["text"])
+    return {"text": nxt["text"], "text_plain": text_plain,
+            "meta": nxt["meta"],
+            "who": _needs_owner([text_plain, nxt["meta"] or ""], lanes)}
 
 
 def _delight_beat(today: date, totals: list, pace: Pace) -> dict | None:
@@ -130,10 +153,10 @@ def _delight_beat(today: date, totals: list, pace: Pace) -> dict | None:
     return None
 
 
-def _auto_beat(today: date) -> dict | None:
+def _auto_beat(lanes: list[dict]) -> dict | None:
     """Beat 4 — autopilot health in one line, the same _auto_tile the
     morning page shows. Nothing wired = nothing to report weekly."""
-    tile = _auto_tile(_machine_ctx(lane_status(today)))
+    tile = _auto_tile(_machine_ctx(lanes))
     if not tile["dots"]:
         return None
     return {"text": f"{tile['verdict']} — {tile['sub']}.", "cls": tile["cls"]}
@@ -191,7 +214,7 @@ HTML_TEMPLATE = """\
 {% endif %}
 {% if needs %}
   <p style="margin:18px 0 0;font-size:15.5px;line-height:1.65;color:#4c4a63;">
-    <strong style="font-weight:600;color:#9a5b00;">One for your hands.</strong>
+    <strong style="font-weight:600;color:#9a5b00;">One for {% if needs.who %}{{ needs.who }}&rsquo;s{% else %}your{% endif %} hands.</strong>
     {{ needs.text }}{% if needs.meta %} <span style="color:#6e6c85;">({{ needs.meta }})</span>{% endif %}
   </p>
 {% endif %}
@@ -245,10 +268,11 @@ def build_letter(now: datetime | None = None) -> tuple[str, str]:
     verdict = _letterize(sara_line(pace, needs_state, cards, more, "week"))
     streak = under_streak(totals, pace.cur)
 
+    lanes = lane_status(today)
     week = _week_beat(today, asof, pace, streak)
-    needs = _needs_beat(_next_ctx(needs_state, cards, more, moves))
+    needs = _needs_beat(_next_ctx(needs_state, cards, more, moves), lanes)
     delight = _delight_beat(today, totals, pace)
-    auto = _auto_beat(today)
+    auto = _auto_beat(lanes)
     watch = _watch_beat(today, needs["text_plain"] if needs else "")
 
     names = household("names")
@@ -272,7 +296,8 @@ def build_letter(now: datetime | None = None) -> tuple[str, str]:
                      "statement starts the story.")
     if needs:
         meta = f" ({needs['meta']})" if needs["meta"] else ""
-        lines.append(f"One for your hands: {needs['text_plain']}{meta}")
+        hands = f"{needs['who']}'s" if needs["who"] else "your"
+        lines.append(f"One for {hands} hands: {needs['text_plain']}{meta}")
     if delight:
         lines.append(f"A good thing: {delight['text']}")
     if auto:

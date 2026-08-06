@@ -169,6 +169,8 @@ export interface MapNode {
   value: number
   amt: string
   pct: string
+  /** Owner chip (household lens) — present when the node's accounts share one owner. */
+  own?: string
   cvar?: string
   children?: MapNode[]
 }
@@ -209,7 +211,15 @@ export interface Networth {
       aria?: string
     }[]
   } | null
-  map: { tree: MapNode[]; caption: string; totalN: number; window: string; table_rows: [string, string][] } | null
+  map: {
+    tree: MapNode[]
+    caption: string
+    totalN: number
+    window: string
+    has_owners: boolean
+    /** [account, balance] — plus an owner label once the ledger declares owners. */
+    table_rows: [string, string][] | [string, string, string][]
+  } | null
   thesis: {
     rows: ThesisRow[]
     nudge: string | null

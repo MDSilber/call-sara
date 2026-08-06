@@ -38,8 +38,10 @@ option "operating_currency" "USD"
 2000-01-01 open Equity:Opening-Balances
 2000-01-01 open Assets:US:Transfers               USD
 2000-01-01 open Assets:US:TestBank:Checking9123   USD
+  owner: "alex"
 2000-01-01 open Liabilities:US:TestBank:Card7777  USD
-2000-01-01 open Assets:US:TestBroker:Brokerage8642  "FIFO"  ; units + cash; FIFO so {} sells book
+  owner: "jordan"
+2000-01-01 open Assets:US:TestBroker:Brokerage8642  "FIFO"  ; units + cash; FIFO so {} sells book — deliberately untagged: exercises the `unassigned` owner bucket
 2000-01-01 open Income:US:Dividends               USD
 2000-01-01 open Income:US:CapGainsDistributions   USD
 2000-01-01 open Income:US:Gains                   USD
@@ -477,14 +479,16 @@ def main():
               r.returncode != 0 and "division by zero" in r.stderr
               and "Traceback" not in r.stderr, r.stderr)
 
-        # crosscheck.py: dual-computation gate — 3/3 agree on the scratch
-        # ledger; a skewed independent path (test seam) must refuse loudly
+        # crosscheck.py: dual-computation gate — 4/4 agree on the scratch
+        # ledger (the owners check runs ACTIVE: two opens carry owner
+        # metadata, one is untagged, so the partition includes all three
+        # buckets); a skewed independent path (test seam) must refuse loudly
         if has_venv:
             r = run(vault, "crosscheck.py")
-            check("crosscheck: clean ledger, 3/3 agree",
-                  r.returncode == 0 and "cross-checks: 3/3 agree" in r.stdout,
+            check("crosscheck: clean ledger, 4/4 agree",
+                  r.returncode == 0 and "cross-checks: 4/4 agree" in r.stdout,
                   r.stdout + r.stderr)
-            for name in ("liquid", "spend", "assets"):
+            for name in ("liquid", "spend", "assets", "owners"):
                 r = run(vault, "crosscheck.py",
                         extra_env={"FINANCE_CROSSCHECK_INJECT": f"{name}:123.45"})
                 check(f"crosscheck: injected {name} skew refuses (exit 2)",
@@ -497,8 +501,26 @@ def main():
                   and not (vault / "reports" / "net-worth.md").exists(),
                   r.stdout + r.stderr)
             r = run(vault, "reports.py")
-            check("crosscheck: clean reports.py run emits the 3/3 line",
-                  r.returncode == 0 and "cross-checks: 3/3 agree" in r.stdout,
+            check("crosscheck: clean reports.py run emits the 4/4 line",
+                  r.returncode == 0 and "cross-checks: 4/4 agree" in r.stdout,
+                  r.stdout + r.stderr)
+
+            # the owner lens: --by-owner splits by open-directive metadata,
+            # untagged accounts land in `unassigned`, and the two-person
+            # 50/50 convenience line rides with its convention label
+            # (jordan's card is settled to $0 by now, so only alex and the
+            # untagged accounts hold balance — and with one person and no
+            # joint slice the 50/50 convenience line must stay away)
+            r = run(vault, "query.py", "networth", "--by-owner")
+            check("owners: networth --by-owner splits alex vs unassigned, "
+                  "no 50/50 line without joint",
+                  r.returncode == 0 and "By owner" in r.stdout
+                  and "alex" in r.stdout and "unassigned" in r.stdout
+                  and "50/50-attributed" not in r.stdout,
+                  r.stdout + r.stderr)
+            r = run(vault, "query.py", "balances")
+            check("owners: balances carries the owner column once metadata exists",
+                  r.returncode == 0 and "alex" in r.stdout and "unassigned" in r.stdout,
                   r.stdout + r.stderr)
 
     print(f"\n{'ALL PASS' if not FAILS else f'{len(FAILS)} FAILED: ' + ', '.join(FAILS)}")

@@ -52,40 +52,82 @@
    ]
   }
  },
+ "owners": {
+  "window": "through 2026-08-05",
+  "convention": "owner: metadata on each account's open directive; 'joint' is shared, 'unassigned' means untagged",
+  "owners": [
+   {
+    "owner": "alex",
+    "liquid": 18445.22,
+    "accounts": 2
+   },
+   {
+    "owner": "jordan",
+    "liquid": 8143.91,
+    "accounts": 2
+   },
+   {
+    "owner": "joint",
+    "liquid": 91790.65,
+    "accounts": 4
+   }
+  ],
+  "split_5050": {
+   "note": "joint split evenly between the two people — a display convention, not an agreement",
+   "owners": [
+    {
+     "owner": "alex",
+     "liquid": 64340.55
+    },
+    {
+     "owner": "jordan",
+     "liquid": 54039.24
+    }
+   ]
+  }
+ },
  "balances": {
   "window": "through 2026-08-05",
   "accounts": [
    {
     "account": "Assets:US:Ally:Savings9876",
-    "usd": 49620.66
+    "usd": 49620.66,
+    "owner": "joint"
    },
    {
     "account": "Assets:US:Chase:Checking4321",
-    "usd": 23319.99
+    "usd": 23319.99,
+    "owner": "joint"
    },
    {
     "account": "Assets:US:CollegeSave:529Riley",
-    "usd": 12000.0
+    "usd": 12000.0,
+    "owner": "joint"
    },
    {
     "account": "Assets:US:Empower:401k8810",
-    "usd": 8640.0
+    "usd": 8640.0,
+    "owner": "jordan"
    },
    {
     "account": "Assets:US:Fidelity:401k7701",
-    "usd": 22270.0
+    "usd": 22270.0,
+    "owner": "alex"
    },
    {
     "account": "Assets:US:Vanguard:Brokerage3344",
-    "usd": 6850.0
+    "usd": 6850.0,
+    "owner": "joint"
    },
    {
     "account": "Liabilities:US:CapitalOne:Card1122",
-    "usd": -496.09
+    "usd": -496.09,
+    "owner": "jordan"
    },
    {
     "account": "Liabilities:US:Chase:Card5678",
-    "usd": -3824.78
+    "usd": -3824.78,
+    "owner": "alex"
    }
   ]
  },

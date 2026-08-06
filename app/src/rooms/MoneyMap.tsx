@@ -20,13 +20,14 @@ export function MoneyMapRoom() {
 }
 
 interface TreemapParams {
-  data?: { amt?: string; pct?: string; name?: string }
+  data?: { amt?: string; pct?: string; name?: string; own?: string }
   name: string
   treePathInfo?: { name: string }[]
 }
 
 function mapNode(n: MapNode, color: string | null): Record<string, unknown> {
   const out: Record<string, unknown> = { name: n.name, value: n.value, amt: n.amt, pct: n.pct }
+  if (n.own) out.own = n.own
   if (color) out.itemStyle = { color }
   if (n.children) out.children = n.children.map((k) => mapNode(k, null))
   return out
@@ -106,7 +107,9 @@ function MapBody({ data }: { data: Networth }) {
       const path = p.treePathInfo
         ? p.treePathInfo.map((t) => t.name).filter(Boolean).join(' › ')
         : (d.name ?? '')
-      return tipHtml({ t: path, rows: [[d.amt, `${d.pct ?? ''} of assets`]] })
+      const rows: [string, string][] = [[d.amt, `${d.pct ?? ''} of assets`]]
+      if (d.own) rows.push([d.own, 'owner'])
+      return tipHtml({ t: path, rows })
     }
     opt.series = [{
       type: 'treemap', name: 'everything',

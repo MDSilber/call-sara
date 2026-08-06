@@ -710,6 +710,25 @@ def _restore(backups: dict[Path, str | None]) -> None:
             atomic_write(p, text)
 
 
+def rewrite_ledger_files(new_texts: Mapping[Path, str]) -> list[str]:
+    """Replace whole ledger files in place — the recategorize/classify
+    machinery. Each file lands via atomic tmp+fsync+rename, then the whole
+    ledger is bean-checked; ANY failure rolls every touched file back, so a
+    bad rewrite can never leave the ledger broken. Returns the
+    vault-relative paths rewritten."""
+    main = VAULT / "ledger" / "main.beancount"
+    backups: dict[Path, str | None] = {}
+    try:
+        for f, text in new_texts.items():
+            backups[f] = f.read_text()
+            atomic_write(f, text)
+    except OSError as e:
+        _restore(backups)
+        raise SystemExit(f"rewrite failed, rolled back: {e}") from e
+    _bean_check_or_rollback(backups, main)
+    return [str(p.relative_to(VAULT)) for p in new_texts]
+
+
 # ----------------------------------------------- source-id addressed edits
 def find_entries_by_source_id(ids: set[str]) -> dict[str, tuple[Path, str]]:
     """{source_id: (ledger file, full entry text)} for every machine-imported

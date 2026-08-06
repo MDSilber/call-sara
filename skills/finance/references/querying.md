@@ -36,7 +36,8 @@ standing send gets configured. `scripts/dashboard.sh --digest` opens it.
 **2. `tools/run query.py` — anything not precomputed.**
 ```
 tools/run query.py networth            # liquid net worth (+ paper if configured)
-tools/run query.py balances            # per-account balances
+tools/run query.py networth --by-owner # the same, split by account owner
+tools/run query.py balances            # per-account balances (+ owner column)
 tools/run query.py positions           # holdings by commodity, in USD
 tools/run query.py spend 2026-06       # spend by category for a month (or a year)
 tools/run query.py cashflow 2026       # income vs expenses by month
@@ -55,6 +56,56 @@ grants, people, tax figures, the institution map: `grep -ril "umbrella"
 $VAULT/facts`, then read the file. Every fact carries `verified:` and
 `source:` — quote both when the number matters ("$1M liability, verified
 2026-07-24 against the evidence-of-insurance PDF").
+
+## The analytics shadow — real SQL over the whole ledger
+
+`reports/analytics.duckdb` is the ledger flattened into a DuckDB database,
+plus parquet twins in `reports/exports/` — for pandas/Polars notebooks,
+ad-hoc SQL, and anything bean-query's dialect makes awkward (window
+functions, ASOF joins, DataFrame handoff). `tools/run reports.py` rebuilds
+both, and the build refuses to emit unless its own cross-checks agree
+(per-currency balance invariant, liquid net worth vs the independent
+bean-query path to the cent, row counts) — printed as `analytics
+cross-checks: 3/3 agree`.
+
+**Truth vs shadow, non-negotiable:** the beancount ledger is the only
+source of truth. The .duckdb file is a regenerated CACHE, never an
+archive — never hand-edit it, never back it up, never migrate it across
+DuckDB versions; delete freely, rebuild on demand (`tools/run reports.py`
+or `sara-analytics`; a stale shadow is checked like a stale report — the
+`build_info` table carries the build time and vault commit). Both paths
+are vault-gitignored.
+
+**Read-only etiquette:** every consumer opens
+`duckdb.connect(path, read_only=True)`. DuckDB is single-writer — a stray
+read-write handle (a forgotten notebook cell) blocks the next rebuild.
+
+The schema (posting-grain, the shape every double-entry system converges
+on — GnuCash splits, bean-sql/beanquery postings, hledger's SQL export):
+
+| Object | What it holds |
+|---|---|
+| `postings` | THE fact table, 1 row/posting: txn header denormalized on, `amount`/`currency`, cost/price/weight, `amount_home`, `other_account`, `external_id` (fitid/plaid-id), source file:line, meta JSON |
+| `transactions` | 1 row/txn header; `txn_id` is a stable content hash (beanquery's) |
+| `accounts` | dim keyed by full account name: parent/leaf/root/depth, open/close, `owner`, institution, kind |
+| `commodities`, `prices` | commodity dim + full price history (explicit directives and cost-implied, `source` says which) |
+| `balances_daily` | per day × account × currency: units, price, value and cost basis in home currency |
+| `balance_checks` | every ledger balance assertion: expected vs actual vs diff |
+| `build_info` | build time, vault git sha, versions, home currency, counts, date span |
+| views | `net_worth_daily` (+ `liquid_home`), `monthly_flows`, `register` (running balances) |
+
+Money is DECIMAL end to end (never floats); `*_home` columns are converted
+to the vault's home currency — the ledger's `operating_currency`, USD by
+default — at the latest price on or before the transaction date.
+`docs/notebooks/first-questions.ipynb` (repo root) is the worked intro:
+three questions and two charts against the demo vault.
+
+Reading list for contributors (the prior art this schema follows):
+[beanquery](https://github.com/beancount/beanquery) (the postings-table
+query model, esp. `beanquery/sources/beancount.py`) · [GnuCash SQL
+schema](https://wiki.gnucash.org/wiki/SQL) (canonical double-entry-in-SQL)
+· [Maybe Finance `db/schema.rb`](https://github.com/maybe-finance/maybe/blob/main/db/schema.rb)
+(the daily `balances`/`holdings` snapshot pattern).
 
 ## Forecast — the next 60 days of known flows
 
@@ -143,6 +194,37 @@ hedge-word is an invented number wearing a disguise.
 | Two sources disagree | Reconcile before presenting EITHER. |
 | Three failed reconcile attempts | Stop — show the user both figures and the gap; never pick one silently. |
 | A stale-`verified:` facts figure is load-bearing | Re-verify at the source, update the stamp. |
+
+## Whose is whose — the owner lens
+
+Each account's `open` directive may carry `owner:` metadata — the
+household's own lowercase names (matching `facts/people/` files) plus
+`"joint"` for shared accounts. The vocabulary is the household's, never
+hardcoded; untagged accounts report as `unassigned`.
+
+```beancount
+2025-01-01 open Assets:US:Chase:Checking1234   USD
+  owner: "alex"
+```
+
+Where it surfaces, all fed by the same metadata:
+- `query.py networth --by-owner` — per-owner liquid totals, joint as its
+  own slice, plus a 50/50-attributed line when the household has exactly
+  two people (**a display convention, not an agreement** — quote it with
+  that label).
+- `query.py balances` — an owner column, on as soon as any account is tagged.
+- `reports/summary.json` — the `owners` section (per-owner liquid +
+  account counts) and `owner` on every balances row; the phone connector
+  serves both.
+- Sara Home / Sara App money map — owner on the treemap tooltips and the
+  accounts table.
+- Raw BQL when you need a custom slice:
+  `sql "SELECT account, getitem(open_meta(account),'owner') AS owner, sum(convert(position,'USD')) WHERE account ~ '^(Assets|Liabilities)' GROUP BY account, owner"`.
+
+The dual-computation gate (`crosscheck.py`) proves the owner slices re-add
+to liquid net worth to the cent before any report is emitted — a dollar is
+never dropped or double-owned. When advising on an owner-specific account,
+address that owner by name (see SKILL.md's advisor stance).
 
 ## Project envelopes (weddings, trips, renovations)
 

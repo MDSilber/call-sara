@@ -5,7 +5,10 @@ Run:    tools/run reports.py
 Writes: reports/net-worth.md, reports/spend-by-month.md, reports/upcoming.md,
         reports/dashboard.html (via webview.py), reports/home.html (via home.py),
         reports/summary.json (via summary.py — the machine-readable twin),
-        reports/digest.{html,txt} (via digest.py — Sara's weekly letter)
+        reports/digest.{html,txt} (via digest.py — Sara's weekly letter),
+        reports/analytics.duckdb + reports/exports/*.parquet (via
+        sara.analytics — the disposable SQL shadow; skipped with a note
+        when duckdb isn't installed)
 Arithmetic is code; the agent reads these files and reasons about them.
 """
 import re
@@ -14,8 +17,9 @@ from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vault import (REPORTS, VAULT, amount, dated_bullets, illiquid_currency_regex,  # noqa: E402
-                   money, query, shadow_currency)
+from vault import (OWNER_JOINT, OWNER_UNASSIGNED, REPORTS, VAULT, account_owners,  # noqa: E402
+                   amount, dated_bullets, illiquid_currency_regex, money, query,
+                   shadow_currency)
 
 
 def stamp(name):
@@ -42,6 +46,28 @@ def liquid_balances():
         if abs(v) >= 0.005:
             out.append((r["account"], v))
     return out, unpriced
+
+
+def owner_rollup(balances):
+    """Per-owner liquid totals from the SAME balances rows as the headline:
+    [(owner, usd, n_accounts)] — people alphabetically, then 'joint', then
+    'unassigned' (accounts with no owner metadata). Empty list when the
+    ledger declares no owners at all, so pre-owner vaults change nothing.
+    The crosscheck gate holds the slice sum to the headline to the cent."""
+    owners = account_owners()
+    if not owners:
+        return []
+    sums = {}
+    for acct, v in balances:
+        who = owners.get(acct, OWNER_UNASSIGNED)
+        row = sums.setdefault(who, [0.0, 0])
+        row[0] += v
+        row[1] += 1
+
+    def rank(who):
+        return (2 if who == OWNER_UNASSIGNED else 1 if who == OWNER_JOINT else 0, who)
+
+    return [(who, val, n) for who, (val, n) in sorted(sums.items(), key=lambda kv: rank(kv[0]))]
 
 
 def paper_value():
@@ -138,6 +164,20 @@ def upcoming():
     (REPORTS / "upcoming.md").write_text("\n".join(lines) + "\n")
 
 
+# ---------------------------------------------------------------- analytics
+def analytics():
+    """Rebuild reports/analytics.duckdb + exports/ — the ledger's SQL shadow
+    (a regenerated cache, never an archive; sara.analytics owns the build
+    and refuses to emit unless its own cross-checks agree)."""
+    try:
+        from sara.analytics import build  # lazy: duckdb is the optional [analytics] extra
+    except ModuleNotFoundError as e:
+        print(f"skip analytics: {e.name} not installed "
+              f"(vault venv: pip install 'sara[analytics]')")
+        return
+    build()
+
+
 if __name__ == "__main__":
     from crosscheck import ensure_crosschecks  # noqa: E402 — the dual-computation gate
     ensure_crosschecks()  # refuses (exit 2) before anything is written
@@ -146,7 +186,8 @@ if __name__ == "__main__":
     from home import home  # noqa: E402 — same: home reuses this module + webview
     from summary import summary  # noqa: E402 — same: the machine-readable twin
     from digest import digest  # noqa: E402 — same: the weekly letter reuses home's builders
-    for fn in (net_worth, spend_by_month, upcoming, dashboard, home, summary, digest):
+    for fn in (net_worth, spend_by_month, upcoming, dashboard, home, summary, digest,
+               analytics):
         try:
             fn()
             print(f"ok   {fn.__name__}")

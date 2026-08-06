@@ -279,7 +279,8 @@ def activity(month: str | None = None) -> dict[str, object]:
         if m and (int(m.group(1)), int(m.group(2))) in months:
             sel = (int(m.group(1)), int(m.group(2)))
     rows = query(f"SELECT date, payee, narration, account, "
-                 f"convert(position,'USD') AS v "
+                 f"convert(position,'USD') AS v, "
+                 f"entry_meta('classifier') AS clf "
                  f"WHERE account ~ '^(Income|Expenses)' "
                  f"AND year = {sel[0]} AND month = {sel[1]} ORDER BY date")
     by_day: dict[str, list[dict[str, object]]] = {}
@@ -305,6 +306,9 @@ def activity(month: str | None = None) -> dict[str, object]:
             "amt": _feed_money(v, income=income),
             "kind": ("uncategorized" if uncat
                      else "income" if income else "expense"),
+            # machine-classified provenance ("rule" / "plaid:X" / "haiku:0.91"),
+            # "" for hand-categorized rows — fuel for a tiny chip in Activity
+            "classifier": (r.get("clf") or "").strip(),
         })
     days: list[dict[str, object]] = []
     for iso in sorted(by_day, reverse=True):

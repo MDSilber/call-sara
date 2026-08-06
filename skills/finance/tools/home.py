@@ -80,8 +80,8 @@ import jinja2
 from markupsafe import Markup, escape
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vault import (REPORTS, VAULT, amount, dated_bullets, household,  # noqa: E402
-                   illiquid_currency_regex, query)
+from vault import (REPORTS, VAULT, account_owners, amount, dated_bullets,  # noqa: E402
+                   household, illiquid_currency_regex, owner_label, query)
 from reports import liquid_balances, paper_value  # noqa: E402
 from webview import (MONTH_ABBR, _units, action_queue, code_spans,  # noqa: E402
                      deadline_items, latest_ledger_date, month_label,
@@ -1241,15 +1241,23 @@ def moneymap_data(balances: list[tuple[str, float]],
         p = 100.0 * v / total
         return "<1%" if p < 0.5 else f"{p:.0f}%"
 
+    owners = account_owners()   # empty pre-owner ledger: no chips anywhere
+
+    def _own(who: set) -> str | None:
+        """One unambiguous owner label for a node, or nothing at all."""
+        return owner_label(next(iter(who))) if len(who) == 1 and None not in who else None
+
     groups: dict[str, dict] = {}
     for acct, v in assets:
         inst, leaf = _acct_parts(acct)
         g = groups.setdefault(inst, {"name": _disp(inst), "value": 0.0,
-                                     "kids": {}})
+                                     "kids": {}, "who": set()})
         g["value"] += v
+        g["who"].add(owners.get(acct))
         node = g["kids"].setdefault(leaf, {"name": _disp(leaf), "value": 0.0,
-                                           "hold": []})
+                                           "hold": [], "who": set()})
         node["value"] += v
+        node["who"].add(owners.get(acct))
         curs = held.get(acct, [])
         if len(curs) > 1 or (curs and curs[0][0] != "USD"):
             node["hold"] += curs
@@ -1271,13 +1279,18 @@ def moneymap_data(balances: list[tuple[str, float]],
                                      "amt": m0(rem), "pct": pcts(rem)})
             kid = {"name": node["name"], "value": round(node["value"], 2),
                    "amt": m0(node["value"]), "pct": pcts(node["value"])}
+            if (kid_own := _own(node["who"])):
+                kid["own"] = kid_own
             if children and len(children) > 1:
                 kid["children"] = children
             kids.append(kid)
-        tree.append({"name": g["name"], "value": round(g["value"], 2),
-                     "amt": m0(g["value"]), "pct": pcts(g["value"]),
-                     "cvar": f"--map-{min(gi + 1, MAP_GROUP_VARS + 1)}",
-                     "children": kids})
+        top = {"name": g["name"], "value": round(g["value"], 2),
+               "amt": m0(g["value"]), "pct": pcts(g["value"]),
+               "cvar": f"--map-{min(gi + 1, MAP_GROUP_VARS + 1)}",
+               "children": kids}
+        if (g_own := _own(g["who"])):
+            top["own"] = g_own
+        tree.append(top)
     note_bits = [f"Assets {m0(total)}"]
     if abs(neg_assets) > 0.005:
         note_bits.append(f"in-flight transfers {delta0(neg_assets)}")
@@ -2393,6 +2406,7 @@ JS_TEMPLATE = """
   function mapNode(n, color) {
     var out = { name: n.name, value: n.value,
                 amt: n.amt, pct: n.pct };
+    if (n.own) out.own = n.own;
     if (color) out.itemStyle = { color: color };
     if (n.children) {
       out.children = n.children.map(function (k) { return mapNode(k, null); });
@@ -2408,10 +2422,12 @@ JS_TEMPLATE = """
     opt.tooltip.formatter = function (p) {
       var d = p.data || {};
       if (!d.amt) return '';
+      var rows = [[d.amt, (d.pct || '') + ' of assets']];
+      if (d.own) rows.push([d.own, 'owner']);
       return tipHtml({ t: p.treePathInfo
         ? p.treePathInfo.map(function (t) { return t.name; })
             .filter(Boolean).join(' › ') : d.name,
-        rows: [[d.amt, (d.pct || '') + ' of assets']] });
+        rows: rows });
     };
     opt.series = [{
       type: 'treemap', name: 'everything',
@@ -3047,7 +3063,8 @@ try { var t = localStorage.getItem('sara-home-theme');
        aria-label="Treemap of liquid assets by institution, account, and holding"></div>
   <p class="mapcap">{{ map.caption }}</p>
   {{ tablewin('Every liquid account, at the latest prices on file.',
-              ['Account', 'Balance'], map.table_rows) }}
+              ['Account', 'Balance', 'Owner'] if map.has_owners else ['Account', 'Balance'],
+              map.table_rows) }}
   {% else %}
   <div class="empty"><b>Nothing to map yet.</b> Import a statement and every
   dollar gets a box here, drawn to scale.</div>
@@ -4008,13 +4025,18 @@ def _cheshbon_ctx(pace: Pace) -> dict:
 def _moneymap_ctx(balances: list[tuple[str, float]], liquid: float,
                   asof: date | None) -> dict | None:
     """The Money-map card: treemap payload + its window + the no-JS table
-    (every liquid account, liabilities included)."""
+    (every liquid account, liabilities included; an Owner column joins it
+    once the ledger carries `owner:` metadata)."""
     data = moneymap_data(balances, liquid)
     if not data:
         return None
+    owners = account_owners()
+    rows = ([(a, m0(v), owner_label(owners.get(a)) or "—") for a, v in balances]
+            if owners else [(a, m0(v)) for a, v in balances])
     return {**data,
             "window": f"through {mon_d(asof)}" if asof else "",
-            "table_rows": [(a, m0(v)) for a, v in balances]}
+            "has_owners": bool(owners),
+            "table_rows": rows}
 
 
 def _envelope_rows(envelopes: list[Envelope]) -> list[dict]:

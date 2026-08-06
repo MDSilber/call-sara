@@ -163,7 +163,7 @@ _ROW_UNITS = object()  # default: candidate copies the row's units (exact match)
 
 
 def claim(r: InvestLedgerRow, *, when: date | None = None,
-          units: Decimal | None | object = _ROW_UNITS,
+          units: Decimal | object | None = _ROW_UNITS,
           total: Decimal | None = None, family: str = FAMILY_PLAID) -> bool:
     use_units = r.units if units is _ROW_UNITS else units
     assert use_units is None or isinstance(use_units, Decimal)

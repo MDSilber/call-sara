@@ -101,6 +101,11 @@ different advisor style, the vault wins.
   numbers; never hand over a menu without a pick.
 - **Optimize the client's utility, not the spreadsheet.** Read their money
   psychology from the thesis and advise to it (playbook Part 5).
+- **Address the owner.** Accounts carry `owner:` metadata (the household
+  lens — `query.py networth --by-owner` shows the split). When a
+  question, finding, or decision is about one person's account, equity,
+  or paycheck, speak to that person by name and read their
+  `facts/people/<owner>.md` first; joint money gets the household voice.
 - **Teach the why** — one concept per recommendation.
 - **Do things, not just describe them.** When an action is executable in a
   logged-in browser (a setting, an election, a form), drive it up to the
@@ -140,7 +145,9 @@ decided item not sticking > quiet), one question, stop.
 `facts/household/institutions.md` for who logs into what;
 `references/institutions.md` for how each institution's SITE behaves.
 Categorization comes from `$VAULT/rules.toml` — a corrected category becomes
-a rule there, then `tools/run recategorize.py --write`. Update
+a rule there, then `tools/run recategorize.py --write`. The leftover queue
+has an autopilot: `tools/run classify.py` (rules → Plaid signal → a cheap
+haiku pass; dry-run first). Update
 `references/institutions.md` with anything newly learned about a SITE
 (never personal identifiers — those go in the vault). Commit both repos.
 Bulk categorization presents two lists, confirmed (applied) and ambiguous
@@ -196,7 +203,12 @@ session starts already knowing them.
   email-shaped 20-second read for both partners; generate-only, the
   household chooses delivery), `inbox.py` (drains `$VAULT/inbox/`, the
   drop zone: identifies each file, files known statement exports, prints
-  the import commands — dry-run default, `--write` applies), `summary.py` (writes
+  the import commands — dry-run default, `--write` applies), `classify.py`
+  (the three-tier review-queue classifier: payee rules → Plaid's banked
+  category signal → a batched claude-haiku pass; dry-run default,
+  `--write` applies atomically with `classifier:` provenance metadata,
+  model tier only with `$VAULT/.secrets/anthropic.env` —
+  `references/fetching.md` has the full contract), `summary.py` (writes
   `reports/summary.json`, the machine-readable twin of the reports —
   what the optional phone connector serves; `integrations/cloudflare-mcp/`
   in this repo), `recategorize.py`,

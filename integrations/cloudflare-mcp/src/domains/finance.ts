@@ -162,6 +162,24 @@ export function registerFinanceDomain(server: McpServer, env: Env): void {
           `Net worth: ${usd(g.networth.value)}${g.networth.delta ? ` (${g.networth.delta})` : ""} — ${g.networth.window}`,
         ];
 
+        // The owner map — whose account is whose, so a phone answer about
+        // one person's money can address that person by name.
+        const own = s.owners;
+        if (own && own.owners.length > 0) {
+          picks.push(
+            `Whose is whose (${own.window}; per-account owner metadata): ` +
+              own.owners
+                .map((o) => `${o.owner} ${usd(o.liquid)} across ${o.accounts} account${o.accounts === 1 ? "" : "s"}`)
+                .join(" · ")
+          );
+          if (own.split_5050) {
+            picks.push(
+              `Attributed view (${own.split_5050.note}): ` +
+                own.split_5050.owners.map((o) => `${o.owner} ${usd(o.liquid)}`).join(" · ")
+            );
+          }
+        }
+
         if (has("spend", "afford", "buy", "cost", "budget", "month", "pace", "expense", "bill")) {
           const c = s.spend.current_month;
           picks.push(
@@ -245,7 +263,10 @@ export function registerFinanceDomain(server: McpServer, env: Env): void {
             "filings and large irreversible moves. Use ONLY the figures in this",
             "briefing, each with its window; if the question needs data that is",
             "not here, name what is missing (or call the specific finance_* tool,",
-            "or read the finance:// resources) rather than estimating.",
+            "or read the finance:// resources) rather than estimating. When the",
+            "question is about one owner's account, equity, or decision (the",
+            "'Whose is whose' line below maps it), address that owner by name;",
+            "joint money gets the household voice.",
             "",
             "=== THE HOUSEHOLD'S WRITTEN THESIS (standing decisions — do not relitigate) ===",
             rules || "(thesis not yet written — full text lives at the finance://thesis resource)",

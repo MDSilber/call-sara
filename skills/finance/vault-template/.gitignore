@@ -8,3 +8,10 @@ __pycache__/
 
 # Plaid credentials, access tokens, and sync cursors — NEVER in git.
 .secrets/
+
+# The analytics shadow — a regenerated DuckDB cache + parquet twins, never
+# an archive (tools/run reports.py rebuilds them whole; safe to delete).
+reports/analytics.duckdb
+reports/exports/
+reports/.analytics.tmp-*
+reports/.exports.tmp-*

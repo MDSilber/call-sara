@@ -2,18 +2,29 @@
 ; is fictional; every payee, balance, and transaction below was generated as
 ; sample data for the --demo vault. Feb 2026 – early Aug 2026.
 
-; --- Accounts -----------------------------------------------------------
+; --- Accounts (each open carries the household-lens `owner:` metadata) --
 2026-01-01 open Assets:US:Chase:Checking4321       USD   ; joint
+  owner: "joint"
 2026-01-01 open Assets:US:Ally:Savings9876          USD   ; joint emergency fund
+  owner: "joint"
 2026-01-01 open Liabilities:US:Chase:Card5678          USD   ; alex
+  owner: "alex"
 2026-01-01 open Liabilities:US:CapitalOne:Card1122      USD   ; jordan
+  owner: "jordan"
 2026-01-01 open Assets:US:Fidelity:401k7701          VTI,VXUS,BND  ; alex
+  owner: "alex"
 2026-01-01 open Assets:US:Empower:401k8810           BND           ; jordan
+  owner: "jordan"
 2026-01-01 open Assets:US:Vanguard:Brokerage3344     VTI,VXUS      ; joint taxable
-2026-01-01 open Assets:US:CollegeSave:529Riley       AGGRX         ; Riley's 529
+  owner: "joint"
+2026-01-01 open Assets:US:CollegeSave:529Riley       AGGRX         ; Riley's 529, parents' account
+  owner: "joint"
 2026-01-01 open Income:US:Salary:BrightPathLabs      USD   ; alex
+  owner: "alex"
 2026-01-01 open Income:US:Salary:CedarGroveSD        USD   ; jordan
+  owner: "jordan"
 2026-01-01 open Expenses:Childcare                   USD
+  owner: "joint"
 
 ; --- Commodities (names + asset classes for fava's Investor pages) ------
 2026-01-01 commodity VTI
