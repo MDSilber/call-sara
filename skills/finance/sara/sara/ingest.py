@@ -63,6 +63,7 @@ from sara.cli.shared import err, reject_unknown_flags
 from sara.ledger.invest import build, cash_amount, payee_for, reconcile
 from sara.ledger.queries import ledger_balance_asof
 from sara.ledger.writer import (
+    FAMILY_PLAID,
     TOLERANCE,
     AccountDedupe,
     Entry,
@@ -380,15 +381,18 @@ def run_item(alias: str, cfg: dict[str, Any], env: dict[str, str],
                 payee = payee_for(a)
                 amt = cash_amount(a)
                 h = deduper.hash_for(a.date, amt, payee)
-                why = deduper.check(a.date, amt, payee, a.source_id, h)
+                why = deduper.check_invest(a.date, amt, payee, a.source_id,
+                                           ticker=a.ticker, units=a.units,
+                                           family=FAMILY_PLAID, h=h)
                 if why:
                     skipped_n += 1
                     run.add(f"      deduped ({why}) {a.date} {amt:.2f} {payee}")
                     continue
                 deduper.record(h, a.source_id)
                 entry, deltas, _used = build(a, account, payee, h)
-                # Plaid ids belong in plaid-id: metadata, not fitid:
-                entry = entry.replace('  fitid: "', '  plaid-id: "')
+                # Plaid provenance belongs in plaid-* metadata, not the OFX keys
+                entry = entry.replace('  fitid: "', '  plaid-id: "') \
+                             .replace('  ofx-type: "', '  plaid-type: "')
                 run.new_entries.append((a.date, entry))
                 kept_n += 1
                 kept_sum += amt

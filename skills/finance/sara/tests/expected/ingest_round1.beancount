@@ -1,33 +1,33 @@
 2026-04-01 * "ACH IN ELECTRONIC TRANSFER" ""
-  ofx-type: "CONTRIBUTION"
+  plaid-type: "CONTRIBUTION"
   import-hash: "e3d9d02df830e860"
   plaid-id: "vg-005"
   Assets:US:Demo:Brokerage8642   2000.00 USD
   Assets:US:Transfers
 
 2026-04-05 * "BUY 10.500 TIF @ 40.00" ""
-  ofx-type: "BUYSTOCK"
+  plaid-type: "BUYSTOCK"
   import-hash: "2a40cc5277b300a7"
   plaid-id: "vg-001"
   Assets:US:Demo:Brokerage8642   10.500 TIF {40.00 USD}
   Assets:US:Demo:Brokerage8642   -420.00 USD
 
 2026-05-15 * "DIV TWC" ""
-  ofx-type: "INCOME"
+  plaid-type: "INCOME"
   import-hash: "bf6239a6bb0bd960"
   plaid-id: "vg-003"
   Assets:US:Demo:Brokerage8642   6.00 USD
   Income:US:Dividends
 
 2026-06-20 * "REINVEST DIV 0.310 TIF @ 40.00" ""
-  ofx-type: "REINVEST"
+  plaid-type: "REINVEST"
   import-hash: "f7ea62c7ee795e77"
   plaid-id: "vg-004"
   Assets:US:Demo:Brokerage8642   0.310 TIF {40.00 USD}
   Income:US:Dividends   -12.40 USD
 
 2026-06-25 * "SELL 3.000 TIF @ 42.00" ""
-  ofx-type: "SELLSTOCK"
+  plaid-type: "SELLSTOCK"
   import-hash: "d311b5c2fce7cff2"
   plaid-id: "vg-002"
   Assets:US:Demo:Brokerage8642   -3.000 TIF {} @ 42.00 USD  ; whole lots (FIFO if set) — broker lot data governs at tax time
@@ -35,7 +35,7 @@
   Income:US:Gains
 
 2026-06-30 * "INTEREST" ""
-  ofx-type: "INCOME"
+  plaid-type: "INCOME"
   import-hash: "7fcca6adc40ed771"
   plaid-id: "vg-006"
   Assets:US:Demo:Brokerage8642   0.42 USD

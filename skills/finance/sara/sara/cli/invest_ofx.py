@@ -90,7 +90,14 @@ from sara.ledger.invest import (
     reconcile,
 )
 from sara.ledger.queries import opened_accounts
-from sara.ledger.writer import AccountDedupe, Entry, append_to_ledger, assertion_date, existing_ids
+from sara.ledger.writer import (
+    FAMILY_OFX,
+    AccountDedupe,
+    Entry,
+    append_to_ledger,
+    assertion_date,
+    existing_ids,
+)
 from sara.rules import route_by_acctid
 from sara.sources.invest_ofx import parse_invest, units_by_ticker
 from sara.sources.model import CanonInvestTxn
@@ -145,7 +152,9 @@ def main(argv: list[str] | None = None) -> None:
             payee = payee_for(a)
             amt = cash_amount(a)
             h = deduper.hash_for(a.date, amt, payee)
-            why = deduper.check(a.date, amt, payee, a.source_id, h)
+            why = deduper.check_invest(a.date, amt, payee, a.source_id,
+                                       ticker=a.ticker, units=a.units,
+                                       family=FAMILY_OFX, h=h)
             if why:
                 skipped.append((a, amt, payee, why))
                 continue

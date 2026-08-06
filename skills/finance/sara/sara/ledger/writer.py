@@ -24,8 +24,9 @@ import subprocess
 import sys
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, datetime, timedelta
-from decimal import ROUND_HALF_EVEN, Decimal
+from decimal import ROUND_HALF_EVEN, Decimal, InvalidOperation
 from pathlib import Path
+from typing import NamedTuple
 
 from sara.ledger.queries import CENT, ZERO, account_rows, ledger_balance_asof
 from sara.sources.model import escape
@@ -64,6 +65,11 @@ def import_hash(when: date, amt: Decimal, payee: str | None, account: str) -> st
 
 
 IMPORT_HASH_META = re.compile(r'^\s+import-hash:\s*"([0-9a-f]{8,64})"', re.M)
+# Source-family markers: ids are authoritative only WITHIN a family, so the
+# invest fuzzy tier needs to know which family wrote a ledger entry. Entries
+# that predate fitid: metadata still carry ofx-type: — they are OFX-family.
+PLAID_FAMILY_META = re.compile(r'^\s+(?:plaid-id|plaid-type):\s*"', re.M)
+OFX_FAMILY_META = re.compile(r'^\s+(?:fitid|ofx-type):\s*"', re.M)
 # The source-id slot: OFX entries record the bank's FITID as `fitid:`;
 # Plaid entries record the Plaid transaction_id as `plaid-id:`. One regex
 # reads both so every machine-imported entry has exactly one source identity.
@@ -176,6 +182,139 @@ def is_duplicate(idx: FuzzyIndex, when: date, amount: Decimal, payee: str | None
     return any(abs((d - when).days) <= window for d in dates)
 
 
+# ------------------------------------------- invest cross-source fuzzy tier
+# A Plaid id can never equal an OFX FITID, and the synthesized payees/dates
+# drift across sources (settlement vs trade dates, units precision), so the
+# id and hash tiers systematically miss the SAME brokerage action arriving
+# via a second source. This tier matches on what a broker action really is:
+#   same commodity + same units (exact at the ledger row's precision)
+#   + trade date within ±INVEST_WINDOW_DAYS + cash total within $0.01.
+# The window is ±5 for the same reason the cash fuzzy's is: one source
+# stamps the TRADE date, the other the SETTLEMENT date, and T+2 across a
+# weekend plus a market holiday is 5 calendar days (a real Memorial-Day
+# Vanguard buy sat exactly 4 days apart across sources). The matcher can
+# afford the width because it is far stricter than the cash tier — exact
+# units and cents-level totals — and two guards keep it honest:
+#   * family protection — it never fires between two rows of the SAME source
+#     family (there the ids/hashes are complete identity, and two identical
+#     same-fund actions days apart are real — e.g. twin sweep redemptions);
+#   * consumption — a ledger row corroborates at most ONE candidate, so a
+#     batch holding a genuine twin still imports it.
+INVEST_WINDOW_DAYS = 5
+INVEST_TOTAL_TOLERANCE = Decimal("0.01")
+
+FAMILY_OFX, FAMILY_PLAID = "ofx", "plaid"
+INVEST_TIER_LABEL = f"units±{INVEST_WINDOW_DAYS}d"
+
+
+class InvestLedgerRow(NamedTuple):
+    when: date
+    units: Decimal
+    total: Decimal | None  # |cash effect|, else the lot cost; None = unknowable
+    family: str  # FAMILY_OFX / FAMILY_PLAID / "" (hand or legacy entry)
+
+
+InvestIndex = dict[str, list[InvestLedgerRow]]
+
+_DOUBLE_COST = re.compile(r"\{\{([\d,.]+)\s+USD\}\}")
+_SINGLE_COST = re.compile(r"\{([\d,.]+)\s+USD")
+
+
+def _entry_family(body: str) -> str:
+    if PLAID_FAMILY_META.search(body):
+        return FAMILY_PLAID
+    if OFX_FAMILY_META.search(body):
+        return FAMILY_OFX
+    return ""
+
+
+def _posting_re(account: str) -> re.Pattern[str]:
+    return re.compile(rf"^[ \t]+{re.escape(account)}[ \t]+(-?[\d,.]+)[ \t]+"
+                      rf"([A-Z][A-Z0-9'._-]*)(?=[ \t;]|$)(.*)$", re.M)
+
+
+def _dec_or_none(text: str) -> Decimal | None:
+    try:
+        d = Decimal(text.replace(",", ""))
+    except InvalidOperation:
+        return None
+    return d if d.is_finite() else None
+
+
+def invest_index(account: str) -> InvestIndex:
+    """{ticker: rows} for every ledger entry holding a units posting on
+    `account` — parsed straight from ledger/*.beancount (like existing_ids,
+    it works before the vault venv exists). A row's total is the entry's
+    |USD movement| on the account, else the units leg's cost braces
+    (per-unit x units, or the {{total}} form); an entry whose cash can't be
+    established (an opening snapshot) yields total=None and is never allowed
+    to corroborate a candidate."""
+    idx: InvestIndex = {}
+    posting = _posting_re(account)
+    for f in sorted((VAULT / "ledger").glob("*.beancount")):
+        try:
+            text = f.read_text()
+        except OSError:
+            continue
+        for m in TXN_BLOCK.finditer(text):
+            when_text = m.group(0)[:10]
+            try:
+                when = datetime.strptime(when_text, "%Y-%m-%d").date()
+            except ValueError:
+                continue
+            body = m.group(1)
+            family = _entry_family(body)
+            usd_sum = ZERO
+            units_legs: list[tuple[Decimal, str, str]] = []
+            for pm in posting.finditer(body):
+                number = _dec_or_none(pm.group(1))
+                if number is None:
+                    continue
+                if pm.group(2) == "USD":
+                    usd_sum += number
+                else:
+                    units_legs.append((number, pm.group(2), pm.group(3)))
+            for units, ticker, rest in units_legs:
+                total: Decimal | None
+                if usd_sum != 0:
+                    total = abs(usd_sum)
+                elif dm := _DOUBLE_COST.search(rest):
+                    total = _dec_or_none(dm.group(1))
+                elif sm := _SINGLE_COST.search(rest):
+                    per_unit = _dec_or_none(sm.group(1))
+                    total = (abs(units) * per_unit).quantize(CENT, rounding=ROUND_HALF_EVEN) \
+                        if per_unit is not None else None
+                else:
+                    total = None
+                idx.setdefault(ticker, []).append(
+                    InvestLedgerRow(when, units, total, family))
+    return idx
+
+
+def claim_invest_duplicate(idx: InvestIndex, when: date, ticker: str, units: Decimal,
+                           total: Decimal | None, family: str,
+                           window: int = INVEST_WINDOW_DAYS) -> bool:
+    """True when a cross-family ledger row corroborates this action — and
+    CONSUME that row, so each ledger entry vouches for at most one candidate."""
+    rows = idx.get(ticker)
+    if not rows or total is None:
+        return False
+    for i, row in enumerate(rows):
+        if row.family and row.family == family:
+            continue  # same source family: its ids/hashes are authoritative
+        if row.total is None:
+            continue  # cash unknowable (opening snapshot) — never corroborates
+        if abs((row.when - when).days) > window:
+            continue
+        if units.quantize(row.units, rounding=ROUND_HALF_EVEN) != row.units:
+            continue  # exact at the ledger row's precision, sign included
+        if abs(abs(row.total) - abs(total)) > INVEST_TOTAL_TOLERANCE:
+            continue
+        del rows[i]
+        return True
+    return False
+
+
 class AccountDedupe:
     """The three dedupe stages for one account, in order, batch-aware.
 
@@ -196,6 +335,7 @@ class AccountDedupe:
                                 if enabled else {})
         self.new_hashes: HashIndex = {}
         self.new_sids: set[str] = set()
+        self._invest_idx: InvestIndex | None = None  # built lazily on first invest check
 
     def hash_for(self, when: date, amount: Decimal, payee: str) -> str:
         return import_hash(when, amount, payee, self.account)
@@ -212,6 +352,26 @@ class AccountDedupe:
         if is_duplicate(self.idx, when, amount, payee):
             return "±5d"
         return None
+
+    def check_invest(self, when: date, amount: Decimal, payee: str, source_id: str,
+                     *, ticker: str, units: Decimal, family: str,
+                     h: str | None = None) -> str | None:
+        """The cash tiers, then the invest cross-source tier: a units-bearing
+        action whose commodity/units/date/total line up with a ledger entry
+        from ANOTHER source family is the same transaction wearing different
+        ids. `amount` (the signed cash effect) doubles as the total."""
+        why = self.check(when, amount, payee, source_id, h)
+        if why:
+            return why
+        if self.enabled and ticker and claim_invest_duplicate(
+                self._invest_index(), when, ticker, units, amount, family):
+            return INVEST_TIER_LABEL
+        return None
+
+    def _invest_index(self) -> InvestIndex:
+        if self._invest_idx is None:
+            self._invest_idx = invest_index(self.account)
+        return self._invest_idx
 
     def record(self, h: str, source_id: str) -> None:
         self.new_hashes.setdefault(h, set())
