@@ -316,7 +316,8 @@ FIX_BY_CHECK = {
     "goals": "Fill in the blank threshold in facts/goals/index.md.",
 }
 QUEUE_ORDER = ["projected-shortfall", "lanes", "fixed-balance", "review-queue", "anomaly",
-               "subscriptions", "coverage", "reconciliation", "concentration", "goals"]
+               "subscriptions", "cash-drag", "coverage", "reconciliation",
+               "concentration", "goals"]
 
 
 def fix_line(f):

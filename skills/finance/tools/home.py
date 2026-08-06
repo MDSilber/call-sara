@@ -107,6 +107,10 @@ class Pace:
 class Baseline:
     monthly: float                # median full-month spend over the window
     months: list[YM]
+    burn: float                   # MEAN full-month spend — the true burn a
+                                  # year actually costs, lumpy months included
+    drift_pct: float | None       # burn vs the 12 months before the window;
+                                  # None until 24 full months exist
 
 
 @dataclass(frozen=True)
@@ -295,13 +299,26 @@ def spend_pace(today: date, asof: date | None,
 
 def true_spend_baseline(today: date,
                         totals: list[tuple[YM, float]]) -> Baseline | None:
-    """Median monthly spend over the last up-to-12 FULL months."""
+    """The spend baseline over the last up-to-12 FULL months: the median
+    (a typical month — the pace card's comparator) and the MEAN (the true
+    burn — what a year actually costs, lumpy months included; the walk-away
+    math and the what-if spend dial run on this one). With 24 full months
+    on file, drift_pct says how this year's burn compares to the last."""
     cur = (today.year, today.month)
-    window = [(ym, v) for ym, v in totals if ym < cur][-BASELINE_WINDOW:]
+    full = [(ym, v) for ym, v in totals if ym < cur]
+    window = full[-BASELINE_WINDOW:]
     if len(window) < MIN_FULL_MONTHS:
         return None
+    burn = sum(v for _, v in window) / len(window)
+    prior = full[-2 * BASELINE_WINDOW:-BASELINE_WINDOW]
+    drift = None
+    if len(window) == BASELINE_WINDOW and len(prior) == BASELINE_WINDOW:
+        prior_burn = sum(v for _, v in prior) / BASELINE_WINDOW
+        if prior_burn > 0:
+            drift = 100.0 * (burn - prior_burn) / prior_burn
     return Baseline(monthly=median(v for _, v in window),
-                    months=[ym for ym, _ in window])
+                    months=[ym for ym, _ in window],
+                    burn=burn, drift_pct=drift)
 
 
 def _as_float(value) -> float | None:
@@ -314,11 +331,13 @@ def _as_float(value) -> float | None:
 def walkaway(liquid: float, paper: float, baseline: Baseline | None,
              goals: dict) -> Walkaway | None:
     """The walk-away hero: target from the set goal when there is one, else
-    from the true spend baseline ×25 (the ×28.5 end of the range shown too)."""
+    from the true burn ×25 (the ×28.5 end of the range shown too). Burn, not
+    the median — a year costs its lumpy months too, and a walk-away number
+    that forgets them is optimistic exactly when it must not be."""
     target_set = _as_float(goals.get("retirement_target"))
     lo = hi = None
     if baseline:
-        annual = baseline.monthly * 12
+        annual = baseline.burn * 12
         lo, hi = round1k(annual * WALKAWAY_LO), round1k(annual * WALKAWAY_HI)
     if target_set is not None:
         target, src = target_set, "set"
@@ -381,62 +400,101 @@ def _months_to_target(liquid: float, monthly_save: float, target: float,
     return m if 0 <= m <= horizon else None
 
 
-def whatif_grid(liquid: float, baseline: Baseline,
-                monthly_save: float) -> dict:
+def _years_or_none(months: float | None) -> float | None:
+    return None if months is None else round(months / 12.0, 1)
+
+
+def whatif_grid(liquid: float, baseline: Baseline, monthly_save: float,
+                today: date) -> dict:
     """The full precomputed scenario space for the "Play with it" dials.
     Python owns every dollar figure; the page's JS only indexes this grid.
     Display strings ride pre-formatted; numbers exist solely for chart
-    geometry (markLines, paths)."""
-    annual = baseline.monthly * 12
+    geometry (markLines, paths, milestone dots). The spend dial centers on
+    the TRUE BURN (mean of the baseline window) — the ledger's own answer,
+    not a hand-set guess. Per cell, three arrival horizons: `years` (saving
+    as usual), `coast` (growth alone, $0 more saved — the coast stat), and
+    `half` (when the saving path crosses the halfway mark)."""
+    annual = baseline.burn * 12
     step = WHATIF_SPEND_STEP
     lo = max(step, int(round(annual * 0.5 / step)) * step)
     hi = max(lo + step, int(round(annual * 1.5 / step)) * step)
     spends = list(range(lo, hi + 1, step))
 
     target_n, target_s, gap_s, pct_s = [], [], [], []
+    half_n, half_s = [], []
     for r in WHATIF_RATES:
         tn_row, ts_row, gap_row, pct_row = [], [], [], []
+        hn_row, hs_row = [], []
         for sp in spends:
             t = round1k(sp / (r / 100.0))
             tn_row.append(t)
             ts_row.append("≈" + m0(t))
+            hn_row.append(t / 2.0)
+            hs_row.append("≈" + m0(t / 2.0))
             gap = t - liquid
             gap_row.append(("past it by " + m0(-gap)) if gap <= 0
                            else (m0(gap) + " to go"))
             pct_row.append(f"{min(999.0, 100.0 * liquid / t):.0f}%")
         target_n.append(tn_row)
         target_s.append(ts_row)
+        half_n.append(hn_row)
+        half_s.append(hs_row)
         gap_s.append(gap_row)
         pct_s.append(pct_row)
 
-    years = [[[(lambda m: None if m is None else round(m / 12.0, 1))(
-        _months_to_target(liquid, monthly_save, target_n[ri][si], g))
-        for g in WHATIF_GROWTHS]
-        for si in range(len(spends))]
-        for ri in range(len(WHATIF_RATES))]
+    # per-cell horizons, all closed-form: saving as usual, growth alone
+    # ($0 more saved = the coast stat), and the halfway crossing
+    years, coast, half = [], [], []
+    for ri in range(len(WHATIF_RATES)):
+        y_r, c_r, h_r = [], [], []
+        for si in range(len(spends)):
+            t = target_n[ri][si]
+            y_r.append([_years_or_none(
+                _months_to_target(liquid, monthly_save, t, g))
+                for g in WHATIF_GROWTHS])
+            c_r.append([_years_or_none(
+                _months_to_target(liquid, 0.0, t, g))
+                for g in WHATIF_GROWTHS])
+            h_r.append([_years_or_none(
+                _months_to_target(liquid, monthly_save, t / 2.0, g))
+                for g in WHATIF_GROWTHS])
+        years.append(y_r)
+        coast.append(c_r)
+        half.append(h_r)
 
-    # projected balance paths, one per growth setting, yearly points
-    paths, path_tips, ymaps = [], [], []
+    # projected balance paths, one per growth setting, yearly points —
+    # the saving-as-usual path and its growth-alone ($0 saved) twin
+    paths, paths0, path_tips, ymaps = [], [], [], []
     global_target_max = max(max(row) for row in target_n)
     for g in WHATIF_GROWTHS:
         f = (1.0 + g / 100.0) ** (1.0 / 12.0)
-        pts, tips = [], []
+        pts, pts0, tips = [], [], []
         for yr in range(WHATIF_MAX_YEARS + 1):
             m = yr * 12
             if g <= 0:
-                bal = liquid + monthly_save * m
+                bal, bal0 = liquid + monthly_save * m, liquid
             else:
-                bal = liquid * (f ** m) + monthly_save * ((f ** m) - 1) / (f - 1)
-            bal = max(0.0, round(bal))
+                grown = f ** m
+                bal = liquid * grown + monthly_save * (grown - 1) / (f - 1)
+                bal0 = liquid * grown
+            bal, bal0 = max(0.0, round(bal)), max(0.0, round(bal0))
             pts.append([yr, bal])
+            pts0.append([yr, bal0])
             tips.append({"t": "today" if yr == 0 else f"in {yr} years",
-                         "rows": [["≈" + m0(bal), "projected liquid"]]})
+                         "rows": [["≈" + m0(bal), "saving as usual"],
+                                  ["≈" + m0(bal0), "growth alone, $0 saved"]]})
         paths.append(pts)
+        paths0.append(pts0)
         path_tips.append(tips)
-        ymaps.append(yaxis_payload(0, max(pts[-1][1], global_target_max)))
+        ymaps.append(yaxis_payload(
+            0, max(pts[-1][1], pts0[-1][1], global_target_max)))
 
     xticks = {str(y): ("today" if y == 0 else f"{y} yrs")
               for y in range(0, WHATIF_MAX_YEARS + 1, 10)}
+    # calendar-year labels for the milestone dots: offset -> "2041" / "’41"
+    xyear = {str(y): str(today.year + y)
+             for y in range(WHATIF_MAX_YEARS + 1)}
+    xyear_s = {k: "’" + v[2:] for k, v in xyear.items()}
     nearest_si = min(range(len(spends)), key=lambda i: abs(spends[i] - annual))
     return {
         "rates": [f"{r:.1f}%" for r in WHATIF_RATES],
@@ -444,9 +502,13 @@ def whatif_grid(liquid: float, baseline: Baseline,
         "growths": [f"{g:.1f}% real" for g in WHATIF_GROWTHS],
         "nRates": len(WHATIF_RATES), "nSpends": len(spends),
         "nGrowths": len(WHATIF_GROWTHS),
-        "targetN": target_n, "target": target_s, "gap": gap_s, "pct": pct_s,
-        "years": years, "paths": paths, "pathTips": path_tips, "ymaps": ymaps,
-        "xticks": xticks, "maxYears": WHATIF_MAX_YEARS,
+        "targetN": target_n, "target": target_s,
+        "halfN": half_n, "halfS": half_s,
+        "gap": gap_s, "pct": pct_s,
+        "years": years, "coast": coast, "half": half,
+        "paths": paths, "paths0": paths0, "pathTips": path_tips,
+        "ymaps": ymaps, "xticks": xticks, "xyear": xyear, "xyearS": xyear_s,
+        "maxYears": WHATIF_MAX_YEARS,
         "def": {"ri": WHATIF_RATES.index(4.0), "si": nearest_si,
                 "gi": WHATIF_GROWTHS.index(4.0)},
     }
@@ -672,11 +734,6 @@ def _codespans(text: str) -> Markup:
     return Markup(code_spans(str(escape(text))))
 
 
-def chip(body: Markup | str, cls: str = "") -> dict:
-    """A pill chip for the template; body is already-safe Markup."""
-    return {"cls": cls, "body": body}
-
-
 _ENV = jinja2.Environment(autoescape=True, trim_blocks=True, lstrip_blocks=True)
 _ENV.filters["codespans"] = _codespans
 
@@ -699,8 +756,8 @@ CSS_TEMPLATE = """
   --pos:#067647; --pos-soft:#e7f9ef;
   --neg:#d02b4c; --neg-soft:#fdedf0; --neg-dot:#f43f5e;
   --warn:#9a5b00; --warn-soft:#fdf3e0; --warn-dot:#f59e0b;
-  --gold:#b26105; --gold-track:#f7e7cd;
-  --gold-fill:linear-gradient(90deg,#d97a06,#f0a63c);
+  --edu-track:#d2ecea;
+  --edu-fill:linear-gradient(90deg,#0d9488,#2bbcab);
   --ideal:#8d87b8; --code:#efedf8;
   --rib-1:#6157ff; --rib-2:#9d8cff; --rib-3:#d97a06; --rib-4:#8579c9;
   --hero-grad:linear-gradient(115deg,#6157ff 0%,#74c0fc 35%,#ff7eb6 68%,#ffb86b 100%);
@@ -714,16 +771,16 @@ CSS_TEMPLATE = """
 }
 @media screen and (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) { color-scheme:dark;
-    --bg:#0a0e1e; --surface:#131a2e; --surface-2:#1a2238;
-    --border:rgba(196,200,255,.10); --border-strong:rgba(196,200,255,.24);
+    --bg:#0a0e1e; --surface:#151d33; --surface-2:#1d2540;
+    --border:rgba(196,200,255,.13); --border-strong:rgba(196,200,255,.26);
     --ink:#e9ebfa; --ink-2:#b3b8d6; --muted:#8b91b2;
-    --grid:#222b45; --axis:#39415f;
+    --grid:#232c47; --axis:#39415f;
     --accent:#8f88ff; --accent-soft:rgba(143,136,255,.16); --link:#a9a3ff;
-    --pos:#3ecf7a; --pos-soft:rgba(62,207,122,.13);
+    --pos:#4ec17e; --pos-soft:rgba(78,193,126,.12);
     --neg:#ff6b84; --neg-soft:rgba(255,107,132,.12); --neg-dot:#ff6b84;
-    --warn:#f0b13c; --warn-soft:rgba(240,177,60,.13); --warn-dot:#f0b13c;
-    --gold:#e2a04b; --gold-track:rgba(226,154,61,.18);
-    --gold-fill:linear-gradient(90deg,#c97e1e,#e2a04b);
+    --warn:#d2a041; --warn-soft:rgba(210,160,65,.13); --warn-dot:#d2a041;
+    --edu-track:rgba(43,188,171,.16);
+    --edu-fill:linear-gradient(90deg,#0f9c8d,#2bbcab);
     --ideal:#767fa8; --code:#1c2440;
     --rib-1:#544ae4; --rib-2:#8d80f4; --rib-3:#c97e1e; --rib-4:#8074c4;
     --hero-grad:linear-gradient(115deg,#4a41d6 0%,#3c7ec2 35%,#d4548c 68%,#d98b3f 100%);
@@ -790,16 +847,16 @@ code { background:var(--code); border-radius:4px; padding:.08em .35em;
   max-width:62ch; letter-spacing:-.005em; text-wrap:balance;
   text-shadow:0 1px 3px rgba(21,15,74,.30); }
 .hero-side { display:flex; align-items:center; gap:12px; flex:none; }
-.stamp { font-size:11.5px; line-height:1.5; color:rgba(255,255,255,.92);
-  text-align:right; text-shadow:0 1px 2px rgba(21,15,74,.35); }
-.themebtn { background:rgba(255,255,255,.16); color:#fff;
-  border:1px solid rgba(255,255,255,.45); border-radius:999px; padding:3px 12px;
+.stamp { font-size:11.5px; line-height:1.5; color:#fff; text-align:right;
+  background:rgba(21,15,74,.50); padding:5px 12px; border-radius:10px; }
+.themebtn { background:rgba(21,15,74,.45); color:#fff;
+  border:1px solid rgba(255,255,255,.55); border-radius:999px; padding:3px 12px;
   font:12.5px 'Inter',system-ui,sans-serif; cursor:pointer;
   transition:background .15s ease; }
-.themebtn:hover { background:rgba(255,255,255,.28); }
-.card .themebtn, .wi-readout .themebtn { background:var(--surface);
+.themebtn:hover { background:rgba(21,15,74,.60); }
+.card .themebtn { background:var(--surface);
   color:var(--ink-2); border-color:var(--border); }
-.card .themebtn:hover, .wi-readout .themebtn:hover {
+.card .themebtn:hover {
   border-color:var(--border-strong); background:var(--surface); }
 
 /* ---- the floating KPI strip ---- */
@@ -816,7 +873,9 @@ code { background:var(--code); border-radius:4px; padding:.08em .35em;
 
 /* ---- cards + grids ---- */
 main { padding-bottom:44px; }
-.grid { display:grid; gap:18px; margin-top:18px; align-items:stretch; }
+/* start, not stretch: a short card (the machine) self-sizes instead of
+   dragging dead space to match its tall neighbor */
+.grid { display:grid; gap:18px; margin-top:18px; align-items:start; }
 .g-pace { grid-template-columns:1.5fr 1fr; }
 .g-needs { grid-template-columns:1.5fr 1fr; }
 .g-walk { grid-template-columns:1.4fr 1fr; }
@@ -873,7 +932,7 @@ main { padding-bottom:44px; }
 .lanetag { margin-left:auto; color:var(--muted); font-size:10px;
   text-transform:uppercase; letter-spacing:.06em; flex:none; padding-top:4px; }
 .lanesum { color:var(--muted); font-size:12.5px; margin-top:10px;
-  padding-top:10px; border-top:1px solid var(--grid); }
+  padding-top:10px; border-top:1px solid var(--grid); max-width:68ch; }
 
 /* ---- needs-you + money that must move ---- */
 .needs { list-style:none; padding:0; margin:2px 0 0; }
@@ -907,41 +966,51 @@ main { padding-bottom:44px; }
 .track { height:10px; border-radius:999px; background:var(--bar-track); overflow:hidden; }
 .fill { display:block; height:100%; border-radius:999px; background:var(--bar-fill); }
 .fill.over { background:var(--neg); }
-.fill.gold { background:var(--gold-fill); }
-.track.gold { background:var(--gold-track); }
+.fill.edu { background:var(--edu-fill); }
+.track.edu { background:var(--edu-track); }
 .shadowtick { position:absolute; top:-3px; width:2px; height:16px;
   background:var(--muted); border-radius:1px; }
 .barnotes { display:flex; justify-content:space-between; gap:10px; margin-top:7px;
   color:var(--muted); font-size:12px; }
-.shadownote { color:var(--muted); font-size:12.5px; margin-top:10px; }
+.shadownote { color:var(--muted); font-size:12.5px; margin-top:10px;
+  max-width:68ch; }
 .shadownote b { color:var(--ink-2); font-weight:600; font-variant-numeric:tabular-nums; }
 .goalfoot { color:var(--muted); font-size:12px; margin-top:12px;
-  padding-top:10px; border-top:1px solid var(--grid); }
-.card.walk .goalfoot, .card.walk .wi-cut { border-top-color:var(--walk-border); }
+  padding-top:10px; border-top:1px solid var(--grid); max-width:68ch;
+  text-wrap:pretty; }
+.card.walk .goalfoot, .card.walk .wi-cut, .card.walk .wi-fold,
+.card.walk .wi-how { border-top-color:var(--walk-border); }
 .nudge { background:var(--warn-soft); border-radius:10px; padding:10px 14px;
   color:var(--ink-2); font-size:13px; margin-top:12px; }
 
-/* what-if dials (inside the walk card) */
+/* what-if dials (inside the walk card): ONE promoted output (the years),
+   everything else quiet; the dials + chart live behind a disclosure */
 .wi-cut { margin-top:16px; padding-top:14px; border-top:1px solid var(--grid); }
-.dials { display:grid; gap:8px 26px; grid-template-columns:repeat(3,1fr); margin-top:10px; }
+.wv-big { font-size:30px; font-weight:600; letter-spacing:-.02em; line-height:1.1; }
+.coastline { color:var(--ink-2); font-size:12.5px; margin-top:8px;
+  max-width:68ch; }
+.wi-quiet { color:var(--muted); font-size:12.5px; margin-top:4px; }
+.wi-quiet b { color:var(--ink-2); font-weight:600; }
+.wi-fold, .wi-how { margin-top:14px; padding-top:12px;
+  border-top:1px solid var(--grid); }
+.wi-fold > summary, .wi-how > summary { cursor:pointer; color:var(--muted); }
+.wi-fold > summary:hover, .wi-how > summary:hover { color:var(--ink-2); }
+.wi-how > summary { font-size:12.5px; }
+.dials { display:grid; gap:8px 26px; grid-template-columns:repeat(3,1fr); margin-top:12px; }
 .dial { display:grid; grid-template-columns:1fr auto; gap:0 10px; align-items:center; }
 .dial label { color:var(--ink-2); font-size:12.5px; }
 .dial .dval { font-size:13px; font-weight:600; text-align:right; }
 .dial input[type=range] { grid-column:1 / -1; width:100%; height:22px; margin:0;
   accent-color:var(--accent); }
-.wi-readout { display:flex; gap:26px; flex-wrap:wrap; align-items:flex-end;
-  margin-top:14px; }
-.wr .wv { font-size:19px; font-weight:600; letter-spacing:-.01em; }
-.wr .wl { color:var(--muted); font-size:11.5px; margin-top:1px; }
-#wi-reset { margin:0 0 3px auto; }
-.wi-formula { color:var(--muted); font-size:12px; margin-top:10px; }
+.wi-actions { display:flex; justify-content:flex-end; margin-top:8px; }
+.wi-formula { color:var(--muted); font-size:12px; margin-top:10px;
+  max-width:68ch; }
 
 /* stats (cheshbon) */
 .statrow { display:flex; gap:28px; flex-wrap:wrap; margin-top:10px;
   align-items:flex-end; }
 .stat .v { font-size:22px; font-weight:600; letter-spacing:-.01em; }
 .stat .l { color:var(--muted); font-size:12px; margin-bottom:2px; }
-.stat.closed { margin-left:auto; text-align:right; }
 /* the category ribbon: 2px surface gaps between segments do the separating */
 .ribbon { display:flex; gap:2px; height:12px; border-radius:999px; overflow:hidden;
   margin-top:8px; }
@@ -990,6 +1059,7 @@ main { padding-bottom:44px; }
 
 footer { margin-top:28px; padding-top:16px; border-top:1px solid var(--border);
   color:var(--muted); font-size:12.5px; text-align:center; }
+footer p { max-width:68ch; margin-inline:auto; text-wrap:pretty; }
 footer p + p { margin-top:4px; }
 footer .tagline { color:var(--ink-2); }
 
@@ -1009,9 +1079,13 @@ footer .tagline { color:var(--ink-2); }
   .kv { font-size:24px; }
   .phero { font-size:33px; }
   .statrow { gap:18px; }
-  .stat.closed { margin-left:0; text-align:left; }
   .dials { grid-template-columns:1fr; }
-  .wi-readout { gap:18px; }
+  /* the lane tag column steals a third of a phone row — drop it to an
+     inline chip under the lane's name instead */
+  .lanes li { flex-wrap:wrap; }
+  .lanes li > div { flex:1; min-width:72%; }
+  .lanetag { order:4; width:max-content; margin-left:19px; padding:2px 9px;
+    background:var(--surface-2); border-radius:999px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
 @media print {
@@ -1149,8 +1223,9 @@ JS_TEMPLATE = """
     if (el && P) {
       var c = echarts.init(el, null, { renderer: 'svg' });
       var opt = baseOption();
-      // narrow screens wrap the legend onto two lines — give it headroom
-      opt.grid = { left: 62, right: 16, top: el.clientWidth < 520 ? 60 : 38,
+      // narrow screens wrap the legend onto two lines — the grid starts
+      // below it so legend text never overprints the top y-axis label
+      opt.grid = { left: 62, right: 16, top: el.clientWidth < 520 ? 88 : 38,
                    bottom: 28 };
       opt.legend = legendBox();
       opt.xAxis = catAxis(P.days, P.xint, el.clientWidth);
@@ -1247,6 +1322,8 @@ JS_TEMPLATE = """
     gap: document.getElementById('wi-gap'),
     pct: document.getElementById('wi-pct'),
     years: document.getElementById('wi-years'),
+    coast: document.getElementById('wi-coast'),
+    fold: document.getElementById('wi-fold'),
     reset: document.getElementById('wi-reset'),
     chart: document.getElementById('wi-chart')
   };
@@ -1255,6 +1332,24 @@ JS_TEMPLATE = """
     wiChart = echarts.init(wiEls.chart, null, { renderer: 'svg' });
     charts.push(wiChart);
     wiUpdate();
+  }
+  function calyr(years, short) {  // Python-made calendar labels, by offset
+    return (short ? WI.xyearS : WI.xyear)[String(Math.round(years))] || '';
+  }
+  function wiDots(dots) {  // milestone dots: coords + strings all precomputed
+    return {
+      symbol: 'circle', symbolSize: 9, z: 4,
+      itemStyle: { color: cssv('--accent'), borderColor: cssv('--surface'),
+                   borderWidth: 2 },
+      label: { show: true, position: 'top', distance: 7,
+               formatter: function (p) { return p.data.lbl; },
+               color: cssv('--ink-2'), fontSize: 10.5, fontFamily: FONT },
+      tooltip: { trigger: 'item', formatter: function (p) {
+        return tipHtml({ t: p.data.tipT,
+                         rows: [['≈' + p.data.tipY + ' yrs', 'from today']] });
+      } },
+      data: dots
+    };
   }
   function wiUpdate() {
     if (!WI || !wiChart) return;
@@ -1271,6 +1366,16 @@ JS_TEMPLATE = """
     var y = WI.years[ri][si][gi];   // Python-computed; null = beyond horizon
     wiEls.years.textContent = y === null ? 'not within ' + WI.maxYears + ' yrs'
       : (y === 0 ? 'already there' : '≈' + y + ' yrs');
+    var c = WI.coast[ri][si][gi];   // the coast stat: $0 more saved
+    if (wiEls.coast) {
+      wiEls.coast.textContent =
+        c === 0 ? '' :
+        c === null ? ('Growth alone would not get there within ' +
+                      WI.maxYears + ' yrs — the saving is doing the lifting.') :
+        ('Even with $0 more saved, growth alone gets there in ≈' + c +
+         ' yrs (' + calyr(c, false) + ').');
+      wiEls.coast.hidden = !wiEls.coast.textContent;
+    }
     var ml = {
       symbol: 'none', silent: true,
       label: { fontFamily: FONT, fontSize: 11 },
@@ -1278,27 +1383,45 @@ JS_TEMPLATE = """
         yAxis: WI.targetN[ri][si],
         lineStyle: { color: cssv('--ink-2'), type: 'dashed', width: 1 },
         label: { formatter: 'target ' + WI.target[ri][si],
-                 position: 'insideEndTop', color: cssv('--ink-2') }
+                 position: 'insideStartTop', color: cssv('--ink-2') }
       }]
     };
-    if (y !== null && y > 0) ml.data.push({
-      xAxis: y,
-      lineStyle: { color: cssv('--accent'), type: 'dotted', width: 1.5 },
-      label: { formatter: '≈' + y + ' yrs',
-               position: 'insideStartTop', color: cssv('--accent') }
+    var h = WI.half[ri][si][gi];
+    var dots = [];
+    if (h !== null && h > 0 && (y === null || h < y)) dots.push({
+      coord: [h, WI.halfN[ri][si]], lbl: 'halfway ' + calyr(h, true),
+      tipT: 'halfway — ' + WI.halfS[ri][si], tipY: h,
+      label: { position: 'right' }  // clear of the target line above it
+    });
+    if (y !== null && y > 0) dots.push({
+      coord: [y, WI.targetN[ri][si]], lbl: 'target ' + calyr(y, true),
+      tipT: 'target — ' + WI.target[ri][si], tipY: y
+    });
+    var coastDots = [];
+    if (c !== null && c > 0) coastDots.push({
+      coord: [c, WI.targetN[ri][si]], lbl: '$0-saved ' + calyr(c, true),
+      tipT: 'growth alone reaches ' + WI.target[ri][si], tipY: c
     });
     var opt = baseOption();
-    opt.grid = { left: 62, right: 20, top: 20, bottom: 26 };
+    opt.grid = { left: 62, right: 20, top: 36, bottom: 26 };
+    opt.legend = legendBox();
     opt.xAxis = xValAxis(WI.maxYears, WI.xticks);
     opt.yAxis = valAxis(WI.ymaps[gi]);
     opt.tooltip.formatter = function (ps) {
       return tipHtml(WI.pathTips[gi][ps[0].dataIndex]);
     };
     opt.series = [{
-      name: 'projected liquid', type: 'line', data: WI.paths[gi],
+      name: 'saving as usual', type: 'line', data: WI.paths[gi],
       symbol: 'none', lineStyle: { width: 2.5, color: cssv('--accent') },
       areaStyle: { color: cssv('--accent'), opacity: 0.07 },
-      emphasis: { disabled: true }, markLine: ml
+      emphasis: { disabled: true }, z: 2, markLine: ml,
+      markPoint: wiDots(dots)
+    }, {
+      name: 'growth alone, $0 saved', type: 'line', data: WI.paths0[gi],
+      symbol: 'none', color: cssv('--ideal'),
+      lineStyle: { width: 2, type: 'dotted' },
+      emphasis: { disabled: true }, z: 1,
+      markPoint: wiDots(coastDots)
     }];
     wiChart.setOption(opt, true);
   }
@@ -1312,6 +1435,14 @@ JS_TEMPLATE = """
       wiEls.growth.value = WI.def.gi;
       wiUpdate();
     });
+    if (wiEls.fold) {
+      // phones start with the dials folded; the chart sizes itself when opened
+      if (window.matchMedia && window.matchMedia('(max-width:640px)').matches)
+        wiEls.fold.removeAttribute('open');
+      wiEls.fold.addEventListener('toggle', function () {
+        if (wiEls.fold.open && wiChart) { wiChart.resize(); wiUpdate(); }
+      });
+    }
   }
 
   applyTheme(theme);
@@ -1344,9 +1475,9 @@ PAGE_TEMPLATE = """\
   <tbody>{% for r in rows %}<tr>{% for c in r %}<td>{{ c }}</td>{% endfor %}</tr>
   {% endfor %}</tbody></table></details>
 {% endmacro %}
-{% macro meterrow(name, width, amt, over=false, gold=false) %}
+{% macro meterrow(name, width, amt, over=false, edu=false) %}
   <div class="envrow"><span class="name">{{ name }}</span>
-  <div class="track{{ ' gold' if gold }}"><span class="fill{{ ' over' if over }}{{ ' gold' if gold }}" style="width:{{ width }}%"></span></div>
+  <div class="track{{ ' edu' if edu }}"><span class="fill{{ ' over' if over }}{{ ' edu' if edu }}" style="width:{{ width }}%"></span></div>
   <span class="amt">{{ amt }}</span></div>
 {% endmacro %}
 <!DOCTYPE html>
@@ -1397,9 +1528,6 @@ try { var t = localStorage.getItem('sara-home-theme');
   {% else %}
   <p class="phero{{ ' ' + p.hero_cls if p.hero_cls }}">{{ p.hero }}</p>
   <p class="herolab">{{ p.herolab }}</p>
-  <div class="chiprow">
-    {% for c in p.chips %}<span class="chip{{ ' ' + c.cls if c.cls }}">{{ c.body }}</span>{% endfor %}
-  </div>
   <div id="pace-chart" class="chart" role="img"
        aria-label="Cumulative spending this month against the typical-month path"></div>
   {% if p.lag_note %}<div class="empty">{{ p.lag_note }}</div>{% endif %}
@@ -1407,7 +1535,7 @@ try { var t = localStorage.getItem('sara-home-theme');
   {% endif %}
 </section>
 <section class="card">
-  {{ cardhead('The machine', mach.sub, mach.window) }}
+  {{ cardhead('On autopilot', mach.sub, mach.window) }}
   {% if mach.rows %}
   <ul class="lanes">
     {% for r in mach.rows %}
@@ -1419,19 +1547,19 @@ try { var t = localStorage.getItem('sara-home-theme');
   </ul>
   {% if mach.summary %}<p class="lanesum">{{ mach.summary }}</p>{% endif %}
   {% else %}
-  <div class="empty"><b>No lanes declared yet.</b> Teach Sara the household's
-  standing orders — paychecks, auto-invests, balance floors — with
-  <code>[[lanes]]</code> in rules.toml, and their health lives here.</div>
+  <div class="empty"><b>Nothing on autopilot yet.</b> Tell Sara about the
+  household's standing orders — paychecks, auto-invests, balance floors —
+  and their health lives here.</div>
   {% endif %}
 </section>
 </div>
 
 <div class="grid {{ 'g-needs' if moves else 'g-solo' }}">
 <section class="card">
-  {{ cardhead('Needs you', 'From the checks and dated facts — verbs first, drama never.') }}
+  {{ cardhead('Needs you', 'Anything that wants a decision or a quick hand this week.') }}
   {% if needs.state == 'none' %}
-  <div class="empty"><b>Checks haven't run yet.</b> <code>tools/run
-  run_checks.py</code> fills this card with anything that needs a human.</div>
+  <div class="empty"><b>Checks haven't run yet.</b> Ask Sara to run them —
+  anything that needs a human lands here.</div>
   {% elif needs.state == 'ok' %}
   <div class="allclear"><span aria-hidden="true">✓</span>
   <div><b>Nothing needs you today.</b><div class="s">No open alerts, no watch
@@ -1452,7 +1580,7 @@ try { var t = localStorage.getItem('sara-home-theme');
 </section>
 {% if moves %}
 <section class="card">
-  {{ cardhead('Money that must move', 'Dated obligations with real dollars — from facts/, never invented.', 'next ' ~ mustmove_days ~ ' days') }}
+  {{ cardhead('Money that must move', 'Payments and transfers with a date already on them.', 'next ' ~ mustmove_days ~ ' days') }}
   <ul class="moves">
     {% for mv in moves %}
     <li><span class="mvdate num{{ ' near' if mv.near }}">{{ mv.day_lbl }}</span>
@@ -1466,7 +1594,7 @@ try { var t = localStorage.getItem('sara-home-theme');
 
 <div class="grid g-walk">
 <section class="card walk">
-  {{ cardhead('The walk-away number', 'The pot where work becomes optional. Liquid dollars only, per the thesis.') }}
+  {{ cardhead('The walk-away number', 'The pot where work becomes optional. Liquid dollars only, per the thesis.', wa.window if wa else '') }}
   {% if not wa %}
   <div class="empty"><b>No baseline yet.</b> After {{ min_months }} full months
   of spending history the walk-away math turns on by itself.</div>
@@ -1478,35 +1606,38 @@ try { var t = localStorage.getItem('sara-home-theme');
     {% if wa.shadow_left is not none %}<span class="shadowtick" style="left:{{ wa.shadow_left }}%"></span>{% endif %}
   </div>
   <div class="barnotes num">
-    <span>liquid today: <b>{{ wa.liquid }}</b> · {{ wa.asof }}</span>
+    <span>liquid today: <b>{{ wa.liquid }}</b></span>
     {% if wa.shadow_left is not none %}<span>tick = if the paper converts</span>{% endif %}
   </div>
   {% if wa.shadow_note %}<p class="shadownote">{{ wa.shadow_note }}</p>{% endif %}
   {% if wa.foot %}<p class="goalfoot">{{ wa.foot }}</p>{% endif %}
   {% if wi %}
   <div class="wi-cut">
-  <h3 class="ck">Play with it · what-if, not advice</h3>
-  <div class="dials">
-    <div class="dial"><label for="wi-rate">withdrawal rate</label>
-      <span class="dval num" id="wi-rate-v"></span>
-      <input id="wi-rate" type="range" min="0" max="{{ wi.max_ri }}" step="1" value="{{ wi.def_ri }}"></div>
-    <div class="dial"><label for="wi-spend">yearly spend</label>
-      <span class="dval num" id="wi-spend-v"></span>
-      <input id="wi-spend" type="range" min="0" max="{{ wi.max_si }}" step="1" value="{{ wi.def_si }}"></div>
-    <div class="dial"><label for="wi-growth">real growth</label>
-      <span class="dval num" id="wi-growth-v"></span>
-      <input id="wi-growth" type="range" min="0" max="{{ wi.max_gi }}" step="1" value="{{ wi.def_gi }}"></div>
+  <div class="wi-hero num">
+    <div class="wv-big" id="wi-years"></div>
+    <div class="herolab">to the target, at the current dials</div>
+    <p class="coastline" id="wi-coast"></p>
+    <p class="wi-quiet">target <b id="wi-target"></b> · <b id="wi-gap"></b> · <b id="wi-pct"></b> of the way</p>
   </div>
-  <div class="wi-readout num">
-    <div class="wr"><div class="wv" id="wi-target"></div><div class="wl">the target at these dials</div></div>
-    <div class="wr"><div class="wv" id="wi-gap"></div><div class="wl">from today's {{ wi.liquid }} liquid</div></div>
-    <div class="wr"><div class="wv" id="wi-pct"></div><div class="wl">of the way there</div></div>
-    <div class="wr"><div class="wv" id="wi-years"></div><div class="wl">to reach it, at these dials</div></div>
-    <button id="wi-reset" class="themebtn" type="button">↺ reset to your numbers</button>
-  </div>
-  <div id="wi-chart" class="chart" role="img"
-       aria-label="Hypothetical projection of liquid net worth toward the dialed target"></div>
-  <p class="wi-formula">{{ wi.formula }}</p>
+  <details class="wi-fold" id="wi-fold" open>
+    <summary><span class="ck">Play with it · what-if, not advice</span></summary>
+    <div class="dials">
+      <div class="dial"><label for="wi-rate">withdrawal rate</label>
+        <span class="dval num" id="wi-rate-v"></span>
+        <input id="wi-rate" type="range" min="0" max="{{ wi.max_ri }}" step="1" value="{{ wi.def_ri }}"></div>
+      <div class="dial"><label for="wi-spend">yearly spend</label>
+        <span class="dval num" id="wi-spend-v"></span>
+        <input id="wi-spend" type="range" min="0" max="{{ wi.max_si }}" step="1" value="{{ wi.def_si }}"></div>
+      <div class="dial"><label for="wi-growth">real growth</label>
+        <span class="dval num" id="wi-growth-v"></span>
+        <input id="wi-growth" type="range" min="0" max="{{ wi.max_gi }}" step="1" value="{{ wi.def_gi }}"></div>
+    </div>
+    <div class="wi-actions"><button id="wi-reset" class="themebtn" type="button">↺ reset to your numbers</button></div>
+    <div id="wi-chart" class="chart" role="img"
+         aria-label="Hypothetical projection of liquid net worth toward the dialed target"></div>
+  </details>
+  <details class="wi-how"><summary>How it works</summary>
+  <p class="wi-formula">{{ wi.formula }}</p></details>
   </div>
   {% endif %}
   {% endif %}
@@ -1519,12 +1650,12 @@ try { var t = localStorage.getItem('sara-home-theme');
   {% else %}
   <p class="heromini num">{{ edu.value }} <span class="of">{{ edu.of }}</span></p>
   {% if edu.fill is not none %}
-  <div class="barwrap"><div class="track gold"><span class="fill gold" style="width:{{ edu.fill }}%"></span></div></div>
+  <div class="barwrap"><div class="track edu"><span class="fill edu" style="width:{{ edu.fill }}%"></span></div></div>
   <div class="barnotes num"><span>{{ edu.val_lbl }}</span><span>{{ edu.pct }} of the target</span></div>
   {% else %}
   <div class="barnotes num" style="margin-top:8px"><span>{{ edu.val_lbl }}</span></div>
   {% endif %}
-  {% for k in edu.perkid %}{{ meterrow(k.name, k.width, k.amt, gold=true) }}{% endfor %}
+  {% for k in edu.perkid %}{{ meterrow(k.name, k.width, k.amt, edu=true) }}{% endfor %}
   {% if edu.nudge %}<div class="nudge">{{ edu.nudge }}</div>{% endif %}
   {% if edu.foot %}<p class="goalfoot">{{ edu.foot }}</p>{% endif %}
   {% endif %}
@@ -1561,15 +1692,11 @@ try { var t = localStorage.getItem('sara-home-theme');
 
 <div class="grid {{ 'g-chesh' if env_rows else 'g-solo' }}">
 <section class="card">
-  {{ cardhead(ch.title, 'Money in vs money out — the monthly review closes the book.', ch.window) }}
+  {{ cardhead(ch.title, "The month's cheshbon — the monthly review closes the book.", ch.window) }}
   <div class="statrow num">
     <div class="stat"><div class="l">in</div><div class="v">{{ ch.inc }}</div></div>
     <div class="stat"><div class="l">out</div><div class="v">{{ ch.exp }}</div></div>
     <div class="stat"><div class="l">net</div><div class="v {{ ch.net_cls }}">{{ ch.net }}</div></div>
-    {% if ch.closed %}
-    <div class="stat closed"><div class="l">{{ ch.closed.month }}, closed</div>
-    <div class="v {{ ch.closed.cls }}">{{ ch.closed.net }}</div></div>
-    {% endif %}
   </div>
   {% if ch.ribbon %}
   <div class="ribbon" role="img" aria-label="{{ ch.ribbon_aria }}">
@@ -1597,15 +1724,15 @@ try { var t = localStorage.getItem('sara-home-theme');
   names its window and is verified against the ledger · Sara keeps the books</p>
   {% if paper %}
   <p>Illiquid paper (not counted anywhere above): <b class="num">{{ paper }}</b> — it
-  enters the plan only when it converts, per THESIS.md.</p>
+  enters the plan only when it converts, per the household thesis.</p>
   {% endif %}
   {% if unpriced %}
   <p>{{ unpriced|length }} holding{{ 's' if unpriced|length != 1 }} excluded —
   no USD price on file:
   {% for a in unpriced %}<code>{{ a }}</code>{{ ', ' if not loop.last }}{% endfor %}{{ '…' if unpriced_more }}</p>
   {% endif %}
-  <p>≈ marks estimates and projections. Generated by tools/home.py —
-  regenerate with <code>tools/run home.py</code>. The dense brief:
+  <p>≈ marks estimates and projections.</p>
+  <p>Regenerate with <code>tools/run home.py</code> · the dense brief:
   <a href="dashboard.html">dashboard.html</a> · the microscope:
   <code>scripts/dashboard.sh</code> (fava).</p>
 </footer>
@@ -1633,48 +1760,40 @@ def _pace_ctx(pace: Pace) -> dict:
         return {"empty": True, "window": cur_lbl,
                 "sub": "Spending vs a typical month."}
 
-    chips = []
     if pace.typical is not None and pace.left is not None:
         sub = (f"typical = the median path of your last "
                f"{len(pace.typical_window)} full months "
                f"({window_label(pace.typical_window)}).")
         if pace.fallback:
             d = round(pace.spent - pace.typical)
-            hero = delta0(pace.spent - pace.typical) if d else "on pace"
+            hero = (f"{m0(abs(d))} {'under' if d < 0 else 'over'}"
+                    if d else "on pace")
             hero_cls = "good" if d < 0 else ("bad" if d > 0 else "")
-            herolab = (f"vs a typical month — {month_full} closed at "
+            herolab = (f"a typical month's total — {month_full} closed at "
                        f"{m0(pace.spent)} against a typical {m0(pace.typical)}")
         elif pace.pace_delta is not None:
             d = round(pace.pace_delta)
-            hero = delta0(pace.pace_delta) if d else "on pace"
+            hero = (f"{m0(abs(d))} {'under' if d < 0 else 'over'}"
+                    if d else "on pace")
             hero_cls = "good" if d < 0 else ("bad" if d > 0 else "")
-            herolab = (f"{'under' if d <= 0 else 'over'} the typical path "
-                       f"through {month_name} {pace.through_day} — a typical "
-                       f"{month_full} runs {m0(pace.typical)}")
+            herolab = (("with" if d == 0 else "") +
+                       f" the typical path through {month_name} "
+                       f"{pace.through_day} (≈{m0(pace.typical_by_now or 0)} "
+                       f"by now) — a typical {month_full} runs "
+                       f"{m0(pace.typical)}").strip()
         else:  # a month with a baseline but no postings yet
             hero, hero_cls = m0(pace.left), ""
             herolab = (f"left of a typical {month_full} ({m0(pace.typical)}) — "
                        f"nothing spent on record yet")
-        if pace.left >= 0:
-            chips.append(chip(Markup("<b>{}</b> left before this becomes an "
-                                     "unusual {}").format(m0(pace.left), month_full)))
-        else:
-            chips.append(chip(Markup("<b>{}</b> past a typical {}'s total")
-                              .format(m0(-pace.left), month_full), "bad"))
-        if pace.through_day and pace.typical_by_now is not None:
-            chips.append(chip(Markup("spent <b>{}</b> · typical by now ≈<b>{}</b>")
-                              .format(m0(pace.spent), m0(pace.typical_by_now))))
     else:
         sub = "no typical-month baseline yet."
         hero, hero_cls = m0(pace.spent), ""
         herolab = (f"spent so far — {MIN_FULL_MONTHS}+ full months unlock the "
                    f"typical-month line")
-        if pace.through_day:
-            chips.append(chip(Markup("spent <b>{}</b> so far").format(m0(pace.spent))))
 
     return {
         "empty": False, "window": window, "sub": sub,
-        "hero": hero, "hero_cls": hero_cls, "herolab": herolab, "chips": chips,
+        "hero": hero, "hero_cls": hero_cls, "herolab": herolab,
         "lag_note": ("" if pace.daily_cum else
                      f"No {month_name} activity imported yet — the solid line "
                      f"starts with the next import."),
@@ -1690,7 +1809,7 @@ def _kpi_ctx(liquid: float, asof: date | None, pace: Pace,
              net_mtd: float, wa: Walkaway | None) -> list[dict]:
     """The hero strip: the four numbers the household always sees first,
     each with its tiny window label. '—' + a reason, never a fake zero."""
-    ledger_lbl = f"ledger through {mon_d(asof)}" if asof else "ledger empty"
+    ledger_lbl = f"through {mon_d(asof)}" if asof else "ledger empty"
     month_name = MONTH_ABBR[pace.cur[1]]
     tiles = [{"k": "Liquid net worth", "v": m0(liquid), "sub": ledger_lbl,
               "cls": ""}]
@@ -1711,7 +1830,8 @@ def _kpi_ctx(liquid: float, asof: date | None, pace: Pace,
     if wa:
         approx = "" if wa.src == "set" else "≈"
         tiles.append({"k": "Walk-away", "v": pct_display(wa.pct),
-                      "sub": f"of {approx}{m0(wa.target)} · liquid only",
+                      "sub": (f"of {approx}{m0(wa.target)} — the pot where "
+                              f"work turns optional"),
                       "cls": ""})
     else:
         tiles.append({"k": "Walk-away", "v": "—",
@@ -1774,7 +1894,7 @@ def _machine_ctx(rows: list[dict]) -> dict:
     if broken:
         bits.append(f"{broken} need{'s' if broken == 1 else ''} a look")
     return {"rows": out,
-            "sub": ("Standing orders — paychecks, auto-invests, floors — "
+            "sub": ("The machine — paychecks, auto-invests, and floors, "
                     "checked against the ledger."),
             "window": "last 2 cycles",
             "summary": " · ".join(bits) if n else ""}
@@ -1786,20 +1906,27 @@ def _walkaway_ctx(wa: Walkaway | None, liquid: float,
         return None
     if wa.src == "set":
         hero = m0(wa.target)
-        srcline = Markup("your set target — <code>retirement_target</code> "
-                         "in facts/goals")
+        srcline = "the target you set"
     else:
         hero = f"≈{m0(wa.target)}"
-        srcline = (f"{WALKAWAY_LO}× your true yearly spend — up to "
+        srcline = (f"{WALKAWAY_LO}× your true yearly burn — up to "
                    f"≈{m0(wa.hi or 0)} at the safer {WALKAWAY_HI}×")
     foot_bits = []
     if wa.baseline:
         b = wa.baseline
-        foot_bits.append(f"True spend baseline: {m0(b.monthly)}/mo — median of "
-                         f"{len(b.months)} full months ({window_label(b.months)}).")
+        foot_bits.append(f"True burn: ≈{m0(b.burn)}/mo — what the last "
+                         f"{len(b.months)} full months actually cost "
+                         f"({window_label(b.months)}).")
+        if b.drift_pct is not None:
+            d = round(b.drift_pct)
+            trend = ("held roughly flat" if d == 0 else
+                     f"drifted {'+' if d > 0 else MINUS}{abs(d)}%")
+            foot_bits.append(f"Year over year it has {trend} "
+                             f"vs the 12 months before.")
         if wa.src == "set" and wa.lo:
-            foot_bits.append(f"For reference, spend math alone says ≈{m0(wa.lo)}–≈{m0(wa.hi or 0)} "
-                             f"({WALKAWAY_LO}–{WALKAWAY_HI}× true yearly spend).")
+            foot_bits.append(f"For reference, burn math alone says "
+                             f"≈{m0(wa.lo)}–≈{m0(wa.hi or 0)} "
+                             f"({WALKAWAY_LO}–{WALKAWAY_HI}× the yearly burn).")
     shadow_left = shadow_note = None
     if wa.paper > 0:
         shadow_left = f"{max(0.0, min(100.0, wa.paper_pct)):.1f}"
@@ -1816,7 +1943,7 @@ def _walkaway_ctx(wa: Walkaway | None, liquid: float,
     return {
         "hero": hero, "srcline": srcline, "fill": f"{max(0.0, min(100.0, wa.pct)):.1f}",
         "liquid": m0(liquid),
-        "asof": (f"ledger through {mon_d(asof)}" if asof else "ledger empty"),
+        "window": (f"through {mon_d(asof)}" if asof else "ledger empty"),
         "pct": pct_display(wa.pct), "shadow_left": shadow_left,
         "shadow_note": shadow_note, "foot": " ".join(foot_bits),
     }
@@ -1864,10 +1991,8 @@ def _education_ctx(accounts: list[EduAccount], pace: float | None,
                            "date to forecast.")
     else:
         pace_bit = f" Contributions are running ≈{m0(pace)}/mo." if pace else ""
-        ctx["nudge"] = Markup(
-            "No target set yet — <code>education_target</code> in facts/goals "
-            "is the blank to fill. Pick the number and this card grows a "
-            "finish line.{}").format(pace_bit)
+        ctx["nudge"] = (f"No target set yet — pick the college number with "
+                        f"Sara and this card grows a finish line.{pace_bit}")
     if len(accounts) > 1:  # the per-kid-bar pattern, when a second 529 appears
         mx = max(a.value for a in accounts) or 1.0
         ctx["perkid"] = [
@@ -1923,7 +2048,7 @@ def _networth_ctx(series: list[dict], baseline_cut: int, liquid: float,
         "sub": " ".join(notes),
         "window": f"{len(series)} month-ends" if len(series) >= 2 else "",
         "liquid": m0(liquid),
-        "asof": (f"ledger through {mon_d(asof)}" if asof else "no ledger yet"),
+        "asof": (f"through {mon_d(asof)}" if asof else "no ledger yet"),
         "delta": delta, "has_chart": len(series) >= 2,
         "table_rows": [(mon_yr((p["d"].year, p["d"].month)), m0(p["v"]),
                         basis(i, p)) for i, p in enumerate(series)],
@@ -1963,7 +2088,7 @@ def _cheshbon_ctx(pace: Pace) -> dict:
         table_rows = [(c.replace("Expenses:", "") or "Other", m0(v))
                       for c, v in cats]
     return {
-        "title": f"{MONTH_FULL[ym[1]]} cheshbon",
+        "title": f"{MONTH_FULL[ym[1]]} money in / out",
         "window": f"{mon_yr(ym)} · {through_lbl}",
         "net_raw": net,   # the KPI strip reuses this — one query, one truth
         "inc": m0(inc), "exp": m0(exp), "net": delta0(net),
@@ -2089,7 +2214,7 @@ def build_page(now: datetime | None = None) -> str:
     wig = wi_ctx = None
     if wa and wa.baseline:
         save = net_savings_baseline(wa.baseline.months)
-        wig = whatif_grid(liquid, wa.baseline, save)
+        wig = whatif_grid(liquid, wa.baseline, save, today)
         b = wa.baseline
         wi_ctx = {
             "max_ri": wig["nRates"] - 1, "max_si": wig["nSpends"] - 1,
@@ -2097,13 +2222,17 @@ def build_page(now: datetime | None = None) -> str:
             "def_ri": wig["def"]["ri"], "def_si": wig["def"]["si"],
             "def_gi": wig["def"]["gi"],
             "liquid": m0(liquid),
-            "formula": (f"How it works: target = a year of spending ÷ the "
-                        f"withdrawal rate. The curve compounds today's liquid "
-                        f"({m0(liquid)}) monthly at the chosen real growth and "
-                        f"adds your median net savings, ≈{m0(save)}/mo (median "
-                        f"of {len(b.months)} full months, "
-                        f"{window_label(b.months)}). Hypothetical only — "
-                        f"taxes, raises, and market reality not included; the "
+            "formula": (f"Target = a year of spending ÷ the withdrawal rate. "
+                        f"The spend dial starts at your true burn, "
+                        f"≈{m0(b.burn * 12)}/yr — what the last "
+                        f"{len(b.months)} full months actually cost, "
+                        f"annualized. The solid curve compounds today's "
+                        f"liquid ({m0(liquid)}) monthly at the chosen real "
+                        f"growth and adds your median net savings, "
+                        f"≈{m0(save)}/mo ({len(b.months)} full months, "
+                        f"{window_label(b.months)}); the dotted twin saves "
+                        f"$0 — growth alone. Hypothetical only — taxes, "
+                        f"raises, and market reality not included; the "
                         f"thesis, not this toy, sets policy."),
         }
     edu_accounts = education_accounts()
@@ -2151,9 +2280,8 @@ def build_page(now: datetime | None = None) -> str:
         nw=_networth_ctx(series, baseline_cut, liquid, asof),
         ch=ch,
         env_rows=_envelope_rows(project_envelopes(goals)),
-        projects_sub=Markup("Tagged spending vs its envelope — budgets live in "
-                            "facts/goals (<code>project_budget_*</code>). "
-                            "All-time per tag."),
+        projects_sub=("Each project's tagged spending against the budget "
+                      "set for it — all-time totals."),
         paper=m0(paper) if paper else None,
         unpriced=[a for a, _ in unpriced[:3]], unpriced_more=len(unpriced) > 3,
         css=Markup(css), island=Markup(island_json),

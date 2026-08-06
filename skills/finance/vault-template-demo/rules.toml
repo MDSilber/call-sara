@@ -148,6 +148,14 @@ note = "furniture & house stuff"
 ignore_payee_regex = "^(ATM |WITHDRAWAL|ZELLE|VENMO|CHECK )"
 ignore_account_regex = "Childcare|Cash|Uncategorized|Investment-Loss|Taxes|Insurance"
 
+# --- Cash APY declarations — the idle-cash-drag check ----------------------
+# Rates as each bank states them; the checks flag any declared account
+# holding >= $10k at >= 1.0 point under the hurdle (drag = balance x gap).
+[cash_apy]
+cash_hurdle_apy = 3.75                        # HYSA/money-market territory
+"Assets:US:Chase:Checking4321" = 0.05         # big-bank checking
+"Assets:US:Ally:Savings9876" = 3.70           # already at the hurdle
+
 # ---------------------------------------------------------------------------
 # The machine — standing money movements (home page "The machine" panel +
 # the `lanes` check). See the plain template's rules.toml for field docs.

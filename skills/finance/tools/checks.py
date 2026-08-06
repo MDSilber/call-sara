@@ -960,6 +960,64 @@ def projected_shortfall():
     return out
 
 
+# ---------------------------------------------------------------- cash drag
+CASH_DRAG_MIN_BALANCE = 10_000  # under this, moving the money earns lunch, not a finding
+CASH_DRAG_MIN_GAP_PTS = 1.0     # a declared APY a full point under the hurdle is drag;
+                                # closer than that is rate noise, not a decision
+
+
+def _apy(value):
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None  # a typo'd rate must never crash a read-only tool
+
+
+def cash_drag():
+    """Idle-cash drag: declared APYs vs the household's hurdle rate.
+
+    Wholly opt-in and silent until the vault declares rates: rules.toml
+    [cash_apy] maps account -> its stated APY (from the institution's own
+    page — never guessed), and `cash_hurdle_apy` (facts/goals yaml, or a
+    key inside [cash_apy]) names what parked cash SHOULD earn. Any declared
+    account holding >= $10k at >= 1.0 point under the hurdle emits a watch:
+    the drag is balance x gap, in $/yr. When the money moves, a dated note's
+    `- [x] ... realized $N/yr` line turns the fix into a counted win.
+    """
+    conf = rules().get("cash_apy", {})
+    declared = {str(k): _apy(v) for k, v in conf.items()
+                if k != "cash_hurdle_apy"}
+    hurdle = _apy(goals().get("cash_hurdle_apy"))
+    if hurdle is None:
+        hurdle = _apy(conf.get("cash_hurdle_apy"))
+    if hurdle is None or not declared:
+        return []
+    out = []
+    for account, apy in sorted(declared.items()):
+        if apy is None:
+            continue
+        gap = hurdle - apy
+        if gap < CASH_DRAG_MIN_GAP_PTS:
+            continue
+        rows = query(f"SELECT sum(number) AS v WHERE account = "
+                     f"'{bql_str(account)}' AND currency = 'USD'")
+        bal = amount(rows[0].get("v")) if rows else 0.0
+        if bal < CASH_DRAG_MIN_BALANCE:
+            continue
+        drag = bal * gap / 100.0
+        out.append(finding(
+            "cash-drag", "watch",
+            f"Idle-cash drag ~{money(drag)}/yr: {account} earns {apy:g}% "
+            f"vs the {hurdle:g}% hurdle",
+            f"Move the {money(bal)} earning {apy:g}% to a {hurdle:g}%-class "
+            f"home and keep ~{money(drag)}/yr. That's HYSA / money market / "
+            f"T-bills per THESIS.md — or update rules.toml [cash_apy] if the "
+            f"rate changed. Once it moves, log `- [x] moved "
+            f"{account.split(':')[-1]} cash — realized {money(drag)}/yr` in "
+            f"a dated note so it counts as a win."))
+    return out
+
+
 def milestones():
     """Fire once when liquid net worth first crosses a configured milestone.
 
@@ -1012,7 +1070,7 @@ def _record_crossed(key, values):
 
 ALL = [concentration, deadlines, anomaly, subscriptions, reconciliation, coverage,
        review_queue, goals_status, milestones, fixed_balances, lanes,
-       projected_shortfall]
+       projected_shortfall, cash_drag]
 
 
 def run_all():

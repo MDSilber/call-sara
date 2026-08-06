@@ -116,6 +116,20 @@ ignore_payee_regex = "^(ATM |WITHDRAWAL|ZELLE|VENMO|CHECK )"
 ignore_account_regex = "Childcare|Cash|Uncategorized|Investment-Loss|Taxes|Insurance"
 
 # ---------------------------------------------------------------------------
+# Cash APY declarations (optional) — the idle-cash-drag check.
+# Declare what each cash account ACTUALLY earns (the rate from the bank's own
+# page — never guessed), plus the hurdle rate parked cash should earn. Then
+# tools/run_checks.py flags any declared account holding >= $10k at >= 1.0
+# point under the hurdle: "idle-cash drag ~$N/yr" (balance x gap). Silent
+# until rates are declared. The hurdle may live here or as `cash_hurdle_apy`
+# in the facts/goals yaml block.
+#
+# [cash_apy]
+# cash_hurdle_apy = 3.9                    # what parked cash should earn
+# "Assets:US:Ally:Checking1234" = 0.10     # each rate as the bank states it
+# "Assets:US:Ally:Savings9876" = 3.60
+
+# ---------------------------------------------------------------------------
 # The machine — standing money movements Sara watches on the home page and
 # in the checks (the `lanes` check → findings; the "The machine" panel on
 # reports/home.html renders the same detector, so they always agree).
