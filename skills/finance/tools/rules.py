@@ -64,15 +64,23 @@ def chase_category(chase_cat):
     return rules().get("chase_categories", {}).get((chase_cat or "").strip())
 
 
+def entry_by_acctid(acctid):
+    """The full [[accounts]] entry for an OFX <ACCTID>, matched on trailing
+    digits (last4) — None if no entry matches. inbox.py reads institution
+    and owner off the entry to build a documents/ filing path."""
+    tail = re.sub(r"\D", "", acctid or "")
+    for a in rules().get("accounts", []):
+        last4 = re.sub(r"\D", "", str(a.get("last4", "")))
+        if last4 and tail.endswith(last4):
+            return a
+    return None
+
+
 def route_by_acctid(acctid):
     """Ledger account for an OFX <ACCTID>, matched on trailing digits (last4).
 
     Returns None if no [[accounts]] entry matches — caller must then take the
     account from the command line.
     """
-    tail = re.sub(r"\D", "", acctid or "")
-    for a in rules().get("accounts", []):
-        last4 = re.sub(r"\D", "", str(a.get("last4", "")))
-        if last4 and tail.endswith(last4):
-            return a["ledger_account"]
-    return None
+    entry = entry_by_acctid(acctid)
+    return entry["ledger_account"] if entry else None

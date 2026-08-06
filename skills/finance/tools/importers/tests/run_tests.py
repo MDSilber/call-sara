@@ -85,8 +85,8 @@ def make_vault(tmp, name="vault"):
     return vault, False
 
 
-def run(vault, tool, *args):
-    env = {**os.environ, "FINANCE_VAULT": str(vault)}
+def run(vault, tool, *args, extra_env=None):
+    env = {**os.environ, "FINANCE_VAULT": str(vault), **(extra_env or {})}
     return subprocess.run([sys.executable, str(TOOLS / tool), *args],
                           capture_output=True, text=True, env=env)
 
@@ -441,6 +441,61 @@ def main():
         bad = [(a, amount(*a), want) for a, want in table if amount(*a) != want]
         check("M12: amount() USD-math table (units are never dollars)",
               not bad, bad)
+
+        # calc.py: arithmetic through code — Decimal-exact, strict AST allowlist
+        r = run(vault, "calc.py", "0.1 + 0.2")
+        check("calc: 0.1 + 0.2 is exactly 0.3",
+              r.returncode == 0
+              and r.stdout.splitlines()[:2] == ["0.3", "money: $0.30"],
+              r.stdout + r.stderr)
+        r = run(vault, "calc.py", "123456789012345678901234567890 + 1")
+        check("calc: big integers stay exact",
+              r.returncode == 0
+              and r.stdout.splitlines()[0] == "123456789012345678901234567891",
+              r.stdout + r.stderr)
+        r = run(vault, "calc.py", "7300.50 / 12")
+        check("calc: decimal division (608.375, money $608.38)",
+              r.returncode == 0
+              and r.stdout.splitlines()[:2] == ["608.375", "money: $608.38"],
+              r.stdout + r.stderr)
+        r = run(vault, "calc.py", "round(2.5)")
+        check("calc: round() is half-up (money convention)",
+              r.returncode == 0 and r.stdout.splitlines()[0] == "3", r.stdout)
+        for expr, why in (("__import__('os')", "imports"), ("a + 1", "names"),
+                          ("(1).__class__", "dunder attributes"),
+                          ("'x' * 3", "strings")):
+            r = run(vault, "calc.py", expr)
+            check(f"calc: rejects {why}",
+                  r.returncode != 0 and "refused" in r.stderr
+                  and "Traceback" not in r.stderr, r.stderr)
+        r = run(vault, "calc.py", "1 / 0")
+        check("calc: division by zero is a clean error",
+              r.returncode != 0 and "division by zero" in r.stderr
+              and "Traceback" not in r.stderr, r.stderr)
+
+        # crosscheck.py: dual-computation gate — 3/3 agree on the scratch
+        # ledger; a skewed independent path (test seam) must refuse loudly
+        if has_venv:
+            r = run(vault, "crosscheck.py")
+            check("crosscheck: clean ledger, 3/3 agree",
+                  r.returncode == 0 and "cross-checks: 3/3 agree" in r.stdout,
+                  r.stdout + r.stderr)
+            for name in ("liquid", "spend", "assets"):
+                r = run(vault, "crosscheck.py",
+                        extra_env={"FINANCE_CROSSCHECK_INJECT": f"{name}:123.45"})
+                check(f"crosscheck: injected {name} skew refuses (exit 2)",
+                      r.returncode == 2 and "DUAL-COMPUTATION MISMATCH" in r.stderr,
+                      r.stdout + r.stderr)
+            r = run(vault, "reports.py",
+                    extra_env={"FINANCE_CROSSCHECK_INJECT": "liquid:0.02"})
+            check("crosscheck: reports.py refuses to emit on a 2-cent mismatch",
+                  r.returncode == 2 and "DUAL-COMPUTATION MISMATCH" in r.stderr
+                  and not (vault / "reports" / "net-worth.md").exists(),
+                  r.stdout + r.stderr)
+            r = run(vault, "reports.py")
+            check("crosscheck: clean reports.py run emits the 3/3 line",
+                  r.returncode == 0 and "cross-checks: 3/3 agree" in r.stdout,
+                  r.stdout + r.stderr)
 
     print(f"\n{'ALL PASS' if not FAILS else f'{len(FAILS)} FAILED: ' + ', '.join(FAILS)}")
     sys.exit(1 if FAILS else 0)

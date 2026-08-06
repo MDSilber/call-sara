@@ -7,6 +7,8 @@
 # --pretty generates and opens the STATIC dense brief (reports/dashboard.html,
 # via tools/webview.py); --home generates and opens Sara Home
 # (reports/home.html, via tools/home.py) — the spouse-legible morning page.
+# --digest generates and opens Sara's weekly letter (reports/digest.html +
+# digest.txt, via tools/digest.py) — the email-shaped 20-second read.
 # The static pages need no server: plain self-contained files you can leave
 # open or print.
 #
@@ -16,7 +18,7 @@
 # isn't guessable-by-default. While the server runs, ANY page open in a
 # local browser could try to reach it — close the dashboard tab when done
 # and Ctrl-C the server rather than leaving it up.
-#   scripts/dashboard.sh [--vault <dir>] [--port <n>] [--writable] [--pretty] [--home]
+#   scripts/dashboard.sh [--vault <dir>] [--port <n>] [--writable] [--pretty] [--home] [--digest]
 #
 # fava-dashboards caveat: the Dashboards page renders every panel through a
 # POST endpoint, which fava's read-only mode rejects (verified: the page
@@ -32,6 +34,7 @@ PORT=""
 WRITABLE=0
 PRETTY=0
 HOME_PAGE=0
+DIGEST=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --vault) VAULT="$2"; shift 2 ;;
@@ -39,7 +42,8 @@ while [ $# -gt 0 ]; do
     --writable) WRITABLE=1; shift ;;
     --pretty) PRETTY=1; shift ;;
     --home) HOME_PAGE=1; shift ;;
-    *) echo "usage: dashboard.sh [--vault <dir>] [--port <n>] [--writable] [--pretty] [--home]" >&2; exit 1 ;;
+    --digest) DIGEST=1; shift ;;
+    *) echo "usage: dashboard.sh [--vault <dir>] [--port <n>] [--writable] [--pretty] [--home] [--digest]" >&2; exit 1 ;;
   esac
 done
 if [ -z "$VAULT" ] && [ -f "$HOME/.finance-vault" ]; then
@@ -55,12 +59,16 @@ if [ -z "$VAULT" ] && [ -f "$HOME/.finance-vault" ]; then
 fi
 VAULT="${VAULT:-$HOME/Finance}"
 
-# --pretty / --home: the static views — generate the page and open it as a
-# plain file. No server, no port, nothing to Ctrl-C.
-if [ "$PRETTY" = 1 ] || [ "$HOME_PAGE" = 1 ]; then
+# --pretty / --home / --digest: the static views — generate the page and
+# open it as a plain file. No server, no port, nothing to Ctrl-C.
+if [ "$PRETTY" = 1 ] || [ "$HOME_PAGE" = 1 ] || [ "$DIGEST" = 1 ]; then
   PY="$VAULT/.venv/bin/python"
   [ -x "$PY" ] || { echo "❌ no vault venv at $PY — is the vault set up?" >&2; exit 1; }
-  if [ "$HOME_PAGE" = 1 ]; then
+  if [ "$DIGEST" = 1 ]; then
+    FINANCE_VAULT="$VAULT" "$PY" "$HERE/../tools/digest.py"
+    PAGE="$VAULT/reports/digest.html"
+    echo "✓ weekly letter at $PAGE  (text twin: $VAULT/reports/digest.txt — delivery is yours: email, text, print)"
+  elif [ "$HOME_PAGE" = 1 ]; then
     FINANCE_VAULT="$VAULT" "$PY" "$HERE/../tools/home.py"
     PAGE="$VAULT/reports/home.html"
     echo "✓ Sara Home at $PAGE  (self-contained file; --pretty is the dense brief, fava the drill-down)"

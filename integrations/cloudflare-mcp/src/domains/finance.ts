@@ -2,11 +2,12 @@
  * Finance domain — the design rule is: computed answers are tools, owner
  * documents are resources, method rides in the domain's ask tool.
  *
- * TOOLS (13, all read-only) answer questions with verified numbers computed
+ * TOOLS (14, all read-only) answer questions with verified numbers computed
  * from the vault's reports/summary.json — the machine-readable twin
  * reports.py emits. Every tool answers with a human-readable block first
  * (window labels and the snapshot stamp always included, staleness called
- * out) and a compact JSON block second.
+ * out) and a compact JSON block second. The one exception to summary-backed:
+ * finance_calc, pure decimal arithmetic that touches no vault data at all.
  *
  * RESOURCES serve the owner's documents verbatim: the written thesis, the
  * findings/summary reports, and fact files under facts/ (allowlisted via
@@ -17,6 +18,7 @@
  */
 import { type McpServer, ResourceTemplate } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { CalcError, evaluate } from "../calc";
 import { SUMMARY_PATH, VaultFetchError, fetchVaultFile, fixtureMode } from "../github";
 import type { Env, Summary } from "../types";
 
@@ -261,6 +263,34 @@ export function registerFinanceDomain(server: McpServer, env: Env): void {
         if (err instanceof SyntaxError) {
           return fail(`${SUMMARY_PATH} is not valid JSON — regenerate the vault's reports.`);
         }
+        throw err;
+      }
+    }
+  );
+
+  // ---------------------------------------------------- pure computation
+  server.registerTool(
+    "finance_calc",
+    {
+      description:
+        "Deterministic arithmetic for money math — use this instead of computing " +
+        "in your head. Decimal-exact. Accepts numbers, + - * / % **, parentheses, " +
+        "and min/max/round/abs; anything else is refused (round is half-up, the " +
+        "money convention). Returns the exact value and a money-rounded rendering.",
+      inputSchema: z.object({
+        expression: z
+          .string()
+          .min(1)
+          .max(1000)
+          .describe("Arithmetic expression, e.g. '(8250 - 7789.55) / 7789.55 * 100'."),
+      }),
+    },
+    async ({ expression }) => {
+      try {
+        const { exact, money } = evaluate(expression);
+        return reply([exact, `money: ${money}`], { expression, exact, money });
+      } catch (err) {
+        if (err instanceof CalcError) return fail(`calc: ${err.message}`);
         throw err;
       }
     }

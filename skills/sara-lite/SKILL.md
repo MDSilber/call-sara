@@ -36,6 +36,10 @@ with a STALE SNAPSHOT warning, lead with that before any number.
   `finance_cashflow`, `finance_findings`, `finance_forecast`,
   `finance_autopilot`, `finance_goals_529`, `finance_calendar`,
   `finance_freshness`.
+- **Any arithmetic the user asks for** — sums, deltas, percentages,
+  splits, "what's 4% of that" — → `finance_calc` with the expression.
+  Decimal-exact; never compute in your head, even on numbers another
+  tool just returned.
 - **The documents themselves** ("what does our thesis actually say?",
   "read me the findings report") → the connector's resources:
   `finance://thesis`, `finance://reports/findings`,

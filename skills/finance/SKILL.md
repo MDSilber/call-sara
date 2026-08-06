@@ -185,7 +185,12 @@ session starts already knowing them.
 - `tools/` — `run` (wrapper), `query.py`, `reports.py`, `run_checks.py`,
   `checks.py`, `forecast.py`, `webview.py` (renders the static
   `reports/dashboard.html`), `home.py` (renders `reports/home.html` —
-  Sara Home, the spouse-legible morning page), `summary.py` (writes
+  Sara Home, the spouse-legible morning page), `digest.py` (writes
+  `reports/digest.html` + `digest.txt` — Sara's weekly letter, an
+  email-shaped 20-second read for both partners; generate-only, the
+  household chooses delivery), `inbox.py` (drains `$VAULT/inbox/`, the
+  drop zone: identifies each file, files known statement exports, prints
+  the import commands — dry-run default, `--write` applies), `summary.py` (writes
   `reports/summary.json`, the machine-readable twin of the reports —
   what the optional phone connector serves; `integrations/cloudflare-mcp/`
   in this repo), `recategorize.py`,
@@ -208,6 +213,9 @@ session starts already knowing them.
   panels POST; the script prints the hint) — `--writable` enables it
   for a session. `--pretty` skips the server and opens the static
   glanceable page instead; `--home` opens Sara Home, the beautiful
-  morning page for humans. If tabs error, `doctor.sh` names the missing
-  piece.
+  morning page for humans; `--digest` opens the weekly letter. If tabs
+  error, `doctor.sh` names the missing piece.
 - `scripts/file_downloads.py` — identify / dedupe / rename / file downloaded PDFs.
+- `scripts/inbox-watch.plist.example` — launchd template that runs
+  `inbox.py` when something lands in the drop zone (documented inside;
+  never auto-installed).

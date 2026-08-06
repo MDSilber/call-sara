@@ -118,6 +118,31 @@ def deadlines():
     return out
 
 
+# -------------------------------------------------------------------- inbox
+def inbox():
+    """The drop zone must drain: anything sitting in inbox/ is a document
+    waiting to be identified and filed (tools/run inbox.py). A watch, so
+    the needs-you queue and the phone surface both nag until it's empty."""
+    box = VAULT / "inbox"
+    if not box.is_dir():
+        return []
+    files = [p for p in sorted(box.iterdir())
+             if p.is_file() and not p.name.startswith(".")]
+    if not files:
+        return []
+    oldest = min(datetime.fromtimestamp(p.stat().st_mtime).date() for p in files)
+    age = (date.today() - oldest).days
+    n = len(files)
+    names = ", ".join(p.name for p in files[:3]) + (" …" if n > 3 else "")
+    waiting = ("dropped today" if age <= 0
+               else f"oldest has waited {age} day{'s' if age != 1 else ''}")
+    return [finding(
+        "inbox", "watch",
+        f"{n} document{'s' if n != 1 else ''} waiting in inbox/ to be filed",
+        f"{names} — {waiting}. Run `tools/run inbox.py` to identify and file "
+        f"them (statement exports file themselves; PDFs get a reading eye).")]
+
+
 # ------------------------------------------------------------------ anomaly
 # Category-spike tuning (the second half of anomaly()):
 SPIKE_FACTOR = 2             # a month has to DOUBLE its own typical spend before it's a review
@@ -1094,8 +1119,8 @@ def allocation_drift():
     return out
 
 
-ALL = [concentration, deadlines, anomaly, subscriptions, reconciliation, coverage,
-       review_queue, goals_status, milestones, fixed_balances, lanes,
+ALL = [concentration, deadlines, inbox, anomaly, subscriptions, reconciliation,
+       coverage, review_queue, goals_status, milestones, fixed_balances, lanes,
        projected_shortfall, cash_drag, allocation_drift]
 
 

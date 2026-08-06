@@ -4,7 +4,8 @@
 Run:    tools/run reports.py
 Writes: reports/net-worth.md, reports/spend-by-month.md, reports/upcoming.md,
         reports/dashboard.html (via webview.py), reports/home.html (via home.py),
-        reports/summary.json (via summary.py — the machine-readable twin)
+        reports/summary.json (via summary.py — the machine-readable twin),
+        reports/digest.{html,txt} (via digest.py — Sara's weekly letter)
 Arithmetic is code; the agent reads these files and reasons about them.
 """
 import re
@@ -138,11 +139,14 @@ def upcoming():
 
 
 if __name__ == "__main__":
+    from crosscheck import ensure_crosschecks  # noqa: E402 — the dual-computation gate
+    ensure_crosschecks()  # refuses (exit 2) before anything is written
     REPORTS.mkdir(exist_ok=True)
     from webview import dashboard  # noqa: E402 — imported lazily: webview reuses this module's math
     from home import home  # noqa: E402 — same: home reuses this module + webview
     from summary import summary  # noqa: E402 — same: the machine-readable twin
-    for fn in (net_worth, spend_by_month, upcoming, dashboard, home, summary):
+    from digest import digest  # noqa: E402 — same: the weekly letter reuses home's builders
+    for fn in (net_worth, spend_by_month, upcoming, dashboard, home, summary, digest):
         try:
             fn()
             print(f"ok   {fn.__name__}")

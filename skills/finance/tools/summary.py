@@ -17,6 +17,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from crosscheck import ensure_crosschecks  # noqa: E402
 from vault import (REPORTS, VAULT, amount, dated_bullets, query,  # noqa: E402
                    shadow_currency)
 from reports import liquid_balances, paper_value, spend_matrix  # noqa: E402
@@ -350,6 +351,7 @@ def build_summary(now: datetime | None = None) -> dict:
 
 def summary() -> None:
     """Write reports/summary.json (also called from reports.py's loop)."""
+    ensure_crosschecks()  # dual-computation gate — cached when reports.py already ran it
     REPORTS.mkdir(exist_ok=True)
     payload = json.dumps(build_summary(), indent=1, ensure_ascii=False)
     (REPORTS / "summary.json").write_text(payload + "\n")

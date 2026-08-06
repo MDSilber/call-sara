@@ -123,6 +123,16 @@ if [ -f "$VAULT/ledger/main.beancount" ] && [ -f "$VAULT/CLAUDE.md" ] && [ -f "$
          "python3 -m venv $VAULT/.venv && $VAULT/.venv/bin/pip install beancount beanquery"
   fi
 
+  if [ -d "$VAULT/inbox" ]; then
+    STALE=$(find "$VAULT/inbox" -maxdepth 1 -type f -mtime +7 ! -name '.*' 2>/dev/null | wc -l | tr -d ' ')
+    if [ "${STALE:-0}" -gt 0 ]; then
+      warn "$STALE document(s) sitting in inbox/ for over 7 days" \
+           "tools/run inbox.py identifies and files them — nothing should rot in the inbox"
+    else
+      pass "inbox/ draining (nothing older than 7 days)"
+    fi
+  fi
+
   if [ "$(git -C "$VAULT" config core.hooksPath 2>/dev/null)" = ".githooks" ]; then
     pass "vault git hooks armed (core.hooksPath = .githooks)"
   else

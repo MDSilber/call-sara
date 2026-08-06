@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  inbox-watch — run inbox.py in write mode whenever a file lands in
+  the vault's inbox/ drop zone, so statement exports file themselves and
+  everything else starts nagging (the `inbox` check) within seconds of
+  arriving. A TEMPLATE: nothing installs it for you, and it should stay
+  that way until you've read it.
+
+  Install (three edits, then load):
+    1. Replace __SKILL_DIR__ with this skill's absolute path
+       (the directory holding tools/ and scripts/), and __VAULT__ with
+       the vault's absolute path — e.g.:
+         sed -e "s|__SKILL_DIR__|$HOME/.claude/skills/finance|g" \
+             -e "s|__VAULT__|$HOME/Finance|g" \
+             inbox-watch.plist.example > ~/Library/LaunchAgents/com.callsara.inbox-watch.plist
+    2. Review the result — this file runs with your login session.
+    3. launchctl load ~/Library/LaunchAgents/com.callsara.inbox-watch.plist
+
+  Uninstall:  launchctl unload ~/Library/LaunchAgents/com.callsara.inbox-watch.plist
+              && rm ~/Library/LaunchAgents/com.callsara.inbox-watch.plist
+
+  Notes: drop the write-flag ProgramArguments line for a scan-only watcher
+  that never moves files. Output (identifications + the import commands to
+  run next session) appends to inbox/.watch.log — a dotfile, so the
+  scanner and the inbox check ignore it. iCloud folders sync placeholders;
+  files download on first read, which can delay a run a few seconds.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.callsara.inbox-watch</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__SKILL_DIR__/tools/run</string>
+    <string>inbox.py</string>
+    <string>--write</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>FINANCE_VAULT</key>
+    <string>__VAULT__</string>
+  </dict>
+  <key>WatchPaths</key>
+  <array>
+    <string>__VAULT__/inbox</string>
+  </array>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>__VAULT__/inbox/.watch.log</string>
+  <key>StandardErrorPath</key>
+  <string>__VAULT__/inbox/.watch.log</string>
+</dict>
+</plist>

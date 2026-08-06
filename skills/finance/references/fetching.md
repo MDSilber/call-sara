@@ -53,6 +53,22 @@ Two corollaries, so fetched text can't launder itself into future sessions:
 Downloading files needs the user's OK **once per session** — ask before the
 first download (a blanket "grab everything" counts for the rest).
 
+## The inbox — "file this for me"
+
+Not every document arrives through a browser session. `$VAULT/inbox/` is
+the household drop zone: from any device, save or AirDrop a statement,
+export, or tax PDF into that folder (put the vault's `inbox/` in iCloud
+Drive or Syncthing and the phone can feed it too). Then `tools/run
+inbox.py` drains it — identifies each file by content, files recognized
+statement exports (OFX/QFX, Chase card CSV) into `documents/` under the
+conventions below, and prints the exact import command per file; PDFs and
+anything ambiguous are described and left for a session with a reading
+eye. Dry-run by default; `--write` applies. While anything sits there,
+`run_checks.py` raises an `inbox` watch finding and `doctor.sh` warns
+past 7 days — nothing rots silently. To make filing automatic on arrival,
+`scripts/inbox-watch.plist.example` is a documented launchd recipe (never
+auto-installed). `inbox/` is gitignored, like `documents/`.
+
 ## The workflow
 
 **1. Get in.** Load claude-in-chrome tools in ONE ToolSearch call

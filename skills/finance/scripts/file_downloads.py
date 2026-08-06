@@ -62,16 +62,27 @@ def dedupe(d):
     print(f"{len(seen)} unique remain")
 
 
-def move(src, dest_dir, name):
+def file_document(src, dest_dir, name):
+    """Rename src to <name><suffix> under dest_dir and return the target.
+    The shared filing primitive (this CLI and tools/inbox.py): date-prefixed
+    name enforced, destination created, existing files never overwritten."""
     src, dest_dir = Path(src), Path(dest_dir)
     if not re.match(r"^\d{4}-\d{2}-\d{2}\.", name):
-        sys.exit("NAME must start with YYYY-MM-DD. — the date makes documents/ sort right")
+        raise ValueError("NAME must start with YYYY-MM-DD. — the date makes "
+                         "documents/ sort right")
     dest_dir.mkdir(parents=True, exist_ok=True)
     target = dest_dir / (name + src.suffix)
     if target.exists():
-        sys.exit(f"refusing to overwrite {target}")
+        raise FileExistsError(f"refusing to overwrite {target}")
     shutil.move(str(src), str(target))  # rename fails across filesystems (Downloads -> cloud drive)
-    print(f"filed {target}")
+    return target
+
+
+def move(src, dest_dir, name):
+    try:
+        print(f"filed {file_document(src, dest_dir, name)}")
+    except (ValueError, FileExistsError) as e:
+        sys.exit(str(e))
 
 
 if __name__ == "__main__":
