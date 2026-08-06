@@ -367,9 +367,13 @@ export function registerFinanceDomain(server: McpServer, env: Env): void {
   );
 
   tool(
-    "finance_home_summary",
-    "The morning glance: Sara's one-line verdict, the four home-page tiles " +
-      "(spending pace, net worth, autopilot, 529), and the single next action.",
+    "finance_overview",
+    "START HERE for any general, vague, or basic money question — 'how are we " +
+      "doing', 'what's our financial situation', 'anything I should know?'. " +
+      "Returns the whole picture in one call: Sara's one-line verdict, spending " +
+      "pace, net worth, autopilot health, 529 status, and the single next " +
+      "action. Reach for the specific finance_* tools only when the question " +
+      "names a topic this summary doesn't settle.",
     (s) => {
       const g = s.glance;
       return reply(
