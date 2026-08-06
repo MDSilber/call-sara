@@ -1,0 +1,4 @@
+# Copy to .dev.vars for `wrangler dev` (never committed — .gitignore covers it).
+# Leave GITHUB_TOKEN unset to serve the bundled demo fixture instead of a repo.
+SARA_MCP_TOKEN = "dev-token"
+# GITHUB_TOKEN = "github_pat_..."

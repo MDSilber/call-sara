@@ -185,7 +185,10 @@ session starts already knowing them.
 - `tools/` — `run` (wrapper), `query.py`, `reports.py`, `run_checks.py`,
   `checks.py`, `forecast.py`, `webview.py` (renders the static
   `reports/dashboard.html`), `home.py` (renders `reports/home.html` —
-  Sara Home, the spouse-legible morning page), `recategorize.py`,
+  Sara Home, the spouse-legible morning page), `summary.py` (writes
+  `reports/summary.json`, the machine-readable twin of the reports —
+  what the optional phone connector serves; `integrations/cloudflare-mcp/`
+  in this repo), `recategorize.py`,
   `rules.py`, `vault.py`,
   `importers/{ofx,chase_csv,invest_ofx,holdings_ofx}.py`. The transaction
   importers take `--write` (append after dry-run), `--all` (disable

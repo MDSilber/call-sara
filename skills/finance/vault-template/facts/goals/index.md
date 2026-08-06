@@ -16,6 +16,7 @@ deadline_horizon_days: 45          # surface anything due within this window
 anomaly_min_amount: 400            # ignore charges below this
 savings_rate_target_pct: null      # set from the baseline
 retirement_target: null            # set from the baseline
+# show_walkaway: true              # Sara Home's Independence room (walk-away number, what-if dials, history replay). Rule: an explicit true/false here always wins; with no flag, the room appears exactly when retirement_target is set. No flag + no target = the home page never mentions walking away.
 education_target: null             # per child, if any
 house_downpayment: null            # a planned purchase seeds the home-page what-if toggle
 house_year: null                   # target calendar year for it

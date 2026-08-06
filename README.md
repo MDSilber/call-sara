@@ -81,6 +81,16 @@ fail-closed gitleaks scanner blocks any commit that breaks the rules.
 Sara never needs a password, SSN, or full account number typed into
 chat, ever. If any of the six is a dealbreaker for you, don't use this!
 
+## Sara in your pocket (optional)
+
+The vault already writes `reports/summary.json` — a machine-readable
+twin of the reports, same verified math. `integrations/cloudflare-mcp/`
+is a tiny read-only MCP server for Cloudflare Workers that serves it
+straight from your private vault repo, so Claude on your phone can
+answer "how are we doing?" with your real numbers while your laptop
+sleeps. Opt-in, bearer-gated, one read-only GitHub token, no second
+copy of your data anywhere. Full walkthrough in that directory's README.
+
 ## How it's built
 
 One rule: **Sara handles the fuzzy stuff, code owns every number.**

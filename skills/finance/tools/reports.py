@@ -3,7 +3,8 @@
 
 Run:    tools/run reports.py
 Writes: reports/net-worth.md, reports/spend-by-month.md, reports/upcoming.md,
-        reports/dashboard.html (via webview.py), reports/home.html (via home.py)
+        reports/dashboard.html (via webview.py), reports/home.html (via home.py),
+        reports/summary.json (via summary.py — the machine-readable twin)
 Arithmetic is code; the agent reads these files and reasons about them.
 """
 import re
@@ -76,7 +77,10 @@ def net_worth():
 
 
 # ------------------------------------------------------------- spend by mo
-def spend_by_month(months_back=13):
+def spend_matrix(months_back=13):
+    """(months, {category: {ym: amt}}) over the last `months_back` months
+    with expense activity — the data behind spend-by-month.md; summary.py
+    serializes the same matrix."""
     rows = query("SELECT year, month, root(account, 2) AS category, "
                  "sum(convert(position, 'USD')) AS amt "
                  "WHERE account ~ '^Expenses' "
@@ -90,6 +94,11 @@ def spend_by_month(months_back=13):
             continue
         cat = r["category"].replace("Expenses:", "")
         cats.setdefault(cat, {})[ym] = amount(r["amt"])
+    return months, cats
+
+
+def spend_by_month(months_back=13):
+    months, cats = spend_matrix(months_back)
     header = "| Category | " + " | ".join(f"{y}-{m:02d}" for y, m in months) + " | Total |"
     sep = "|---" * (len(months) + 2) + "|"
     lines = ["# Spend by month\n", stamp("reports.py"),
@@ -132,7 +141,8 @@ if __name__ == "__main__":
     REPORTS.mkdir(exist_ok=True)
     from webview import dashboard  # noqa: E402 — imported lazily: webview reuses this module's math
     from home import home  # noqa: E402 — same: home reuses this module + webview
-    for fn in (net_worth, spend_by_month, upcoming, dashboard, home):
+    from summary import summary  # noqa: E402 — same: the machine-readable twin
+    for fn in (net_worth, spend_by_month, upcoming, dashboard, home, summary):
         try:
             fn()
             print(f"ok   {fn.__name__}")

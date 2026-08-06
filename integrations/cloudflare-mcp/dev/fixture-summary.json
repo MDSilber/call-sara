@@ -1,0 +1,624 @@
+{
+ "schema": 1,
+ "generated_at": "2026-08-06T13:08:49-04:00",
+ "ledger_through": "2026-08-05",
+ "networth": {
+  "window": "through 2026-08-05",
+  "liquid": 118379.78,
+  "assets": 122700.65,
+  "liabilities": -4320.87,
+  "paper": 0.0,
+  "paper_currency": null,
+  "combined": 118379.78,
+  "unpriced_accounts": [],
+  "monthly_series": {
+   "window": "7 month-ends",
+   "points": [
+    {
+     "date": "2026-02-28",
+     "value": 83533.32,
+     "at_cost": false
+    },
+    {
+     "date": "2026-03-31",
+     "value": 89352.2,
+     "at_cost": false
+    },
+    {
+     "date": "2026-04-30",
+     "value": 94091.62,
+     "at_cost": false
+    },
+    {
+     "date": "2026-05-31",
+     "value": 101557.43,
+     "at_cost": false
+    },
+    {
+     "date": "2026-06-30",
+     "value": 108422.23,
+     "at_cost": false
+    },
+    {
+     "date": "2026-07-31",
+     "value": 115013.8,
+     "at_cost": false
+    },
+    {
+     "date": "2026-08-05",
+     "value": 118379.78,
+     "at_cost": false
+    }
+   ]
+  }
+ },
+ "balances": {
+  "window": "through 2026-08-05",
+  "accounts": [
+   {
+    "account": "Assets:US:Ally:Savings9876",
+    "usd": 49620.66
+   },
+   {
+    "account": "Assets:US:Chase:Checking4321",
+    "usd": 23319.99
+   },
+   {
+    "account": "Assets:US:CollegeSave:529Riley",
+    "usd": 12000.0
+   },
+   {
+    "account": "Assets:US:Empower:401k8810",
+    "usd": 8640.0
+   },
+   {
+    "account": "Assets:US:Fidelity:401k7701",
+    "usd": 22270.0
+   },
+   {
+    "account": "Assets:US:Vanguard:Brokerage3344",
+    "usd": 6850.0
+   },
+   {
+    "account": "Liabilities:US:CapitalOne:Card1122",
+    "usd": -496.09
+   },
+   {
+    "account": "Liabilities:US:Chase:Card5678",
+    "usd": -3824.78
+   }
+  ]
+ },
+ "positions": {
+  "window": "through 2026-08-05",
+  "holdings": [
+   {
+    "symbol": "AGGRX",
+    "units": 400.0,
+    "usd": 12000.0
+   },
+   {
+    "symbol": "BND",
+    "units": 180.0,
+    "usd": 12960.0
+   },
+   {
+    "symbol": "VTI",
+    "units": 40.0,
+    "usd": 11800.0
+   },
+   {
+    "symbol": "VXUS",
+    "units": 200.0,
+    "usd": 13000.0
+   }
+  ]
+ },
+ "spend": {
+  "current_month": {
+   "month": "2026-08",
+   "window": "2026-08 through day 5",
+   "fallback_latest_imported": false,
+   "spent": 3984.02,
+   "typical": 5468.81,
+   "typical_window": "Feb–Jul 2026",
+   "typical_by_now": 4068.85,
+   "pace_delta": -84.83,
+   "left_of_typical": 1484.79,
+   "verdict": "On pace"
+  },
+  "last_closed_month": {
+   "month": "2026-07",
+   "total": 5366.28
+  },
+  "monthly_by_category": {
+   "window": "Feb–Aug 2026",
+   "months": [
+    "2026-02",
+    "2026-03",
+    "2026-04",
+    "2026-05",
+    "2026-06",
+    "2026-07",
+    "2026-08"
+   ],
+   "categories": {
+    "Housing": [
+     2600.0,
+     2600.0,
+     2600.0,
+     2600.0,
+     2600.0,
+     2600.0,
+     2600.0
+    ],
+    "Childcare": [
+     1150.0,
+     1150.0,
+     1150.0,
+     1150.0,
+     1150.0,
+     1150.0,
+     1150.0
+    ],
+    "Food": [
+     622.09,
+     625.67,
+     588.64,
+     654.91,
+     634.54,
+     612.73,
+     135.69
+    ],
+    "Utilities": [
+     339.19,
+     326.79,
+     303.44,
+     287.29,
+     313.74,
+     346.59,
+     0.0
+    ],
+    "Shopping": [
+     242.01,
+     245.93,
+     248.15,
+     449.28,
+     262.53,
+     237.75,
+     52.13
+    ],
+    "Insurance": [
+     168.0,
+     168.0,
+     168.0,
+     168.0,
+     168.0,
+     168.0,
+     0.0
+    ],
+    "Travel": [
+     0.0,
+     782.4,
+     0.0,
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "Transport": [
+     99.05,
+     93.9,
+     101.05,
+     97.15,
+     99.25,
+     99.75,
+     46.2
+    ],
+    "Health": [
+     89.0,
+     89.0,
+     89.0,
+     89.0,
+     89.0,
+     89.0,
+     0.0
+    ],
+    "Home": [
+     0.0,
+     0.0,
+     436.28,
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "Entertainment": [
+     62.46,
+     62.46,
+     62.46,
+     62.46,
+     62.46,
+     62.46,
+     0.0
+    ]
+   },
+   "totals": [
+    5371.8,
+    6144.15,
+    5747.02,
+    5558.09,
+    5379.52,
+    5366.28,
+    3984.02
+   ]
+  }
+ },
+ "cashflow": {
+  "window": "Feb–Aug 2026",
+  "months": [
+   {
+    "month": "2026-02",
+    "income": 11396.12,
+    "expenses": 5371.8,
+    "net": 6024.32
+   },
+   {
+    "month": "2026-03",
+    "income": 11398.03,
+    "expenses": 6144.15,
+    "net": 5253.88
+   },
+   {
+    "month": "2026-04",
+    "income": 11401.44,
+    "expenses": 5747.02,
+    "net": 5654.42
+   },
+   {
+    "month": "2026-05",
+    "income": 11404.9,
+    "expenses": 5558.09,
+    "net": 5846.81
+   },
+   {
+    "month": "2026-06",
+    "income": 11408.32,
+    "expenses": 5379.52,
+    "net": 6028.8
+   },
+   {
+    "month": "2026-07",
+    "income": 11411.85,
+    "expenses": 5366.28,
+    "net": 6045.57
+   },
+   {
+    "month": "2026-08",
+    "income": 7350.0,
+    "expenses": 3984.02,
+    "net": 3365.98
+   }
+  ]
+ },
+ "findings": {
+  "window": "checks from 2026-08-06",
+  "generated": "2026-08-06",
+  "counts": "0 alerts · 5 watch · 2 info",
+  "items": [
+   {
+    "severity": "watch",
+    "title": "In 24 days (2026-08-30): GEICO renters + auto renewal auto-drafts $418 from Chase checking",
+    "check": "deadlines",
+    "detail": "From facts/household/calendar.md. Confirm whether it needs an action or is informational."
+   },
+   {
+    "severity": "watch",
+    "title": "In 40 days (2026-09-15): Q3 federal estimated tax — pay $2,400 (IRS Direct Pay)",
+    "check": "deadlines",
+    "detail": "From facts/household/calendar.md. Confirm whether it needs an action or is informational."
+   },
+   {
+    "severity": "watch",
+    "title": "Idle-cash drag ~$863/yr: Assets:US:Chase:Checking4321 earns 0.05% vs the 3.75% hurdle",
+    "check": "cash-drag",
+    "detail": "Move the $23,320 earning 0.05% to a 3.75%-class home and keep ~$863/yr. That's HYSA / money market / T-bills per THESIS.md — or update rules.toml [cash_apy] if the rate changed. Once it moves, log `- [x] moved Checking4321 cash — realized $863/yr` in a dated note so it counts as a win."
+   },
+   {
+    "severity": "watch",
+    "title": "Stocks 66% of invested vs the 80% target (band ±5)",
+    "check": "allocation_drift",
+    "detail": "~$5,408 underweight across ~$37,760 invested (cash and the reserve sit outside the mix). New contributions can lean the other way before anything needs selling; if a bundled fund (target-date) drives this, the honest fix may be revising the written target instead. Direction, not an order."
+   },
+   {
+    "severity": "watch",
+    "title": "Bonds 34% of invested vs the 20% target (band ±5)",
+    "check": "allocation_drift",
+    "detail": "~$5,408 overweight across ~$37,760 invested (cash and the reserve sit outside the mix). New contributions can lean the other way before anything needs selling; if a bundled fund (target-date) drives this, the honest fix may be revising the written target instead. Direction, not an order."
+   },
+   {
+    "severity": "info",
+    "title": "7 active recurring charges ≈ $326/mo ($3,917/yr)",
+    "check": "subscriptions",
+    "detail": "Largest (merchant text): `t mobile` $95.00/mo · `fitlife gym` $89.00/mo · `comcast` $79.99/mo · `hulu` $17.99/mo · `max streaming` $16.99/mo. The standing question for each: still used? right tier? annual billing cheaper? (See the savings-hunt reference for the full audit.)"
+   },
+   {
+    "severity": "info",
+    "title": "Milestone crossed: liquid net worth above $100,000 (now $118,380)",
+    "check": "milestones",
+    "detail": "Recorded in facts/goals/index.md so this fires once. Worth marking — and worth checking that allocation, insurance limits, and the thesis still fit at this size."
+   }
+  ],
+  "errors": []
+ },
+ "forecast": {
+  "window": "2026-08-06 to 2026-10-05 (60 days, projected)",
+  "household": {
+   "start": 68619.78,
+   "income": 22809.8,
+   "expenses": -9507.32,
+   "transfer_net": -600.0,
+   "oneoff_total": -2400.0,
+   "surplus": 10302.48,
+   "oneoffs": [
+    {
+     "date": "2026-09-15",
+     "amount": -2400.0,
+     "text": "Q3 federal estimated tax — pay $2,400 (IRS Direct Pay)",
+     "source": "facts/household/calendar.md"
+    }
+   ],
+   "warns": []
+  },
+  "accounts": [
+   {
+    "account": "Assets:US:Ally:Savings9876",
+    "start": 49620.66,
+    "asof": "2026-07-25",
+    "min": 49620.66,
+    "min_date": "2026-07-25",
+    "end_balance": 56830.46,
+    "floor": null,
+    "projected_flows": 4
+   },
+   {
+    "account": "Assets:US:Chase:Checking4321",
+    "start": 23319.99,
+    "asof": "2026-08-05",
+    "min": 19629.03,
+    "min_date": "2026-09-01",
+    "end_balance": 28338.07,
+    "floor": null,
+    "projected_flows": 26
+   },
+   {
+    "account": "Liabilities:US:CapitalOne:Card1122",
+    "start": -496.09,
+    "asof": "2026-08-03",
+    "min": -903.85,
+    "min_date": "2026-10-05",
+    "end_balance": -903.85,
+    "floor": null,
+    "projected_flows": 7
+   },
+   {
+    "account": "Liabilities:US:Chase:Card5678",
+    "start": -3824.78,
+    "asof": "2026-08-05",
+    "min": -3953.04,
+    "min_date": "2026-08-18",
+    "end_balance": -2942.42,
+    "floor": null,
+    "projected_flows": 14
+   }
+  ]
+ },
+ "autopilot": {
+  "window": "last 2 cycles",
+  "summary": "3 of 3 running",
+  "lanes": [
+   {
+    "name": "Alex's paycheck → Chase checking",
+    "kind": "deposit",
+    "account": "Assets:US:Chase:Checking4321",
+    "cadence": "semimonthly",
+    "status": "ok",
+    "last": "2026-08-01",
+    "last_amount": 3950.0,
+    "expected": null,
+    "balance": null,
+    "floor": null,
+    "note": "",
+    "detail": "landed Aug 1 · $3,950 · semimonthly"
+   },
+   {
+    "name": "Jordan's paycheck → Chase checking",
+    "kind": "deposit",
+    "account": "Assets:US:Chase:Checking4321",
+    "cadence": "monthly",
+    "status": "ok",
+    "last": "2026-08-05",
+    "last_amount": 3400.0,
+    "expected": null,
+    "balance": null,
+    "floor": null,
+    "note": "",
+    "detail": "landed Aug 5 · $3,400 · monthly on the 5th"
+   },
+   {
+    "name": "Riley's 529 — $300/mo autopilot",
+    "kind": "invest",
+    "account": "Assets:US:CollegeSave:529Riley",
+    "cadence": "monthly",
+    "status": "ok",
+    "last": "2026-07-15",
+    "last_amount": 300.0,
+    "expected": null,
+    "balance": null,
+    "floor": null,
+    "note": "",
+    "detail": "ran Jul 15 · $300 · monthly on the 15th"
+   }
+  ]
+ },
+ "education_529": {
+  "window": "through 2026-08-05",
+  "accounts": [
+   {
+    "account": "Assets:US:CollegeSave:529Riley",
+    "kid": "Riley",
+    "value": 12000.0,
+    "at_cost": false
+   }
+  ],
+  "total": 12000.0,
+  "target": 120000.0,
+  "contribution_pace_monthly": 300.0,
+  "verdict": "On pace for ≈2056"
+ },
+ "goals": {
+  "config": {
+   "concentration_ceiling_pct": 15.0,
+   "cash_cushion_months": 6.0,
+   "deadline_horizon_days": 45.0,
+   "anomaly_min_amount": 400.0,
+   "savings_rate_target_pct": 20.0,
+   "retirement_target": 2000000.0,
+   "show_walkaway": "true",
+   "education_target": 120000.0,
+   "house_downpayment": 120000.0,
+   "house_year": 2029.0,
+   "project_budget_nursery_refresh": 900.0,
+   "milestone_net_worth_above": "[100000, 250000]",
+   "milestone_net_worth_above_crossed": "[100000]"
+  },
+  "calendar": {
+   "window": "every dated facts/ bullet",
+   "upcoming": [
+    {
+     "date": "2026-08-30",
+     "days_until": 24,
+     "text": "GEICO renters + auto renewal auto-drafts $418 from Chase checking",
+     "source": "facts/household/calendar.md"
+    },
+    {
+     "date": "2026-09-15",
+     "days_until": 40,
+     "text": "Q3 federal estimated tax — pay $2,400 (IRS Direct Pay)",
+     "source": "facts/household/calendar.md"
+    },
+    {
+     "date": "2026-10-01",
+     "days_until": 56,
+     "text": "BrightPath open enrollment window opens (Alex benefits)",
+     "source": "facts/household/calendar.md"
+    },
+    {
+     "date": "2027-04-15",
+     "days_until": 252,
+     "text": "file 2026 federal and state returns",
+     "source": "facts/household/calendar.md"
+    }
+   ],
+   "recently_passed": []
+  }
+ },
+ "thesis_rules": {
+  "source": "THESIS.md",
+  "sections": [
+   {
+    "heading": "What the money is for",
+    "rules": [
+     "A house in ~3 years, Riley launched debt-free, and both of us optional-to-work by 60. Money buys calm, not stuff."
+    ]
+   },
+   {
+    "heading": "Who you are (governs everything below)",
+    "rules": [
+     "Two salaried W-2 incomes (Alex — product manager at BrightPath Labs; Jordan — teacher, Cedar Grove School District), one kid (Riley, 6). No equity comp, no debt beyond two credit cards paid monthly. Risk of drift, not disaster."
+    ]
+   },
+   {
+    "heading": "The situation, said bluntly",
+    "rules": [
+     "Savings are healthy but unexamined: cash piles up in checking and nobody has audited the recurring charges in years. The portfolio is fine; the plumbing has never been checked for leaks."
+    ]
+   },
+   {
+    "heading": "Standing rules",
+    "rules": [
+     "New money: 529 first ($300/mo), then the house fund (HYSA), then taxable index funds. No individual stocks, no leverage, no options. Cards on autopay, paid in full, every month."
+    ]
+   },
+   {
+    "heading": "Risk posture",
+    "rules": [
+     "80/20 equities/bonds in retirement accounts. A 30% drawdown changes nothing; the house timeline flexes before the allocation does."
+    ]
+   },
+   {
+    "heading": "Cash cushion",
+    "rules": [
+     "Six months of baseline spend (~$40k) stays in the Ally HYSA. The house fund grows on top of that, never instead of it."
+    ]
+   },
+   {
+    "heading": "Spending",
+    "rules": [
+     "~$6.5k/mo baseline. No line-item policing — flag recurring waste and drift over 15%, not lattes."
+    ]
+   },
+   {
+    "heading": "How we work together",
+    "rules": [
+     "Monthly 15-minute review. Be blunt, propose the number, one open item at a time. Both adults sign off on anything irreversible."
+    ]
+   },
+   {
+    "heading": "Goal targets",
+    "rules": [
+     "House: $120k down payment fund by 2029. 529: $120k for Riley by 2038. Retirement: $2M invested by 2055."
+    ]
+   }
+  ]
+ },
+ "glance": {
+  "sara": "A few small things could use your hands — they're waiting in Autopilot, none of it urgent.",
+  "spend": {
+   "verdict": "On pace",
+   "cls": "",
+   "fig": "$85 under the typical path",
+   "glow": false,
+   "sub": "through Aug 5 · typical Aug runs $5,469",
+   "streak": "3 closed months under typical"
+  },
+  "networth": {
+   "value": 118379.78,
+   "delta": "+$3,366 vs Jul 31",
+   "window": "liquid · through 2026-08-05"
+  },
+  "autopilot": {
+   "verdict": "All 3 green",
+   "cls": "good",
+   "sub": "paychecks, invests, floors — all landing",
+   "dots": [
+    "ok",
+    "ok",
+    "ok"
+   ],
+   "aria": "3 of 3 lanes green"
+  },
+  "education": {
+   "label": "Riley’s 529",
+   "verdict": "On pace for ≈2056",
+   "cls": "warn",
+   "fig": "$12,000 saved",
+   "sub": "college is 2038 — worth a look"
+  },
+  "next": {
+   "label": "Next",
+   "text": "GEICO renters + auto renewal auto-drafts $418 from Chase checking",
+   "meta": "due Aug 30 · in 24 days"
+  }
+ }
+}

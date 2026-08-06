@@ -9,33 +9,40 @@ Writes: reports/home.html — the ONLY file written; the vault is otherwise
         microscope, reports/dashboard.html (--pretty) the dense brief, and
         THIS page (--home) the morning glance a spouse reads in ten seconds.
 
-Page contract, in order: the aurora hero (greeting, Sara's one-line verdict,
-freshness stamp) with the four headline KPIs floating over it — liquid net
-worth, left this month, net this month, walk-away % — then: is this month
-unusual (spend-pace: solid actual vs dotted typical-median path)? is the
-machine running (rules.toml [[lanes]] — payroll deposits, auto-invests,
-floors — via checks.lane_status, the same detector the findings use)? does
-anything need us ("Needs you" verb cards + "Money that must move" dated
-obligations with real dollars from facts/)? are the long lines going up
-(walk-away + what-if dials, the 529 story, realized "Sara's wins", the
-liquid net-worth curve)? Then the month's cheshbon with its category ribbon
-and the project envelopes. EVERY figure carries its window label; every
+Page contract — THE GLANCE, then THE ROOMS. The glance fits one laptop
+viewport with zero scroll: the aurora hero (greeting, Sara's one-line
+verdict, freshness stamp) with four VERDICT tiles floating over it —
+Spending (plain-words pace verdict, delta secondary), Net worth (value +
+delta chip + sparkline), Autopilot (n-of-n green + one dot per lane), and
+the 529 (verdict + saved) — then ONE "Next" line: the single
+highest-priority item (top alert, else the nearest dated obligation, else
+"nothing needs you"). DENSITY LAW: a closed surface shows at most two
+figures and leads with verdict words; everything else lives inside rooms.
+
+The rooms are a tab bar (Spending · Money map · Goals · Autopilot), one
+room open at a time — plain JS tabs over the same precomputed data island,
+deep-linkable via location.hash, keyboard accessible, all rooms expanded in
+print. SPENDING: clickable category bars for the active period (This month
+· Last month · 6 months); picking a category swaps in its 6-month trend
+and its top merchants (both precomputed per category per period); the
+is-this-month-unusual pace chart (solid actual vs dotted typical-median
+path) and realized "Sara's finds" live here. MONEY MAP: an ECharts treemap
+of where every liquid dollar sits (institution → account → holding,
+drill-down on click, sums tied to the headline), the net-worth line with
+its why-it-moved attribution (markets vs saved vs spent, suppressed rather
+than mislabeled on stale prices), and the thesis drift strip (loud only
+out of band). GOALS: the 529 story with a contribution what-if slider
+riding a precomputed glide-path grid, plus the project envelopes.
+AUTOPILOT: the lanes (rules.toml [[lanes]] via checks.lane_status, the
+same detector the findings use), "Needs you" verb cards beyond the
+promoted one, and "Money that must move" — human obligations up front,
+own-account plumbing folded. EVERY figure carries its window label; every
 delta names its comparison.
 
-Wave 2 grows the long-game story: the walk-away card carries a
-HISTORY CHECK (every complete 40-year stretch of markets since 1871,
-replayed on the thesis's own stock/bond mix via market_history.py — counts,
-never decimal percents), a Rich/Broke/Dead-style outcome-band chart behind
-a disclosure, a guardrail-in-dollars rescue sentence searched over history's
-failing sequences, the unspent-money flip side, and three LIFE-EVENT
-toggles (house / one paycheck keeps coming / college) whose transforms are
-precomputed per combination — the two quiet house selects step through a
-small precomputed lattice, so JS still only indexes. The net-worth card
-explains WHY the month moved (markets vs saved vs spent — flows from the
-ledger, market effect as the residual, suppressed rather than mislabeled
-when boundary prices are missing or stale), and a "Vs the thesis" card
-scores the live mix against rules.toml [allocation_targets] (allocation.py),
-loud only when a class leaves its band.
+INDEPENDENCE is an OPT-IN fifth room (see show_walkaway_room for the one
+rule): the walk-away number, what-if dials, life-event toggles, and the
+1871-history survival replay (market_history.py — counts, never decimal
+percents). Off = none of it is computed or shipped.
 
 Money honesty, rendered: Python computes and formats every dollar; JS
 receives chart geometry (plain numbers) and display strings only — no
@@ -97,7 +104,13 @@ NEEDS_CARDS = 3           # verb cards shown; the rest fold into a count
 DEADLINE_CARD_DAYS = 10   # deadlines this close become cards, not just counts
 MUSTMOVE_DAYS = 60        # dated obligations with dollars, this far ahead
 MUSTMOVE_MAX = 6          # chips shown; facts/ keeps the rest
-RIBBON_SLOTS = 3          # cheshbon ribbon: top categories shown; rest fold to Other
+PACE_BAND = 0.10          # within ±this × typical = "On pace"; past it, a verdict
+TREND_MONTHS = 6          # spending drill: trend window, current month included
+MERCHANTS_TOP = 8         # merchant rows per category per period
+CATS_VISIBLE = 10         # clickable category rows; the rest fold into the table
+SPARK_MONTHS = 13         # net-worth tile sparkline: up to this many month-ends
+EDU_SLIDER_MAX = 2000     # 529 what-if slider: $0..this per month
+EDU_SLIDER_STEP = 50      # ...in these steps
 
 YM = tuple[int, int]      # a calendar month as (year, month)
 
@@ -149,6 +162,7 @@ class Card(NamedTuple):
     verb: str                     # the imperative headline
     why: str                      # what happened, or when it's due
     meta: str                     # tiny right-hand label
+    days: int | None = None       # deadline cards: days until due (Next-line pick)
 
 
 class EduAccount(NamedTuple):
@@ -236,16 +250,6 @@ def month_in_out(ym: YM) -> tuple[float, float]:
                  f"AND account ~ '^(Income|Expenses)' GROUP BY r")
     vals = {r["r"]: amount(r["v"]) for r in rows}
     return -vals.get("Income", 0.0), vals.get("Expenses", 0.0)
-
-
-def month_categories(ym: YM) -> list[tuple[str, float]]:
-    """This month's spending by category (root 2), largest first — the
-    cheshbon ribbon's data. Refund-net categories (≤ $0) drop out."""
-    rows = query(f"SELECT root(account,2) AS cat, sum(convert(position,'USD')) "
-                 f"AS v WHERE account ~ '^Expenses' AND year = {ym[0]} "
-                 f"AND month = {ym[1]} GROUP BY cat")
-    cats = [(r["cat"] or "Expenses", amount(r["v"])) for r in rows]
-    return sorted([(c, v) for c, v in cats if v > 0.005], key=lambda cv: -cv[1])
 
 
 def spend_pace(today: date, asof: date | None,
@@ -453,6 +457,21 @@ PEOPLE_NAME = re.compile(r"^name:\s*(.+)$", re.M)
 TARGET_YEAR = re.compile(r"(20\d{2})")
 
 
+def _college_year(today: date,
+                  edu_accounts: list["EduAccount"]) -> tuple[int | None, str]:
+    """(calendar year college starts, source note): the youngest kid turns
+    18 (facts/people), else the 529's own target year read off the account
+    or portfolio name; (None, '') when neither exists."""
+    kid = _youngest_person(today)
+    if kid:
+        return kid[1] + COLLEGE_AGE, f"the year {kid[0]} turns {COLLEGE_AGE}"
+    for a in edu_accounts:
+        m = TARGET_YEAR.search(a.account) or TARGET_YEAR.search(a.kid)
+        if m:
+            return int(m.group(1)), "the 529's target year"
+    return None, ""
+
+
 def _youngest_person(today: date) -> tuple[str, int] | None:
     """(first name, birth year) of the youngest person in facts/people/."""
     best: tuple[date, str] | None = None
@@ -509,20 +528,7 @@ def life_events(today: date, burn_annual: float, months: list[YM],
     if len(streams) >= 2:
         partner_label, partner_monthly = min(streams[:2], key=lambda kv: kv[1])
 
-    # college: the youngest kid turns 18 (facts/people), else the 529's
-    # own target year, read off the account or portfolio name
-    college_year, college_src = None, ""
-    kid = _youngest_person(today)
-    if kid:
-        college_year = kid[1] + COLLEGE_AGE
-        college_src = f"the year {kid[0]} turns {COLLEGE_AGE}"
-    else:
-        for a in edu_accounts:
-            m = TARGET_YEAR.search(a.account) or TARGET_YEAR.search(a.kid)
-            if m:
-                college_year = int(m.group(1))
-                college_src = "the 529's target year"
-                break
+    college_year, college_src = _college_year(today, edu_accounts)
     lump = cost = path529 = 0.0
     if college_year and college_year > today.year:
         cost = _as_float(goals.get("education_target")) or 0.0
@@ -960,7 +966,7 @@ def needs_you(today: date) -> tuple[list[Card], int, str]:
                 "tomorrow" if dl["days"] == 1 else f"in {dl['days']} days")
             cards.append(Card("deadline", dl["text"],
                               f"due {dl['date'].strftime('%a %b %-d')} · {when}",
-                              "deadline"))
+                              "deadline", dl["days"]))
     cards += [Card("watch", f["fix"] or f["title"], f["title"], "watch")
               for f in queue if f["severity"] == "watch"]
     cards += [Card("watch", "A check needs fixing before it can watch for you.",
@@ -974,13 +980,22 @@ def needs_you(today: date) -> tuple[list[Card], int, str]:
 # ---------------------------------------------------- money that must move
 MUSTMOVE_AMT = re.compile(r"([~≈]?)\$(\d[\d,]*(?:\.\d+)?)\s*([KkMm]?)(?![\w.])")
 _AMT_MULT = {"": 1, "k": 1_000, "m": 1_000_000}
+# Internal plumbing = money shuffling between the household's own accounts
+# to feed automation (settlement top-ups, sweeps). It still must move, but
+# it isn't a HUMAN obligation — it folds behind a disclosure. Matched on
+# wording only; a miss just leaves the item in the human list, never hides it.
+PLUMBING_RE = re.compile(
+    r"top[ -]?up|sweep\b|settlement (?:fund|cash|account)"
+    r"|replenish|move (?:cash|funds) (?:to|into)", re.I)
 
 
 def must_move(today: date) -> list[dict]:
     """Dated facts bullets inside MUSTMOVE_DAYS that carry a real dollar
     figure — the obligations calendar. Nothing is invented: no date + amount
     in the vault, no chip. The first $ figure in the bullet is the chip's
-    number; `~`, `≈`, or a K/M suffix keeps its ≈."""
+    number; `~`, `≈`, or a K/M suffix keeps its ≈. Each row is tagged
+    plumbing=True when it reads like an own-account shuffle (PLUMBING_RE);
+    the Autopilot room folds those, the human ones stay up front."""
     seen, out = set(), []
     for d, text, _relpath in dated_bullets():
         days = (d - today).days
@@ -999,9 +1014,11 @@ def must_move(today: date) -> list[dict]:
                 "tomorrow" if days == 1 else f"in {days} days")
         out.append({"date": d, "days": days, "when": when,
                     "day_lbl": mon_d(d), "near": days <= DEADLINE_CARD_DAYS,
-                    "amt": ("≈" if approx else "") + m0(val), "text": text})
+                    "amt": ("≈" if approx else "") + m0(val), "text": text,
+                    "plumbing": bool(PLUMBING_RE.search(text))})
     out.sort(key=lambda r: r["date"])
-    return out[:MUSTMOVE_MAX]
+    human = [r for r in out if not r["plumbing"]][:MUSTMOVE_MAX]
+    return human + [r for r in out if r["plumbing"]]
 
 
 # --------------------------------------------------------------- Sara's wins
@@ -1044,6 +1061,333 @@ def saras_wins(today: date) -> dict | None:
     return {"total": sum(i["amt"] for i in items), "items": items}
 
 
+# ------------------------------------------------------ the spending room
+def _last_months(cur: YM, n: int) -> list[YM]:
+    """The n calendar months ending AT cur, oldest first."""
+    y, m = cur
+    out = []
+    for back in range(n - 1, -1, -1):
+        yy, mm = y, m - back
+        while mm < 1:
+            yy, mm = yy - 1, mm + 12
+        out.append((yy, mm))
+    return out
+
+
+def _cat_label(cat: str) -> str:
+    return (cat or "Expenses").replace("Expenses:", "") or "Other"
+
+
+def spending_data(pace: Pace) -> dict | None:
+    """The Spending room's island: per-period category rollups with their
+    top merchants, plus a per-category monthly trend — every dollar string
+    preformatted here. Periods are the paced month, the month before, and
+    the whole trend window; JS only swaps precomputed rows in and out.
+    One query covers all of it (cat × payee × month over the window)."""
+    cur = pace.cur
+    months = _last_months(cur, TREND_MONTHS)
+    prev = months[-2] if len(months) >= 2 else None
+    start = date(months[0][0], months[0][1], 1)
+    rows = query(f"SELECT root(account,2) AS cat, payee, year, month, "
+                 f"sum(convert(position,'USD')) AS v "
+                 f"WHERE account ~ '^Expenses' AND date >= {start.isoformat()} "
+                 f"GROUP BY cat, payee, year, month")
+    by_cat: dict[str, dict[YM, float]] = {}
+    merch: dict[tuple[str, str], dict[str, float]] = {}
+    for r in rows:
+        try:
+            ym = (int(r["year"]), int(r["month"]))
+        except (TypeError, ValueError):
+            continue
+        if ym not in set(months):
+            continue
+        cat, v = _cat_label(r["cat"]), amount(r["v"])
+        by_cat.setdefault(cat, {})
+        by_cat[cat][ym] = by_cat[cat].get(ym, 0.0) + v
+        payee = (r["payee"] or "").strip() or "(no payee)"
+        for period in (("cur",) if ym == cur else ()) + \
+                      (("prev",) if ym == prev else ()) + ("six",):
+            d = merch.setdefault((period, cat), {})
+            d[payee] = d.get(payee, 0.0) + v
+    if not by_cat:
+        return None
+
+    cat_names = sorted(by_cat, key=lambda c: -sum(by_cat[c].values()))
+    per_totals = {p: {c: sum(v for ym, v in by_cat[c].items() if keep(ym))
+                      for c in cat_names}
+                  for p, keep in (("cur", lambda ym: ym == cur),
+                                  ("prev", lambda ym: ym == prev),
+                                  ("six", lambda ym: True))}
+    partial = (pace.through_day is not None
+               and pace.through_day < pace.ndays)
+    through = (f"{MONTH_ABBR[cur[1]]} 1–{pace.through_day}"
+               if pace.through_day else "nothing imported yet")
+
+    cats = []
+    for ci, c in enumerate(cat_names):
+        series = [round(by_cat[c].get(ym, 0.0), 2) for ym in months]
+        tips = []
+        for mi, ym in enumerate(months):
+            t = mon_yr(ym)
+            if ym == cur and partial:
+                t += f" · {through} (partial)"
+            tips.append({"t": t, "rows": [[m0(series[mi]), c]]})
+        per = {}
+        for p in ("cur", "prev", "six"):
+            tot = per_totals[p][c]
+            if tot <= 0.005:
+                continue
+            period_sum = sum(v for v in per_totals[p].values() if v > 0)
+            period_max = max((v for v in per_totals[p].values() if v > 0),
+                             default=1.0)
+            pairs = sorted(((n, v) for n, v in merch.get((p, c), {}).items()
+                            if v > 0.005), key=lambda nv: -nv[1])
+            per[p] = {
+                "amt": m0(tot),
+                "pct": (f"{100.0 * tot / period_sum:.0f}%"
+                        if period_sum else "—"),
+                "w": round(max(1.5, 100.0 * tot / period_max), 1),
+                "merch": [[n, m0(v)] for n, v in pairs[:MERCHANTS_TOP]],
+                "more": max(0, len(pairs) - MERCHANTS_TOP),
+            }
+        cats.append({"name": c, "series": series, "tips": tips,
+                     "y": yaxis_payload(0, max(max(series), 1.0)), "per": per})
+
+    order = {p: [ci for ci, c in sorted(
+        ((ci, c) for ci, c in enumerate(cat_names)
+         if per_totals[p][c] > 0.005),
+        key=lambda ic: -per_totals[p][ic[1]])] for p in ("cur", "prev", "six")}
+    month_name = MONTH_ABBR[cur[1]]
+    partial_note = f" · {month_name} partial" if partial else ""
+    periods = [
+        {"key": "cur", "label": "This month",
+         "win": f"{mon_yr(cur)} · {through}",
+         "total": m0(sum(v for v in per_totals["cur"].values() if v > 0))},
+        {"key": "six", "label": f"{len(months)} months",
+         "win": window_label(months) + partial_note,
+         "total": m0(sum(v for v in per_totals["six"].values() if v > 0))},
+    ]
+    if prev and any(v > 0.005 for v in per_totals["prev"].values()):
+        periods.insert(1, {
+            "key": "prev", "label": "Last month", "win": mon_yr(prev),
+            "total": m0(sum(v for v in per_totals["prev"].values() if v > 0))})
+    return {
+        "periods": periods, "cats": cats, "order": order,
+        "months": [MONTH_ABBR[m] for _, m in months],
+        "trendWin": window_label(months) + partial_note,
+        "partialIdx": len(months) - 1 if partial else -1,
+        "visible": CATS_VISIBLE,
+        # jinja-only twins (stripped from the JSON island): the no-JS/print table
+        "table_caption": (f"Every category — {periods[0]['win']} vs the "
+                          f"{len(months)}-month window."),
+        "table_rows": [(c,
+                        m0(per_totals["cur"][c])
+                        if per_totals["cur"][c] > 0.005 else "—",
+                        m0(per_totals["six"][c]))
+                       for c in cat_names],
+        "six_lbl": window_label(months),
+    }
+
+
+# ----------------------------------------------------- the money-map room
+MAP_GROUP_VARS = 5     # named group hues; groups past the 5th share the calm 6th
+
+
+def _acct_parts(account: str) -> tuple[str, str]:
+    """'Assets:US:Vanguard:Brokerage' -> ('Vanguard', 'Brokerage'); the
+    2-letter country segment is plumbing, not identity."""
+    segs = account.split(":")[1:]
+    if segs and re.fullmatch(r"[A-Z]{2}", segs[0]):
+        segs = segs[1:]
+    inst = segs[0] if segs else account
+    return inst, ":".join(segs[1:]) or inst
+
+
+def _disp(seg: str) -> str:
+    """The ledger's glued segments, given air for labels:
+    'Checking4321' -> 'Checking 4321', '529Riley' -> '529 Riley'."""
+    s = re.sub(r"(?<=[A-Za-z])(?=\d)", " ", seg)
+    return re.sub(r"(?<=\d)(?=[A-Z])", " ", s)
+
+
+def moneymap_data(balances: list[tuple[str, float]],
+                  liquid: float) -> dict | None:
+    """The treemap's island: every liquid asset dollar by institution →
+    account → holding, built from the SAME liquid_balances() rows as the
+    headline so the tree and the headline can never disagree. Liabilities
+    can't sit in a treemap (negative area); they ride the caption instead:
+    tree total + liabilities = the headline, to the dollar."""
+    assets = [(a, v) for a, v in balances if a.startswith("Assets") and v > 0]
+    neg_assets = sum(v for a, v in balances
+                     if a.startswith("Assets") and v < 0)
+    liab = sum(v for a, v in balances if a.startswith("Liabilities"))
+    if not assets:
+        return None
+    total = sum(v for _, v in assets)
+
+    # holding-level split, same WHERE clause family as liquid_balances
+    excl = illiquid_currency_regex()
+    where = "account ~ '^Assets'" + (f" AND NOT currency ~ '{excl}'"
+                                     if excl else "")
+    rows = query(f"SELECT account, currency, sum(convert(position,'USD')) "
+                 f"AS v WHERE {where} GROUP BY account, currency")
+    held: dict[str, list[tuple[str, float]]] = {}
+    for r in rows:
+        v = amount(r["v"], "USD") if "USD" in (r["v"] or "") else 0.0
+        if v > 0.005:
+            held.setdefault(r["account"], []).append((r["currency"] or "?", v))
+
+    def pcts(v: float) -> str:
+        p = 100.0 * v / total
+        return "<1%" if p < 0.5 else f"{p:.0f}%"
+
+    groups: dict[str, dict] = {}
+    for acct, v in assets:
+        inst, leaf = _acct_parts(acct)
+        g = groups.setdefault(inst, {"name": _disp(inst), "value": 0.0,
+                                     "kids": {}})
+        g["value"] += v
+        node = g["kids"].setdefault(leaf, {"name": _disp(leaf), "value": 0.0,
+                                           "hold": []})
+        node["value"] += v
+        curs = held.get(acct, [])
+        if len(curs) > 1 or (curs and curs[0][0] != "USD"):
+            node["hold"] += curs
+
+    tree = []
+    ordered = sorted(groups.values(), key=lambda g: -g["value"])
+    for gi, g in enumerate(ordered):
+        kids = []
+        for node in sorted(g["kids"].values(), key=lambda n: -n["value"]):
+            children = None
+            hold = sorted(node["hold"], key=lambda cv: -cv[1])
+            if hold:
+                children = [{"name": ("cash" if cur == "USD" else cur),
+                             "value": round(v, 2), "amt": m0(v),
+                             "pct": pcts(v)} for cur, v in hold]
+                rem = node["value"] - sum(v for _, v in hold)
+                if rem > 0.005:   # priced part not itemized by currency
+                    children.append({"name": "other", "value": round(rem, 2),
+                                     "amt": m0(rem), "pct": pcts(rem)})
+            kid = {"name": node["name"], "value": round(node["value"], 2),
+                   "amt": m0(node["value"]), "pct": pcts(node["value"])}
+            if children and len(children) > 1:
+                kid["children"] = children
+            kids.append(kid)
+        tree.append({"name": g["name"], "value": round(g["value"], 2),
+                     "amt": m0(g["value"]), "pct": pcts(g["value"]),
+                     "cvar": f"--map-{min(gi + 1, MAP_GROUP_VARS + 1)}",
+                     "children": kids})
+    note_bits = [f"Assets {m0(total)}"]
+    if abs(neg_assets) > 0.005:
+        note_bits.append(f"in-flight transfers {delta0(neg_assets)}")
+    if abs(liab) > 0.005:
+        note_bits.append(f"cards & debts {delta0(liab)}")
+    caption = " · ".join(note_bits) + f" = {m0(liquid)} liquid net worth"
+    return {"tree": tree, "caption": caption, "totalN": round(total, 2)}
+
+
+# ------------------------------------------------------- the goals room
+def edu_grid(total: float, target: float | None, pace: float | None,
+             today: date, college_year: int | None) -> dict | None:
+    """The 529 what-if slider's precomputed grid: for each $50 step of
+    monthly contribution, the straight-line arrival (same glide-path math
+    as the card's own footer — today's dollars, market growth ignored) and,
+    when a college year is known, how much of the target that pace covers
+    by then. JS moves a slider and looks strings up; nothing is computed
+    client-side."""
+    if not target or target <= 0:
+        return None
+    steps = list(range(0, EDU_SLIDER_MAX + 1, EDU_SLIDER_STEP))
+    months_to = None
+    if college_year and college_year > today.year:
+        months_to = max(0, (college_year - today.year) * 12 - today.month + 8)
+    arrive, cover = [], []
+    for c in steps:
+        if total >= target:
+            arrive.append("already past the target")
+            cover.append("fully funded — raise the number or rest easy")
+            continue
+        if c == 0:
+            arrive.append("parked — $0/mo never arrives")
+        else:
+            need = int(math.ceil((target - total) / c))
+            if need > WHATIF_MAX_YEARS * 12:
+                arrive.append(f"{WHATIF_MAX_YEARS}+ yrs out at this pace")
+            else:
+                eta = add_months(today, need)
+                arrive.append(f"≈{MONTH_ABBR[eta.month]} {eta.year}")
+        if months_to is not None:
+            val = total + c * months_to
+            p = 100.0 * val / target
+            cover.append(f"fully covers the target by {college_year}"
+                         if p >= 99.5 else
+                         f"≈{p:.0f}% of the target by {college_year}")
+        else:
+            cover.append("")
+    def_idx = (min(range(len(steps)), key=lambda i: abs(steps[i] - pace))
+               if pace else 0)
+    return {"steps": [f"{m0(c)}/mo" for c in steps], "arrive": arrive,
+            "cover": cover, "def": def_idx,
+            "paceS": f"≈{m0(pace)}/mo" if pace else None}
+
+
+# -------------------------------------------------------- glance verdicts
+def under_streak(totals: list[tuple[YM, float]], cur: YM) -> int:
+    """Consecutive CLOSED months (walking back from the last full month)
+    that came in under the median of the up-to-6 full months before each.
+    An honest streak or nothing: fewer than MIN_FULL_MONTHS of history
+    before a month ends the count."""
+    full = [(ym, v) for ym, v in totals if ym < cur]
+    n = 0
+    for i in range(len(full) - 1, -1, -1):
+        window = full[max(0, i - PACE_WINDOW):i]
+        if len(window) < MIN_FULL_MONTHS:
+            break
+        if full[i][1] < median(v for _, v in window):
+            n += 1
+        else:
+            break
+    return n
+
+
+def _sparkline(series: list[dict]) -> dict | None:
+    """The net-worth tile's little line: up to SPARK_MONTHS month-ends,
+    normalized into a 100×30 viewBox in Python (JS never touches it)."""
+    vals = [p["v"] for p in series][-SPARK_MONTHS:]
+    if len(vals) < 2:
+        return None
+    lo, hi = min(vals), max(vals)
+    span = (hi - lo) or 1.0
+    w, h, pad = 100.0, 30.0, 2.5
+    pts = []
+    for i, v in enumerate(vals):
+        x = pad + (w - 2 * pad) * i / (len(vals) - 1)
+        y = pad + (h - 2 * pad) * (1.0 - (v - lo) / span)
+        pts.append(f"{x:.1f},{y:.1f}")
+    return {"points": " ".join(pts),
+            "area": f"{pad:.1f},{h:.1f} " + " ".join(pts) + f" {w - pad:.1f},{h:.1f}",
+            "win": f"{len(vals)} month-ends"}
+
+
+# ----------------------------------------------------- the opt-in room rule
+def show_walkaway_room(goals: dict) -> bool:
+    """THE ONE RULE for the opt-in Independence room (walk-away number,
+    what-if dials, 1871 history replay): an explicit `show_walkaway:
+    true/false` in facts/goals always wins; with no flag, the room turns on
+    exactly when a `retirement_target` is set. No flag and no target = the
+    page never mentions walking away, and none of it is computed. The rule
+    is documented in both vault templates' facts/goals files."""
+    raw = goals.get("show_walkaway")
+    if raw is not None:
+        s = str(raw).strip().lower()
+        if s in ("true", "yes", "on", "1", "1.0"):
+            return True
+        if s in ("false", "no", "off", "0", "0.0"):
+            return False
+    return _as_float(goals.get("retirement_target")) is not None
+
+
 SMALL_NUMS = ["zero", "One", "Two", "Three", "Four", "Five", "Six",
               "Seven", "Eight", "Nine"]
 
@@ -1051,7 +1395,8 @@ SMALL_NUMS = ["zero", "One", "Two", "Three", "Four", "Five", "Six",
 def sara_line(pace: Pace, cards_state: str, cards: list[Card], more: int,
               daypart: str = "morning") -> str:
     """One warm, honest sentence for the hero. States, never invents."""
-    over = (pace.pace_delta or 0) > 0.10 * (pace.typical or float("inf"))
+    over = (pace.pace_delta or 0) > PACE_BAND * (pace.typical or float("inf"))
+    under = (pace.pace_delta or 0) < -PACE_BAND * (pace.typical or 0)
     if cards_state == "none":
         return "First morning here — run the checks and I'll start watching for you."
     n_alerts = sum(1 for c in cards if c.kind == "alert")
@@ -1059,19 +1404,23 @@ def sara_line(pace: Pace, cards_state: str, cards: list[Card], more: int,
         n_lbl = SMALL_NUMS[n_alerts] if n_alerts < 10 else str(n_alerts)
         verb = "wants" if n_alerts == 1 else "want"
         thing = "thing" if n_alerts == 1 else "things"
-        return (f"{n_lbl} {thing} {verb} a decision this {daypart} — start at "
-                f"the top of the list; the rest keeps.")
+        rest = "" if n_alerts == 1 else " — the rest wait in Autopilot"
+        return (f"{n_lbl} {thing} {verb} a decision this {daypart}. "
+                f"Start with the Next line below{rest}.")
     if cards:
         n = len(cards) + more
         s = "s" if n != 1 else ""
         lead = "Spending is running hot, and a" if over else "A"
-        return (f"{lead} few small thing{s} below could use your hands — "
-                f"none of it is urgent.")
+        return (f"{lead} few small thing{s} could use your hands — "
+                f"they're waiting in Autopilot, none of it urgent.")
     if pace.typical is None:
         return "All quiet. A few more months of history and I can show your typical pace."
     if over:
         return ("Nothing needs your hands — but spending is running ahead of "
-                "typical. The line below tells it.")
+                "typical. The Spending room tells it straight.")
+    if under:
+        return ("Nothing needs you, and spending is running under typical. "
+                "I checked twice.")
     return "All quiet. Spending is on pace, and nothing needs your hands today."
 
 
@@ -1118,7 +1467,8 @@ CSS_TEMPLATE = """
   --edu-track:#d2ecea;
   --edu-fill:linear-gradient(90deg,#0d9488,#2bbcab);
   --ideal:#8d87b8; --code:#efedf8;
-  --rib-1:#6157ff; --rib-2:#9d8cff; --rib-3:#d97a06; --rib-4:#8579c9;
+  --map-1:#6157ff; --map-2:#eb6834; --map-3:#1baf7a;
+  --map-4:#d0326b; --map-5:#4dabf7; --map-6:#8d6708;
   --band-dep:#d02b4c; --band-hold:#8b82c8; --band-ahead:#067647;
   --hero-grad:linear-gradient(115deg,#6157ff 0%,#74c0fc 35%,#ff7eb6 68%,#ffb86b 100%);
   --hero-wash:radial-gradient(120% 90% at 15% 0%,rgba(255,255,255,.16),transparent 48%);
@@ -1143,7 +1493,8 @@ CSS_TEMPLATE = """
     --edu-track:rgba(43,188,171,.16);
     --edu-fill:linear-gradient(90deg,#0f9c8d,#2bbcab);
     --ideal:#767fa8; --code:#1c2440;
-    --rib-1:#544ae4; --rib-2:#8d80f4; --rib-3:#c97e1e; --rib-4:#8074c4;
+    --map-1:#7f76ff; --map-2:#e06a30; --map-3:#12805a;
+    --map-4:#e0559a; --map-5:#3585cc; --map-6:#96761f;
     --band-dep:#f0577a; --band-hold:#7b84cf; --band-ahead:#25a768;
     --hero-grad:linear-gradient(115deg,#5449ec 0%,#3f86d6 35%,#e0559a 68%,#e9953f 100%);
     --hero-wash:radial-gradient(120% 90% at 15% 0%,rgba(255,255,255,.10),transparent 48%);
@@ -1168,7 +1519,8 @@ CSS_TEMPLATE = """
   --gold:#e2a04b; --gold-track:rgba(226,154,61,.18);
   --gold-fill:linear-gradient(90deg,#c97e1e,#e2a04b);
   --ideal:#767fa8; --code:#1c2440;
-  --rib-1:#544ae4; --rib-2:#8d80f4; --rib-3:#c97e1e; --rib-4:#8074c4;
+  --map-1:#7f76ff; --map-2:#e06a30; --map-3:#12805a;
+  --map-4:#e0559a; --map-5:#3585cc; --map-6:#96761f;
   --band-dep:#f0577a; --band-hold:#7b84cf; --band-ahead:#25a768;
   --hero-grad:linear-gradient(115deg,#5449ec 0%,#3f86d6 35%,#e0559a 68%,#e9953f 100%);
   --hero-wash:radial-gradient(120% 90% at 15% 0%,rgba(255,255,255,.10),transparent 48%);
@@ -1229,17 +1581,127 @@ code { background:var(--code); border-radius:4px; padding:.08em .35em;
 .card .themebtn:hover {
   border-color:var(--border-strong); background:var(--surface); }
 
-/* ---- the floating KPI strip ---- */
-.kpis { display:grid; grid-template-columns:repeat(4,1fr); background:var(--surface);
+/* ---- the glance: four verdict tiles floating over the aurora ---- */
+.tiles { display:grid; grid-template-columns:repeat(4,1fr); background:var(--surface);
   border-radius:16px; box-shadow:var(--shadow-float); border:1px solid var(--border);
-  margin-top:-118px; position:relative; z-index:2; padding:20px 0; }
-.kpi { padding:2px 24px; border-left:1px solid var(--grid); min-width:0; }
-.kpi:first-child { border-left:none; }
-.kk { font-size:11.5px; font-weight:600; color:var(--muted);
-  text-transform:uppercase; letter-spacing:.05em; white-space:nowrap; }
-.kv { font-size:31px; font-weight:600; letter-spacing:-.02em; line-height:1.15;
-  margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.ks { font-size:12px; color:var(--muted); margin-top:2px; }
+  margin-top:-118px; position:relative; z-index:2; padding:18px 0; }
+.tile { padding:4px 22px 2px; border-left:1px solid var(--grid); min-width:0;
+  position:relative; display:flex; flex-direction:column; }
+.tile:first-child { border-left:none; }
+.tk { font-size:11.5px; font-weight:600; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.05em; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis; }
+/* verdict words lead, in large type; the number is the second line */
+.tv-big { font-size:25px; font-weight:600; letter-spacing:-.018em;
+  line-height:1.16; margin-top:4px; text-wrap:balance; }
+.tv-big.good { color:var(--pos); } .tv-big.bad { color:var(--neg); }
+.tv-big.warn { color:var(--warn); }
+.kv { font-size:27px; font-weight:600; letter-spacing:-.02em; line-height:1.15;
+  margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tfig { font-size:13px; color:var(--ink-2); margin-top:3px; }
+.tfig b { font-weight:600; font-variant-numeric:tabular-nums; }
+.tsub { font-size:11.5px; color:var(--muted); margin-top:2px; }
+/* genuinely good news earns a quiet halo — never confetti */
+.tile.glow::after { content:""; position:absolute; inset:6px 10px;
+  border-radius:12px; pointer-events:none;
+  background:radial-gradient(120% 90% at 50% 0%,var(--pos-soft),transparent 70%);
+  z-index:-1; }
+.streak { display:inline-flex; align-items:center; gap:5px; margin-top:7px;
+  align-self:flex-start; background:var(--pos-soft); color:var(--pos);
+  border-radius:999px; padding:2px 9px; font-size:11px; font-weight:600; }
+.dots { display:flex; gap:5px; margin-top:9px; flex-wrap:wrap; }
+.dots i { width:9px; height:9px; border-radius:50%; background:var(--axis); }
+.dots i.ok { background:var(--pos); } .dots i.watch { background:var(--warn-dot); }
+.dots i.bad { background:var(--neg-dot); } .dots i.mut { background:var(--axis); }
+.spark { display:block; width:100%; height:44px; margin-top:8px; }
+.spark polyline { fill:none; stroke:var(--accent); stroke-width:2px;
+  vector-effect:non-scaling-stroke; stroke-linecap:round; stroke-linejoin:round; }
+.spark polygon { fill:var(--accent); opacity:.12; stroke:none; }
+.chip.mini { padding:2px 9px; font-size:11.5px; margin-top:6px;
+  align-self:flex-start; }
+
+/* ---- the ONE next line ---- */
+.next { display:flex; align-items:baseline; gap:14px; margin-top:16px;
+  background:var(--surface); border:1px solid var(--border); border-radius:14px;
+  box-shadow:var(--shadow-card); padding:15px 22px; position:relative; z-index:2; }
+.next .nk { flex:none; font-size:11.5px; font-weight:600; color:var(--accent);
+  text-transform:uppercase; letter-spacing:.06em; padding:3px 10px;
+  background:var(--accent-soft); border-radius:999px; }
+.next.allquiet .nk { color:var(--pos); background:var(--pos-soft); }
+.next .nt { font-size:16px; font-weight:600; line-height:1.4; min-width:0; }
+.next .nm { margin-left:auto; flex:none; color:var(--muted); font-size:12px;
+  white-space:nowrap; }
+
+/* ---- the rooms: tab bar + one open panel ---- */
+.tabbar { display:flex; gap:6px; margin:22px auto 0; padding:5px;
+  background:var(--surface-2); border:1px solid var(--border);
+  border-radius:999px; width:max-content; max-width:100%; overflow-x:auto; }
+.tab { border:0; background:none; color:var(--ink-2); font:600 13.5px/1
+  'Inter',system-ui,sans-serif; padding:9px 18px; border-radius:999px;
+  cursor:pointer; white-space:nowrap; transition:background .15s ease,
+  color .15s ease; }
+.tab:hover { color:var(--ink); }
+.tab[aria-selected="true"] { background:var(--surface); color:var(--ink);
+  box-shadow:0 1px 3px rgba(49,42,124,.14); }
+.room[hidden] { display:none; }
+.roomhead { color:var(--muted); font-size:12.5px; margin-top:18px;
+  max-width:76ch; }
+
+/* ---- spending room: period chips + clickable category rail + drill ---- */
+.periodbar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.pchip { border:1px solid var(--border-strong); background:var(--surface);
+  color:var(--ink-2); font:600 12.5px/1 'Inter',system-ui,sans-serif;
+  border-radius:999px; padding:7px 14px; cursor:pointer;
+  transition:background .15s ease,color .15s ease; }
+.pchip:hover { color:var(--ink); }
+.pchip[aria-pressed="true"] { background:var(--accent); color:#fff;
+  border-color:var(--accent); }
+.periodwin { margin-left:auto; color:var(--muted); font-size:12px;
+  white-space:nowrap; }
+.catrail { margin-top:12px; }
+.catrow { display:grid; grid-template-columns:minmax(96px,150px) 1fr auto;
+  gap:14px; align-items:center; width:100%; padding:8px 10px; border:0;
+  background:none; border-radius:10px; cursor:pointer; text-align:left;
+  font:inherit; color:inherit; }
+.catrow:hover { background:var(--accent-soft); }
+.catrow[aria-pressed="true"] { background:var(--accent-soft); }
+.catrow .name { font-size:13.5px; font-weight:600; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; }
+.catrow[aria-pressed="true"] .name { color:var(--link); }
+.catrow .track { margin:0; height:9px; }
+.catrow .amt { font-size:12.5px; color:var(--ink-2);
+  font-variant-numeric:tabular-nums; white-space:nowrap; }
+.catrow .amt b { font-weight:600; color:var(--ink); }
+.morecats { margin:6px 0 0 10px; border:0; background:none; color:var(--muted);
+  font:12.5px 'Inter',system-ui,sans-serif; cursor:pointer; padding:4px 0;
+  text-decoration:underline; text-underline-offset:2px; }
+.morecats:hover { color:var(--ink-2); }
+.drill h3 { font-size:15px; font-weight:600; letter-spacing:-.01em; }
+.drill .dwin { color:var(--muted); font-size:12px; }
+#trend-chart { height:180px; }
+.merch { list-style:none; margin:8px 0 0; padding:0; }
+.merch li { display:flex; justify-content:space-between; gap:12px;
+  padding:7px 0; border-top:1px solid var(--grid); font-size:12.5px;
+  color:var(--ink-2); align-items:baseline; }
+.merch li:first-child { border-top:none; }
+.merch b { font-weight:600; font-variant-numeric:tabular-nums;
+  color:var(--ink); white-space:nowrap; }
+.merch .mn { min-width:0; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; }
+.merchmore { color:var(--muted); font-size:12px; margin-top:8px; }
+
+/* ---- money map ---- */
+#map-chart { height:400px; }
+.mapcap { color:var(--ink-2); font-size:12.5px; margin-top:10px;
+  font-variant-numeric:tabular-nums; }
+.maphint { color:var(--muted); font-size:12px; margin-top:2px; }
+
+/* ---- goals room: the 529 what-if slider ---- */
+.eduwhatif { margin-top:16px; padding-top:14px; border-top:1px solid var(--grid); }
+.eduwhatif .dial { max-width:420px; }
+.edu-out { font-size:21px; font-weight:600; letter-spacing:-.015em;
+  margin-top:10px; }
+.edu-out2 { color:var(--ink-2); font-size:13px; margin-top:3px; }
 
 /* ---- cards + grids ---- */
 main { padding-bottom:44px; }
@@ -1247,6 +1709,7 @@ main { padding-bottom:44px; }
    dragging dead space to match its tall neighbor */
 .grid { display:grid; gap:18px; margin-top:18px; align-items:start; }
 .g-pace { grid-template-columns:1.5fr 1fr; }
+.g-spend { grid-template-columns:1.15fr 1fr; }
 .g-needs { grid-template-columns:1.5fr 1fr; }
 .g-walk { grid-template-columns:1.4fr 1fr; }
 .g-chesh { grid-template-columns:1.4fr 1fr; }
@@ -1447,19 +1910,12 @@ main { padding-bottom:44px; }
   align-items:flex-end; }
 .stat .v { font-size:22px; font-weight:600; letter-spacing:-.01em; }
 .stat .l { color:var(--muted); font-size:12px; margin-bottom:2px; }
-/* the category ribbon: 2px surface gaps between segments do the separating */
-.ribbon { display:flex; gap:2px; height:12px; border-radius:999px; overflow:hidden;
-  margin-top:8px; }
-.ribbon .seg { min-width:8px; }
-.seg.rib-1 { background:var(--rib-1); } .seg.rib-2 { background:var(--rib-2); }
-.seg.rib-3 { background:var(--rib-3); } .seg.rib-4 { background:var(--rib-4); }
+/* the band chart's legend (shared swatch-row pattern) */
 .riblegend { display:flex; flex-wrap:wrap; gap:6px 16px; margin-top:16px; }
 .riblegend .li { display:inline-flex; align-items:baseline; gap:6px;
   font-size:12px; color:var(--ink-2); }
 .riblegend .sw { width:9px; height:9px; border-radius:3px; flex:none;
   align-self:center; }
-.sw.rib-1 { background:var(--rib-1); } .sw.rib-2 { background:var(--rib-2); }
-.sw.rib-3 { background:var(--rib-3); } .sw.rib-4 { background:var(--rib-4); }
 .riblegend b { font-weight:600; font-variant-numeric:tabular-nums; }
 
 /* wins */
@@ -1507,13 +1963,13 @@ footer .tagline { color:var(--ink-2); }
   to { background-position:100% 60%; } }
 @media (prefers-reduced-motion: no-preference) {
   .hero::before { animation:aurora-pan 48s ease-in-out infinite alternate; }
-  .kpis { animation:rise .5s cubic-bezier(.2,.7,.3,1) backwards; }
-  .card { animation:rise .55s cubic-bezier(.2,.7,.3,1) backwards; }
-  main > .grid:nth-of-type(1) .card { animation-delay:.05s; }
-  main > .grid:nth-of-type(2) .card { animation-delay:.1s; }
-  main > .grid:nth-of-type(3) .card { animation-delay:.15s; }
-  main > .grid:nth-of-type(4) .card { animation-delay:.2s; }
-  main > .grid:nth-of-type(5) .card { animation-delay:.25s; }
+  .tiles { animation:rise .5s cubic-bezier(.2,.7,.3,1) backwards; }
+  .next { animation:rise .5s cubic-bezier(.2,.7,.3,1) .06s backwards; }
+  .tabbar { animation:rise .5s cubic-bezier(.2,.7,.3,1) .12s backwards; }
+  .room .card { animation:rise .5s cubic-bezier(.2,.7,.3,1) backwards; }
+  .room .grid:nth-of-type(1) .card { animation-delay:.05s; }
+  .room .grid:nth-of-type(2) .card { animation-delay:.1s; }
+  .room .grid:nth-of-type(3) .card { animation-delay:.15s; }
   .card { transition:transform .18s ease, box-shadow .18s ease; }
   .card:hover { transform:translateY(-2px); box-shadow:var(--shadow-hover); }
   .lanes li, .needs li, .moves li { transition:background .15s ease; }
@@ -1524,9 +1980,10 @@ footer .tagline { color:var(--ink-2); }
   background:var(--accent-soft); }
 
 @media (max-width:960px) {
-  .g-pace, .g-needs, .g-walk, .g-chesh, .g-nwt { grid-template-columns:1fr; }
-  .kpis { grid-template-columns:1fr 1fr; row-gap:14px; }
-  .kpi:nth-child(3) { border-left:none; }
+  .g-pace, .g-spend, .g-needs, .g-walk, .g-chesh, .g-nwt {
+    grid-template-columns:1fr; }
+  .tiles { grid-template-columns:1fr 1fr; row-gap:14px; }
+  .tile:nth-child(3) { border-left:none; }
   .hero-top { flex-direction:column; }
   .hero-side { align-self:flex-start; flex-direction:row-reverse; }
   .stamp { text-align:left; }
@@ -1534,12 +1991,22 @@ footer .tagline { color:var(--ink-2); }
 @media (max-width:560px) {
   .wrap { padding:0 16px; }
   .hero { padding-top:24px; padding-bottom:124px; }
-  .kpis { grid-template-columns:1fr 1fr; padding:12px 0; margin-top:-88px; }
-  .kpi { padding:2px 16px; }
-  .kv { font-size:24px; }
+  .tiles { grid-template-columns:1fr 1fr; padding:12px 0; margin-top:-88px; }
+  .tile { padding:2px 16px; }
+  .tv-big { font-size:20px; }
+  .kv { font-size:21px; }
   .phero { font-size:33px; }
   .statrow { gap:18px; }
   .dials { grid-template-columns:1fr; }
+  /* phone: the tab bar becomes a full-width segmented control that scrolls */
+  .tabbar { width:auto; border-radius:14px; scrollbar-width:none; }
+  .tabbar::-webkit-scrollbar { display:none; }
+  .tab { padding:9px 13px; border-radius:10px; }
+  .next { flex-wrap:wrap; }
+  .next .nm { margin-left:0; width:100%; }
+  .catrow { grid-template-columns:1fr auto; }
+  .catrow .track { display:none; }
+  .periodwin { width:100%; margin-left:0; }
   /* the lane tag column steals a third of a phone row — drop it to an
      inline chip under the lane's name instead */
   .lanes li { flex-wrap:wrap; }
@@ -1551,8 +2018,11 @@ footer .tagline { color:var(--ink-2); }
   * { transition:none !important; animation:none !important; } }
 @media print {
   body { background:#fff; }
-  .themebtn, .tv { display:none; }
-  .card, .kpis { border-color:#ddd; box-shadow:none; animation:none; }
+  .themebtn, .tv, .tabbar, .morecats { display:none; }
+  /* print = the glance + every room, expanded in order */
+  .room[hidden] { display:block; }
+  .room { break-before:page; }
+  .card, .tiles, .next { border-color:#ddd; box-shadow:none; animation:none; }
   .wrap { max-width:none; padding:0; }
   * { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
 }
@@ -1583,10 +2053,20 @@ JS_TEMPLATE = """
       { offset: 0, color: fade(cssv(varName), top) },
       { offset: 1, color: fade(cssv(varName), 0) }] };
   }
+  function byId(id) { return document.getElementById(id); }
+  function el(tag, cls, text) {   // untrusted strings enter via textContent only
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function isVisible(elm) {
+    return !!(elm && elm.offsetWidth > 0 && elm.offsetHeight > 0);
+  }
 
   // theme: auto -> light -> dark, persisted; charts re-skin on every change
   var root = document.documentElement;
-  var btn = document.getElementById('themebtn');
+  var btn = byId('themebtn');
   var order = ['auto', 'light', 'dark'];
   var theme = 'auto';
   try { theme = localStorage.getItem('sara-home-theme') || 'auto'; } catch (e) {}
@@ -1594,10 +2074,11 @@ JS_TEMPLATE = """
   function applyTheme(t) {
     if (t === 'auto') root.removeAttribute('data-theme');
     else root.setAttribute('data-theme', t);
-    if (btn) btn.textContent = t === 'auto' ? '\\u25d1 auto'
-      : (t === 'light' ? '\\u2600 light' : '\\u263e dark');
+    if (btn) btn.textContent = t === 'auto' ? '◑ auto'
+      : (t === 'light' ? '☀ light' : '☾ dark');
     try { localStorage.setItem('sara-home-theme', t); } catch (e) {}
-    buildCharts();
+    disposeAll();
+    syncCharts();
   }
   if (btn) btn.addEventListener('click', function () {
     theme = order[(order.indexOf(theme) + 1) % order.length];
@@ -1605,7 +2086,9 @@ JS_TEMPLATE = """
   });
   if (window.matchMedia) {
     window.matchMedia('(prefers-color-scheme: dark)')
-      .addEventListener('change', function () { if (theme === 'auto') buildCharts(); });
+      .addEventListener('change', function () {
+        if (theme === 'auto') { disposeAll(); syncCharts(); }
+      });
   }
 
   function tipHtml(tip) {  // tip = {t: title, rows: [[value, label], ...]}
@@ -1687,106 +2170,305 @@ JS_TEMPLATE = """
     };
   }
 
-  var charts = [];
-  function buildCharts() {
-    charts.forEach(function (c) { c.dispose(); });
-    charts = [];
+  // ---- chart builders: one per container id, built only when visible ----
+  function buildPace(elm) {
     var P = DATA.pace;
-    var el = document.getElementById('pace-chart');
-    if (el && P) {
-      var c = echarts.init(el, null, { renderer: 'svg' });
-      var opt = baseOption();
-      // narrow screens wrap the legend onto two lines — the grid starts
-      // below it so legend text never overprints the top y-axis label
-      opt.grid = { left: 62, right: 16, top: el.clientWidth < 520 ? 88 : 38,
-                   bottom: 28 };
-      opt.legend = legendBox();
-      opt.xAxis = catAxis(P.days, P.xint, el.clientWidth);
-      opt.yAxis = valAxis(P.y);
-      opt.tooltip.formatter = function (ps) {
-        return tipHtml(P.tips[ps[0].dataIndex]);
-      };
-      opt.series = [];
-      if (P.ideal.length) opt.series.push({
-        name: 'a typical month, day by day', type: 'line', data: P.ideal,
-        symbol: 'none', color: cssv('--ideal'),
-        lineStyle: { type: 'dotted', width: 2.5 },
-        emphasis: { disabled: true }, z: 1
-      });
-      if (P.actual.length) opt.series.push({
-        name: 'spent, day by day', type: 'line', data: P.actual,
-        symbol: 'none', color: cssv('--accent'),
-        lineStyle: { width: 3, cap: 'round' },
-        areaStyle: { color: areaGrad('--accent', 0.22) },
-        emphasis: { disabled: true }, z: 2
-      });
-      if (P.now) opt.series.push(nowDot(P.now.xy, P.now.label, P.now.side));
-      c.setOption(opt);
-      charts.push(c);
-    }
-    var N = DATA.nw;
-    el = document.getElementById('nw-chart');
-    if (el && N) {
-      var c2 = echarts.init(el, null, { renderer: 'svg' });
-      var o2 = baseOption();
-      var hasCost = N.atcost.some(function (v) { return v !== null; });
-      var zoomBar = N.labels.length >= 10;  // slider zoom once history earns it
-      o2.grid = { left: 62, right: 84, top: hasCost ? 38 : 16,
-                  bottom: zoomBar ? 52 : 28 };
-      if (hasCost) o2.legend = legendBox();
-      o2.dataZoom = [{ type: 'inside', zoomOnMouseWheel: 'shift',
-                       moveOnMouseWheel: false }];
-      if (zoomBar) o2.dataZoom.push({
-        type: 'slider', height: 16, bottom: 4, brushSelect: false,
-        borderColor: 'rgba(0,0,0,0)', backgroundColor: 'rgba(0,0,0,0)',
-        fillerColor: cssv('--accent-soft'),
-        handleStyle: { color: cssv('--surface'), borderColor: cssv('--axis') },
-        moveHandleStyle: { color: cssv('--axis') },
-        emphasis: { handleStyle: { borderColor: cssv('--accent') } },
-        dataBackground: { lineStyle: { color: cssv('--grid') },
-                          areaStyle: { color: cssv('--accent-soft') } },
-        selectedDataBackground: { lineStyle: { color: cssv('--axis') },
-                                  areaStyle: { color: cssv('--accent-soft') } },
-        textStyle: { color: cssv('--muted'), fontSize: 10, fontFamily: FONT }
-      });
-      o2.xAxis = catAxis(N.labels, N.xint, el.clientWidth);
-      o2.yAxis = valAxis(N.y);
-      o2.tooltip.formatter = function (ps) {
-        return tipHtml(N.tips[ps[0].dataIndex]);
-      };
-      var market = {
-        name: 'at market prices', type: 'line', data: N.market, symbol: 'none',
-        color: cssv('--accent'),
-        lineStyle: { width: 3, cap: 'round' },
-        areaStyle: { color: areaGrad('--accent', 0.22) },
-        emphasis: { disabled: true }, z: 2
-      };
-      if (N.seam !== null) market.markLine = {  // where at-cost becomes market
-        symbol: 'none', silent: true,
-        lineStyle: { color: cssv('--axis'), type: 'dashed', width: 1 },
-        label: { formatter: N.seamLabel, position: 'insideEndTop',
-                 color: cssv('--muted'), fontSize: 10.5, fontFamily: FONT },
-        data: [{ xAxis: N.seam }]
-      };
-      o2.series = [market];
-      if (hasCost) o2.series.push({
-        name: 'at cost (no dated price yet)', type: 'line', data: N.atcost,
-        symbol: 'none', color: cssv('--accent'),
-        lineStyle: { width: 2, type: 'dashed', opacity: 0.75 },
-        emphasis: { disabled: true }, z: 1
-      });
-      o2.series.push(nowDot(N.end.xy, N.end.label, 'right'));
-      c2.setOption(o2);
-      charts.push(c2);
-    }
-    buildWhatif();
+    if (!P) return null;
+    var c = echarts.init(elm, null, { renderer: 'svg' });
+    var opt = baseOption();
+    // narrow screens wrap the legend onto two lines — the grid starts
+    // below it so legend text never overprints the top y-axis label
+    opt.grid = { left: 62, right: 16, top: elm.clientWidth < 520 ? 88 : 38,
+                 bottom: 28 };
+    opt.legend = legendBox();
+    opt.xAxis = catAxis(P.days, P.xint, elm.clientWidth);
+    opt.yAxis = valAxis(P.y);
+    opt.tooltip.formatter = function (ps) {
+      return tipHtml(P.tips[ps[0].dataIndex]);
+    };
+    opt.series = [];
+    if (P.ideal.length) opt.series.push({
+      name: 'a typical month, day by day', type: 'line', data: P.ideal,
+      symbol: 'none', color: cssv('--ideal'),
+      lineStyle: { type: 'dotted', width: 2.5 },
+      emphasis: { disabled: true }, z: 1
+    });
+    if (P.actual.length) opt.series.push({
+      name: 'spent, day by day', type: 'line', data: P.actual,
+      symbol: 'none', color: cssv('--accent'),
+      lineStyle: { width: 3, cap: 'round' },
+      areaStyle: { color: areaGrad('--accent', 0.22) },
+      emphasis: { disabled: true }, z: 2
+    });
+    if (P.now) opt.series.push(nowDot(P.now.xy, P.now.label, P.now.side));
+    c.setOption(opt);
+    return c;
   }
+
+  function buildNW(elm) {
+    var N = DATA.nw;
+    if (!N) return null;
+    var c2 = echarts.init(elm, null, { renderer: 'svg' });
+    var o2 = baseOption();
+    var hasCost = N.atcost.some(function (v) { return v !== null; });
+    var zoomBar = N.labels.length >= 10;  // slider zoom once history earns it
+    o2.grid = { left: 62, right: 84, top: hasCost ? 38 : 16,
+                bottom: zoomBar ? 52 : 28 };
+    if (hasCost) o2.legend = legendBox();
+    o2.dataZoom = [{ type: 'inside', zoomOnMouseWheel: 'shift',
+                     moveOnMouseWheel: false }];
+    if (zoomBar) o2.dataZoom.push({
+      type: 'slider', height: 16, bottom: 4, brushSelect: false,
+      borderColor: 'rgba(0,0,0,0)', backgroundColor: 'rgba(0,0,0,0)',
+      fillerColor: cssv('--accent-soft'),
+      handleStyle: { color: cssv('--surface'), borderColor: cssv('--axis') },
+      moveHandleStyle: { color: cssv('--axis') },
+      emphasis: { handleStyle: { borderColor: cssv('--accent') } },
+      dataBackground: { lineStyle: { color: cssv('--grid') },
+                        areaStyle: { color: cssv('--accent-soft') } },
+      selectedDataBackground: { lineStyle: { color: cssv('--axis') },
+                                areaStyle: { color: cssv('--accent-soft') } },
+      textStyle: { color: cssv('--muted'), fontSize: 10, fontFamily: FONT }
+    });
+    o2.xAxis = catAxis(N.labels, N.xint, elm.clientWidth);
+    o2.yAxis = valAxis(N.y);
+    o2.tooltip.formatter = function (ps) {
+      return tipHtml(N.tips[ps[0].dataIndex]);
+    };
+    var market = {
+      name: 'at market prices', type: 'line', data: N.market, symbol: 'none',
+      color: cssv('--accent'),
+      lineStyle: { width: 3, cap: 'round' },
+      areaStyle: { color: areaGrad('--accent', 0.22) },
+      emphasis: { disabled: true }, z: 2
+    };
+    if (N.seam !== null) market.markLine = {  // where at-cost becomes market
+      symbol: 'none', silent: true,
+      lineStyle: { color: cssv('--axis'), type: 'dashed', width: 1 },
+      label: { formatter: N.seamLabel, position: 'insideEndTop',
+               color: cssv('--muted'), fontSize: 10.5, fontFamily: FONT },
+      data: [{ xAxis: N.seam }]
+    };
+    o2.series = [market];
+    if (hasCost) o2.series.push({
+      name: 'at cost (no dated price yet)', type: 'line', data: N.atcost,
+      symbol: 'none', color: cssv('--accent'),
+      lineStyle: { width: 2, type: 'dashed', opacity: 0.75 },
+      emphasis: { disabled: true }, z: 1
+    });
+    o2.series.push(nowDot(N.end.xy, N.end.label, 'right'));
+    c2.setOption(o2);
+    return c2;
+  }
+
+  // ---- the spending room: period chips + clickable categories + drill ---
+  var SP = DATA.spending;
+  var spState = { p: 'cur', ci: -1, all: false };
+  if (SP) {
+    if (!SP.order[spState.p] || !SP.order[spState.p].length) {
+      for (var pi = 0; pi < SP.periods.length; pi++) {
+        if (SP.order[SP.periods[pi].key].length) {
+          spState.p = SP.periods[pi].key;
+          break;
+        }
+      }
+    }
+    var o0 = SP.order[spState.p] || [];
+    spState.ci = o0.length ? o0[0] : -1;
+  }
+
+  function setTrend(c) {
+    if (!SP || spState.ci < 0) return;
+    var cat = SP.cats[spState.ci];
+    var opt = baseOption();
+    opt.grid = { left: 56, right: 12, top: 14, bottom: 26 };
+    opt.xAxis = {
+      type: 'category', data: SP.months,
+      axisLine: { lineStyle: { color: cssv('--axis') } },
+      axisTick: { show: false },
+      axisLabel: { color: cssv('--muted'), fontSize: 11, fontFamily: FONT }
+    };
+    opt.yAxis = valAxis(cat.y);
+    opt.tooltip.formatter = function (ps) {
+      return tipHtml(cat.tips[ps[0].dataIndex]);
+    };
+    opt.series = [{
+      type: 'bar',
+      data: cat.series.map(function (v, i) {
+        return i === SP.partialIdx           // the in-progress month, faded
+          ? { value: v, itemStyle: { opacity: 0.45 } } : v;
+      }),
+      barMaxWidth: 34,
+      itemStyle: { color: cssv('--accent'), borderRadius: [4, 4, 0, 0] },
+      emphasis: { disabled: true }
+    }];
+    c.setOption(opt, true);
+  }
+  function buildTrend(elm) {
+    if (!SP || spState.ci < 0) return null;
+    var c = echarts.init(elm, null, { renderer: 'svg' });
+    setTrend(c);
+    return c;
+  }
+
+  function renderSpending() {
+    if (!SP || !byId('catrail')) return;
+    var ord = SP.order[spState.p] || [];
+    if (ord.indexOf(spState.ci) < 0) spState.ci = ord.length ? ord[0] : -1;
+    var per = null;
+    SP.periods.forEach(function (pp) { if (pp.key === spState.p) per = pp; });
+    [].slice.call(document.querySelectorAll('.pchip')).forEach(function (b) {
+      b.setAttribute('aria-pressed', b.dataset.p === spState.p ? 'true' : 'false');
+    });
+    var winEl = byId('period-win');
+    if (winEl && per) winEl.textContent = per.total + ' · ' + per.win;
+    var rail = byId('catrail');
+    rail.textContent = '';
+    var showN = spState.all ? ord.length : Math.min(ord.length, SP.visible);
+    ord.slice(0, showN).forEach(function (ci) {
+      var cat = SP.cats[ci], pd = cat.per[spState.p];
+      if (!pd) return;
+      var b = el('button', 'catrow');
+      b.type = 'button';
+      b.setAttribute('aria-pressed', ci === spState.ci ? 'true' : 'false');
+      b.appendChild(el('span', 'name', cat.name));
+      var tr = el('div', 'track');
+      var f = el('span', 'fill');
+      f.style.width = pd.w + '%';
+      tr.appendChild(f);
+      b.appendChild(tr);
+      var amt = el('span', 'amt');
+      amt.appendChild(el('b', null, pd.amt));
+      amt.appendChild(document.createTextNode(' · ' + pd.pct));
+      b.appendChild(amt);
+      b.addEventListener('click', function () {
+        spState.ci = ci;
+        renderSpending();
+      });
+      rail.appendChild(b);
+    });
+    var moreBtn = byId('morecats');
+    if (moreBtn) {
+      var hid = ord.length - showN;
+      moreBtn.hidden = hid <= 0 && !spState.all;
+      moreBtn.textContent = spState.all ? 'Show fewer'
+        : '+ ' + hid + ' smaller categor' + (hid === 1 ? 'y' : 'ies');
+    }
+    // the drill panel: this category, this period
+    if (spState.ci >= 0) {
+      var cat2 = SP.cats[spState.ci];
+      var pd2 = cat2.per[spState.p] || { amt: '$0', pct: '—', merch: [], more: 0 };
+      var nameEl = byId('drill-name');
+      if (nameEl) nameEl.textContent = cat2.name;
+      var dwin = byId('drill-win');
+      if (dwin && per) dwin.textContent = pd2.amt + ' · ' + per.win;
+      var ml = byId('merch');
+      if (ml) {
+        ml.textContent = '';
+        pd2.merch.forEach(function (nv) {
+          var li = el('li');
+          li.appendChild(el('span', 'mn', nv[0]));
+          li.appendChild(el('b', null, nv[1]));
+          ml.appendChild(li);
+        });
+        if (!pd2.merch.length) {
+          var li0 = el('li');
+          li0.appendChild(el('span', 'mn', 'no merchants in this window'));
+          ml.appendChild(li0);
+        }
+      }
+      var mm = byId('merchmore');
+      if (mm) {
+        mm.hidden = !pd2.more;
+        mm.textContent = pd2.more
+          ? '+ ' + pd2.more + ' smaller merchant' + (pd2.more === 1 ? '' : 's')
+            + ' — the ledger has receipts' : '';
+      }
+    }
+    if (charts['trend-chart']) setTrend(charts['trend-chart']);
+    else syncCharts();
+  }
+
+  // ---- the money map: institution -> account -> holding treemap ---------
+  function mapNode(n, color) {
+    var out = { name: n.name, value: n.value,
+                amt: n.amt, pct: n.pct };
+    if (color) out.itemStyle = { color: color };
+    if (n.children) {
+      out.children = n.children.map(function (k) { return mapNode(k, null); });
+    }
+    return out;
+  }
+  function buildMap(elm) {
+    var M = DATA.map;
+    if (!M) return null;
+    var c = echarts.init(elm, null, { renderer: 'svg' });
+    var opt = baseOption();
+    opt.tooltip.trigger = 'item';
+    opt.tooltip.formatter = function (p) {
+      var d = p.data || {};
+      if (!d.amt) return '';
+      return tipHtml({ t: p.treePathInfo
+        ? p.treePathInfo.map(function (t) { return t.name; })
+            .filter(Boolean).join(' › ') : d.name,
+        rows: [[d.amt, (d.pct || '') + ' of assets']] });
+    };
+    opt.series = [{
+      type: 'treemap', name: 'everything',
+      data: M.tree.map(function (g) { return mapNode(g, cssv(g.cvar)); }),
+      roam: false, nodeClick: 'zoomToNode', leafDepth: 2,
+      left: 0, right: 0, top: 4, bottom: 34,
+      breadcrumb: { show: true, left: 'center', bottom: 0, height: 22,
+        itemStyle: { color: cssv('--surface-2'),
+                     borderColor: cssv('--border-strong'), borderWidth: 1,
+                     textStyle: { color: cssv('--ink-2'), fontFamily: FONT,
+                                  fontSize: 11.5 } },
+        emphasis: { itemStyle: { color: cssv('--accent-soft') } } },
+      label: { show: true, fontFamily: FONT, fontSize: 12,
+        formatter: function (p) {
+          var d = p.data || {};
+          return d.amt ? d.name + String.fromCharCode(10) + d.amt + ' · ' + d.pct
+            : p.name;
+        } },
+      itemStyle: { borderColor: cssv('--surface'), borderWidth: 2,
+                   gapWidth: 2 },
+      levels: [
+        { itemStyle: { borderWidth: 0, gapWidth: 3 } },
+        { colorAlpha: [0.92, 1],
+          itemStyle: { gapWidth: 2, borderWidth: 2,
+                       borderColorSaturation: 0.55 },
+          upperLabel: { show: true, height: 22, fontFamily: FONT,
+                        fontSize: 11.5, fontWeight: 600, color: '#fff' } },
+        { colorAlpha: [0.68, 0.88] }
+      ],
+      emphasis: { label: { show: true } }
+    }];
+    c.setOption(opt);
+    return c;
+  }
+
+  // ---- the goals room: 529 what-if slider (grid lookups only) -----------
+  var EG = DATA.edu;
+  var eduEls = { c: byId('edu-c'), v: byId('edu-c-v'),
+                 a: byId('edu-arrive'), k: byId('edu-cover') };
+  function eduUpdate() {
+    if (!EG || !eduEls.c) return;
+    var i = Math.max(0, Math.min(EG.steps.length - 1, +eduEls.c.value || 0));
+    eduEls.v.textContent = EG.steps[i];
+    eduEls.c.setAttribute('aria-valuetext', EG.steps[i]);
+    if (eduEls.a) eduEls.a.textContent = EG.arrive[i];
+    if (eduEls.k) {
+      eduEls.k.textContent = EG.cover[i] || '';
+      eduEls.k.hidden = !EG.cover[i];
+    }
+  }
+  if (EG && eduEls.c) eduEls.c.addEventListener('input', eduUpdate);
+
   // ---- what-if dials + life events: JS only INDEXES the Python grid ----
   // (keys into DATA.whatif are concatenated index digits; every dollar
   // string and every replay count was precomputed server-side)
   var WI = DATA.whatif;
   var wiChart = null, bandChart = null;
-  function byId(id) { return document.getElementById(id); }
   var wiEls = {
     rate: byId('wi-rate'), spend: byId('wi-spend'), growth: byId('wi-growth'),
     rateV: byId('wi-rate-v'), spendV: byId('wi-spend-v'), growthV: byId('wi-growth-v'),
@@ -1798,16 +2480,6 @@ JS_TEMPLATE = """
     bands: byId('wi-bands'), bandChart: byId('band-chart'), bandLede: byId('band-lede'),
     guard: byId('guard-line'), unspent: byId('unspent-line'), bandTable: byId('band-table')
   };
-  function buildWhatif() {
-    if (!WI || !wiEls.chart) return;
-    wiChart = echarts.init(wiEls.chart, null, { renderer: 'svg' });
-    charts.push(wiChart);
-    if (wiEls.bandChart) {
-      bandChart = echarts.init(wiEls.bandChart, null, { renderer: 'svg' });
-      charts.push(bandChart);
-    }
-    wiUpdate();
-  }
   function calyr(years, short) {  // Python-made calendar labels, by offset
     return (short ? WI.xyearS : WI.xyear)[String(Math.round(years))] || '';
   }
@@ -2040,6 +2712,18 @@ JS_TEMPLATE = """
                 seriesOf(2, '2×+ ahead', '--band-ahead')];
     bandChart.setOption(o, true);
   }
+  function buildWi(elm) {
+    if (!WI) return null;
+    wiChart = echarts.init(elm, null, { renderer: 'svg' });
+    wiUpdate();
+    return wiChart;
+  }
+  function buildBand(elm) {
+    if (!WI) return null;
+    bandChart = echarts.init(elm, null, { renderer: 'svg' });
+    if (wiChart) wiUpdate();
+    return bandChart;
+  }
   if (WI && wiEls.rate) {
     [wiEls.rate, wiEls.spend, wiEls.growth].forEach(function (elm) {
       elm.addEventListener('input', wiUpdate);
@@ -2065,21 +2749,105 @@ JS_TEMPLATE = """
       if (window.matchMedia && window.matchMedia('(max-width:640px)').matches)
         wiEls.fold.removeAttribute('open');
       wiEls.fold.addEventListener('toggle', function () {
-        if (wiEls.fold.open && wiChart) { wiChart.resize(); wiUpdate(); }
+        if (wiEls.fold.open) { syncCharts(); wiUpdate(); }
       });
     }
     if (wiEls.bands) wiEls.bands.addEventListener('toggle', function () {
-      if (wiEls.bands.open && bandChart) { bandChart.resize(); wiUpdate(); }
+      if (wiEls.bands.open) { syncCharts(); wiUpdate(); }
     });
   }
 
+  // ---- the chart registry: build lazily, only what's visible ------------
+  var builders = {
+    'pace-chart': buildPace, 'trend-chart': buildTrend,
+    'nw-chart': buildNW, 'map-chart': buildMap,
+    'wi-chart': buildWi, 'band-chart': buildBand
+  };
+  var charts = {};
+  function disposeAll() {
+    for (var id in charts) if (charts[id]) charts[id].dispose();
+    charts = {};
+    wiChart = null;
+    bandChart = null;
+  }
+  function syncCharts() {
+    for (var id in builders) {
+      var elm = byId(id);
+      if (!elm || !isVisible(elm)) continue;
+      if (charts[id]) charts[id].resize();
+      else {
+        var c = builders[id](elm);
+        if (c) charts[id] = c;
+      }
+    }
+  }
+
+  // ---- the rooms: tab bar, hash deep-links, keyboard, print-expand ------
+  var tabs = [].slice.call(document.querySelectorAll('.tab'));
+  var rooms = {};
+  tabs.forEach(function (t) { rooms[t.dataset.room] = byId('room-' + t.dataset.room); });
+  var curRoom = tabs.length ? tabs[0].dataset.room : null;
+  function openRoom(key, setHash) {
+    if (!rooms[key]) key = tabs.length ? tabs[0].dataset.room : null;
+    if (!key) return;
+    curRoom = key;
+    tabs.forEach(function (t) {
+      var on = t.dataset.room === key;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      t.tabIndex = on ? 0 : -1;
+      if (rooms[t.dataset.room]) rooms[t.dataset.room].hidden = !on;
+    });
+    if (setHash) {
+      try { history.replaceState(null, '', '#' + key); }
+      catch (e) { location.hash = key; }
+    }
+    syncCharts();
+  }
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () { openRoom(t.dataset.room, true); });
+  });
+  var tabbar = byId('tabbar');
+  if (tabbar) tabbar.addEventListener('keydown', function (ev) {
+    var i = tabs.findIndex(function (t) { return t.dataset.room === curRoom; });
+    var to = -1;
+    if (ev.key === 'ArrowRight') to = (i + 1) % tabs.length;
+    else if (ev.key === 'ArrowLeft') to = (i - 1 + tabs.length) % tabs.length;
+    else if (ev.key === 'Home') to = 0;
+    else if (ev.key === 'End') to = tabs.length - 1;
+    if (to >= 0) {
+      ev.preventDefault();
+      openRoom(tabs[to].dataset.room, true);
+      tabs[to].focus();
+    }
+  });
+  window.addEventListener('hashchange', function () {
+    var k = (location.hash || '').replace('#', '');
+    if (rooms[k] && k !== curRoom) openRoom(k, false);
+  });
+  window.addEventListener('beforeprint', function () {
+    for (var k in rooms) if (rooms[k]) rooms[k].hidden = false;
+    syncCharts();
+  });
+  window.addEventListener('afterprint', function () { openRoom(curRoom, false); });
+
+  // ---- boot -------------------------------------------------------------
+  var boot = (location.hash || '').replace('#', '');
+  openRoom(rooms[boot] ? boot : curRoom, false);
+  [].slice.call(document.querySelectorAll('.pchip')).forEach(function (b) {
+    b.addEventListener('click', function () {
+      spState.p = b.dataset.p;
+      renderSpending();
+    });
+  });
+  renderSpending();
+  eduUpdate();
   applyTheme(theme);
 
   var rt = null;
   window.addEventListener('resize', function () {
     clearTimeout(rt);
     rt = setTimeout(function () {
-      charts.forEach(function (c) { c.resize(); });
+      for (var id in charts) charts[id].resize();
     }, 120);
   });
 })();
@@ -2136,18 +2904,97 @@ try { var t = localStorage.getItem('sara-home-theme');
     <p class="say">{{ sara }}</p>
   </div>
 </div>
-<main class="wrap">
-<div class="kpis" role="group" aria-label="Today's headline numbers">
-  {% for t in kpis %}
-  <div class="kpi">
-    <div class="kk">{{ t.k }}</div>
-    <div class="kv num{{ ' ' + t.cls if t.cls }}">{{ t.v }}</div>
-    <div class="ks">{{ t.sub }}</div>
+<main>
+<div class="wrap">
+<div class="tiles" role="group" aria-label="Today's verdicts">
+  <div class="tile{{ ' glow' if g.spend.glow }}">
+    <div class="tk">Spending</div>
+    <div class="tv-big{{ ' ' + g.spend.cls if g.spend.cls }}">{{ g.spend.verdict }}</div>
+    <div class="tfig num">{{ g.spend.fig }}</div>
+    <div class="tsub">{{ g.spend.sub }}</div>
+    {% if g.spend.streak %}<span class="streak">✦ {{ g.spend.streak }}</span>{% endif %}
   </div>
-  {% endfor %}
+  <div class="tile{{ ' glow' if g.nw.glow }}">
+    <div class="tk">Net worth</div>
+    <div class="kv num">{{ g.nw.v }}</div>
+    {% if g.nw.chip %}<span class="chip mini{{ ' ' + g.nw.chip.cls if g.nw.chip.cls }}">{{ g.nw.chip.body }}</span>{% endif %}
+    {% if g.nw.spark %}
+    <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none" role="img"
+         aria-label="Liquid net worth trend, {{ g.nw.spark.win }}">
+      <polygon points="{{ g.nw.spark.area }}"></polygon>
+      <polyline points="{{ g.nw.spark.points }}"></polyline></svg>
+    {% endif %}
+    <div class="tsub">{{ g.nw.sub }}</div>
+  </div>
+  <div class="tile">
+    <div class="tk">Autopilot</div>
+    <div class="tv-big{{ ' ' + g.auto.cls if g.auto.cls }}">{{ g.auto.verdict }}</div>
+    {% if g.auto.dots %}
+    <div class="dots" role="img" aria-label="{{ g.auto.aria }}">
+      {% for d in g.auto.dots %}<i class="{{ d }}"></i>{% endfor %}
+    </div>
+    {% endif %}
+    <div class="tsub">{{ g.auto.sub }}</div>
+  </div>
+  <div class="tile">
+    <div class="tk">{{ g.edu.label }}</div>
+    <div class="tv-big{{ ' ' + g.edu.cls if g.edu.cls }}">{{ g.edu.verdict }}</div>
+    {% if g.edu.fig %}<div class="tfig num">{{ g.edu.fig }}</div>{% endif %}
+    <div class="tsub">{{ g.edu.sub }}</div>
+  </div>
+</div>
+<div class="next{{ ' allquiet' if nxt.quiet }}">
+  <span class="nk">{{ nxt.label }}</span>
+  <p class="nt">{{ nxt.text }}</p>
+  {% if nxt.meta %}<span class="nm num">{{ nxt.meta }}</span>{% endif %}
+</div>
+<nav class="tabbar" id="tabbar" role="tablist" aria-label="Rooms">
+  <button class="tab" role="tab" data-room="spending" id="tab-spending"
+    aria-controls="room-spending" aria-selected="true">Spending</button>
+  <button class="tab" role="tab" data-room="map" id="tab-map"
+    aria-controls="room-map" aria-selected="false" tabindex="-1">Money map</button>
+  <button class="tab" role="tab" data-room="goals" id="tab-goals"
+    aria-controls="room-goals" aria-selected="false" tabindex="-1">Goals</button>
+  <button class="tab" role="tab" data-room="autopilot" id="tab-autopilot"
+    aria-controls="room-autopilot" aria-selected="false" tabindex="-1">Autopilot</button>
+  {% if indy %}
+  <button class="tab" role="tab" data-room="independence" id="tab-independence"
+    aria-controls="room-independence" aria-selected="false" tabindex="-1">Independence</button>
+  {% endif %}
+</nav>
 </div>
 
-<div class="grid g-pace">
+<section class="room wrap" id="room-spending" role="tabpanel" aria-labelledby="tab-spending">
+{% if sp %}
+<div class="grid g-spend">
+<section class="card">
+  {{ cardhead('Where the money goes', 'Click a category — I keep the receipts.') }}
+  <div class="periodbar" role="group" aria-label="Time window">
+    {% for pp in sp.periods %}
+    <button class="pchip" type="button" data-p="{{ pp.key }}"
+      aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ pp.label }}</button>
+    {% endfor %}
+    <span class="periodwin num" id="period-win"></span>
+  </div>
+  <div class="catrail" id="catrail"></div>
+  <button class="morecats" id="morecats" type="button" hidden></button>
+  {{ tablewin(sp.table_caption, ['Category', 'This month', sp.six_lbl], sp.table_rows) }}
+</section>
+<section class="card drill">
+  <div class="cardhead">
+    <div><h2 class="ck">Up close</h2>
+    <h3 id="drill-name"></h3></div>
+    <span class="window num" id="drill-win"></span>
+  </div>
+  <div id="trend-chart" class="chart" role="img"
+       aria-label="Monthly spend for the selected category, {{ sp.trendWin }}"></div>
+  <p class="dwin">month by month · {{ sp.trendWin }}</p>
+  <ul class="merch" id="merch"></ul>
+  <p class="merchmore" id="merchmore" hidden></p>
+</section>
+</div>
+{% endif %}
+<div class="grid {{ 'g-pace' if (wins or ch) else 'g-solo' }}">
 <section class="card">
   {{ cardhead('This month — is it unusual?', p.sub, p.window) }}
   {% if p.empty %}
@@ -2162,6 +3009,155 @@ try { var t = localStorage.getItem('sara-home-theme');
   {% if p.table_rows %}{{ tablewin(p.table_caption, ['Day', 'Spent so far', 'Typical path'], p.table_rows) }}{% endif %}
   {% endif %}
 </section>
+<div class="sidecol">
+{% if ch %}
+<section class="card">
+  {{ cardhead(ch.title, 'The month’s cheshbon — the monthly review closes the book.', ch.window) }}
+  <div class="statrow num">
+    <div class="stat"><div class="l">in</div><div class="v">{{ ch.inc }}</div></div>
+    <div class="stat"><div class="l">out</div><div class="v">{{ ch.exp }}</div></div>
+    <div class="stat"><div class="l">net</div><div class="v {{ ch.net_cls }}">{{ ch.net }}</div></div>
+  </div>
+  {% if ch.payday_note %}<p class="barnotes" style="margin-top:8px">{{ ch.payday_note }}</p>{% endif %}
+  {% if ch.closed %}<p class="goalfoot">{{ ch.closed.month }}, closed: in {{ ch.closed.inc }} · out {{ ch.closed.exp }} · net {{ ch.closed.net }}{{ ch.wink }}</p>{% endif %}
+</section>
+{% endif %}
+{% if wins %}
+<section class="card">
+  {{ cardhead("Sara's finds", 'Treasure only — every dollar here was already found or saved.', wins.year) }}
+  <p class="winhero num">{{ wins.total }} <span class="of">found this year</span></p>
+  <details class="tv"><summary>{{ wins.count_lbl }}</summary>
+  <ul class="wins-list">
+    {% for it in wins.rows %}
+    <li><span>{{ it.label }}</span><b>{{ it.amt }}</b></li>
+    {% endfor %}
+  </ul></details>
+</section>
+{% endif %}
+</div>
+</div>
+</section>
+
+<section class="room wrap" id="room-map" role="tabpanel" aria-labelledby="tab-map" hidden>
+<div class="grid g-solo">
+<section class="card">
+  {{ cardhead('Where every dollar sits', 'The whole liquid pot, drawn to scale. Click a box to zoom in; the trail below climbs back out.', map.window if map else '') }}
+  {% if map %}
+  <div id="map-chart" class="chart" role="img"
+       aria-label="Treemap of liquid assets by institution, account, and holding"></div>
+  <p class="mapcap">{{ map.caption }}</p>
+  {{ tablewin('Every liquid account, at the latest prices on file.',
+              ['Account', 'Balance'], map.table_rows) }}
+  {% else %}
+  <div class="empty"><b>Nothing to map yet.</b> Import a statement and every
+  dollar gets a box here, drawn to scale.</div>
+  {% endif %}
+</section>
+</div>
+<div class="grid g-nwt">
+<section class="card">
+  {{ cardhead('Net worth — the long line', nw.sub, nw.window) }}
+  <p class="heromini num">{{ nw.liquid }}</p>
+  <p class="herolab">liquid net worth — {{ nw.asof }}</p>
+  {% if nw.delta %}<div class="chiprow"><span class="chip{{ ' ' + nw.delta.cls if nw.delta.cls }}">{{ nw.delta.body }}</span></div>{% endif %}
+  {% if attr %}
+  <div class="attr">
+    {% for a in attr.rows %}
+    {% if a.suppressed %}
+    <p class="attr-sup"><span class="attr-win num">{{ a.window }}</span> · {{ a.suppressed }}</p>
+    {% else %}
+    <div class="attr-row">
+      <p class="attr-line"><span class="attr-win num">{{ a.window }}</span>
+        <b class="num{{ ' ' + a.cls if a.cls }}">{{ a.delta }}</b>
+        <span class="attr-body num">— {{ a.body }}{{ a.note }}</span></p>
+      {% if a.segs %}
+      <div class="attrbar" role="img" aria-label="{{ a.aria }}">
+        {% for s in a.segs %}<span class="attrseg {{ s.cls }}" style="width:{{ s.width }}%"></span>{% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if nw.has_chart %}
+  <div id="nw-chart" class="chart" role="img" aria-label="Liquid net worth by month"></div>
+  {{ tablewin('Liquid net worth at each month end; the endpoint is the headline at the latest prices.',
+              ['Month', 'Liquid net worth', 'Basis'], nw.table_rows) }}
+  {% else %}
+  <div class="empty"><b>Not enough history for a line yet.</b> Two month-ends
+  in the ledger and the curve appears.</div>
+  {% endif %}
+</section>
+<section class="card">
+  {{ cardhead('Vs the thesis', thesis.sub or 'The written target mix, scored against the live portfolio.', thesis.window or '') }}
+  {% if thesis.nudge %}
+  <div class="nudge">{{ thesis.nudge }}</div>
+  {% else %}
+  <div class="drift">
+    {% for r in thesis.rows %}
+    <div class="driftrow">
+      <span class="dlabel">{{ r.label }}</span>
+      <div class="dtrack"><span class="dfill{{ ' ' + r.state if r.state }}" style="width:{{ r.fill }}%"></span><span class="dtick" style="left:{{ r.tick }}%"></span></div>
+      <span class="dnum num"><b class="{{ r.state }}">{{ r.now }}</b> <span class="dtarget">{{ r.target }} {{ r.band }}</span>{% if r.delta %} <span class="ddelta {{ r.state }}">{{ r.delta }}</span>{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% if thesis.conc %}<p class="concline num">{{ thesis.conc }}</p>{% endif %}
+  {% if thesis.notes %}<p class="goalfoot">{{ thesis.notes }}</p>{% endif %}
+  {{ tablewin('Current allocation vs the written targets, over invested dollars.',
+              ['Class', 'Value', 'Now', 'Target'],
+              thesis.rows | map(attribute='trow') | list) }}
+  {% endif %}
+</section>
+</div>
+</section>
+
+<section class="room wrap" id="room-goals" role="tabpanel" aria-labelledby="tab-goals" hidden>
+<div class="grid {{ 'g-chesh' if env_rows else 'g-solo' }}">
+<section class="card">
+  {{ cardhead(edu.title, edu.sub) }}
+  {% if edu.empty %}
+  <div class="empty">{{ edu.empty }}</div>
+  {% else %}
+  <p class="heromini num">{{ edu.value }} <span class="of">{{ edu.of }}</span></p>
+  {% if edu.fill is not none %}
+  <div class="barwrap"><div class="track edu"><span class="fill edu" style="width:{{ edu.fill }}%"></span></div></div>
+  <div class="barnotes num"><span>{{ edu.val_lbl }}</span><span>{{ edu.pct }} of the target</span></div>
+  {% else %}
+  <div class="barnotes num" style="margin-top:8px"><span>{{ edu.val_lbl }}</span></div>
+  {% endif %}
+  {% for k in edu.perkid %}{{ meterrow(k.name, k.width, k.amt, edu=true) }}{% endfor %}
+  {% if edu.nudge %}<div class="nudge">{{ edu.nudge }}</div>{% endif %}
+  {% if edu.foot %}<p class="goalfoot">{{ edu.foot }}</p>{% endif %}
+  {% if edu.grid %}
+  <div class="eduwhatif">
+    <span class="ck">Turn the dial · what-if, not advice</span>
+    <div class="dial" style="margin-top:10px">
+      <label for="edu-c">monthly contribution</label>
+      <span class="dval num" id="edu-c-v"></span>
+      <input id="edu-c" type="range" min="0" max="{{ edu.grid_max }}" step="1" value="{{ edu.grid.def }}">
+    </div>
+    <p class="edu-out num" id="edu-arrive"></p>
+    <p class="edu-out2 num" id="edu-cover" hidden></p>
+    <p class="goalfoot">Straight-line at today's prices, market growth ignored —
+    same math as the pace line above{% if edu.grid.paceS %} (you're at {{ edu.grid.paceS }} now){% endif %}.
+    The dial is a toy; the 529's paperwork is the decision.</p>
+  </div>
+  {% endif %}
+  {% endif %}
+</section>
+{% if env_rows %}
+<section class="card">
+  {{ cardhead('Projects', projects_sub) }}
+  {% for e in env_rows %}{{ meterrow('#' + e.tag, e.width, e.amt, e.over) }}{% endfor %}
+</section>
+{% endif %}
+</div>
+</section>
+
+<section class="room wrap" id="room-autopilot" role="tabpanel" aria-labelledby="tab-autopilot" hidden>
+<div class="grid g-needs">
 <section class="card">
   {{ cardhead('On autopilot', mach.sub, mach.window) }}
   {% if mach.rows %}
@@ -2180,11 +3176,9 @@ try { var t = localStorage.getItem('sara-home-theme');
   and their health lives here.</div>
   {% endif %}
 </section>
-</div>
-
-<div class="grid {{ 'g-needs' if moves else 'g-solo' }}">
+<div class="sidecol">
 <section class="card">
-  {{ cardhead('Needs you', 'Anything that wants a decision or a quick hand this week.') }}
+  {{ cardhead('Needs you', needs.sub) }}
   {% if needs.state == 'none' %}
   <div class="empty"><b>Checks haven't run yet.</b> Ask Sara to run them —
   anything that needs a human lands here.</div>
@@ -2206,9 +3200,10 @@ try { var t = localStorage.getItem('sara-home-theme');
   {% endif %}
   {% endif %}
 </section>
-{% if moves %}
+{% if moves or plumbing %}
 <section class="card">
   {{ cardhead('Money that must move', 'Payments and transfers with a date already on them.', 'next ' ~ mustmove_days ~ ' days') }}
+  {% if moves %}
   <ul class="moves">
     {% for mv in moves %}
     <li><span class="mvdate num{{ ' near' if mv.near }}">{{ mv.day_lbl }}</span>
@@ -2216,11 +3211,28 @@ try { var t = localStorage.getItem('sara-home-theme');
     <span class="mvtext">{{ mv.text }} · {{ mv.when }}</span></li>
     {% endfor %}
   </ul>
+  {% else %}
+  <p class="empty">Nothing for your hands — what's left is plumbing, below.</p>
+  {% endif %}
+  {% if plumbing %}
+  <details class="tv"><summary>{{ plumbing|length }} plumbing move{{ 's' if plumbing|length != 1 }} — money shuffling between your own accounts</summary>
+  <ul class="moves">
+    {% for mv in plumbing %}
+    <li><span class="mvdate num{{ ' near' if mv.near }}">{{ mv.day_lbl }}</span>
+    <span class="mvamt num">{{ mv.amt }}</span>
+    <span class="mvtext">{{ mv.text }} · {{ mv.when }}</span></li>
+    {% endfor %}
+  </ul></details>
+  {% endif %}
 </section>
 {% endif %}
 </div>
+</div>
+</section>
 
-<div class="grid g-walk">
+{% if indy %}
+<section class="room wrap" id="room-independence" role="tabpanel" aria-labelledby="tab-independence" hidden>
+<div class="grid g-solo">
 <section class="card walk">
   {{ cardhead('The walk-away number', 'The pot where work becomes optional. Liquid dollars only, per the thesis.', wa.window if wa else '') }}
   {% if not wa %}
@@ -2312,126 +3324,11 @@ try { var t = localStorage.getItem('sara-home-theme');
   {% endif %}
   {% endif %}
 </section>
-<div class="sidecol">
-<section class="card">
-  {{ cardhead(edu.title, edu.sub) }}
-  {% if edu.empty %}
-  <div class="empty">{{ edu.empty }}</div>
-  {% else %}
-  <p class="heromini num">{{ edu.value }} <span class="of">{{ edu.of }}</span></p>
-  {% if edu.fill is not none %}
-  <div class="barwrap"><div class="track edu"><span class="fill edu" style="width:{{ edu.fill }}%"></span></div></div>
-  <div class="barnotes num"><span>{{ edu.val_lbl }}</span><span>{{ edu.pct }} of the target</span></div>
-  {% else %}
-  <div class="barnotes num" style="margin-top:8px"><span>{{ edu.val_lbl }}</span></div>
-  {% endif %}
-  {% for k in edu.perkid %}{{ meterrow(k.name, k.width, k.amt, edu=true) }}{% endfor %}
-  {% if edu.nudge %}<div class="nudge">{{ edu.nudge }}</div>{% endif %}
-  {% if edu.foot %}<p class="goalfoot">{{ edu.foot }}</p>{% endif %}
-  {% endif %}
-</section>
-{% if wins %}
-<section class="card">
-  {{ cardhead("Sara's wins", 'Realized only — every dollar here is money already found or saved.', wins.year) }}
-  <p class="winhero num">{{ wins.total }} <span class="of">found this year</span></p>
-  <details class="tv"><summary>{{ wins.count_lbl }}</summary>
-  <ul class="wins-list">
-    {% for it in wins.rows %}
-    <li><span>{{ it.label }}</span><b>{{ it.amt }}</b></li>
-    {% endfor %}
-  </ul></details>
+</div>
 </section>
 {% endif %}
-</div>
-</div>
 
-<div class="grid g-nwt">
-<section class="card">
-  {{ cardhead('Net worth — the long line', nw.sub, nw.window) }}
-  <p class="heromini num">{{ nw.liquid }}</p>
-  <p class="herolab">liquid net worth — {{ nw.asof }}</p>
-  {% if nw.delta %}<div class="chiprow"><span class="chip{{ ' ' + nw.delta.cls if nw.delta.cls }}">{{ nw.delta.body }}</span></div>{% endif %}
-  {% if attr %}
-  <div class="attr">
-    {% for a in attr.rows %}
-    {% if a.suppressed %}
-    <p class="attr-sup"><span class="attr-win num">{{ a.window }}</span> · {{ a.suppressed }}</p>
-    {% else %}
-    <div class="attr-row">
-      <p class="attr-line"><span class="attr-win num">{{ a.window }}</span>
-        <b class="num{{ ' ' + a.cls if a.cls }}">{{ a.delta }}</b>
-        <span class="attr-body num">— {{ a.body }}{{ a.note }}</span></p>
-      {% if a.segs %}
-      <div class="attrbar" role="img" aria-label="{{ a.aria }}">
-        {% for s in a.segs %}<span class="attrseg {{ s.cls }}" style="width:{{ s.width }}%"></span>{% endfor %}
-      </div>
-      {% endif %}
-    </div>
-    {% endif %}
-    {% endfor %}
-  </div>
-  {% endif %}
-  {% if nw.has_chart %}
-  <div id="nw-chart" class="chart" role="img" aria-label="Liquid net worth by month"></div>
-  {{ tablewin('Liquid net worth at each month end; the endpoint is the headline at the latest prices.',
-              ['Month', 'Liquid net worth', 'Basis'], nw.table_rows) }}
-  {% else %}
-  <div class="empty"><b>Not enough history for a line yet.</b> Two month-ends
-  in the ledger and the curve appears.</div>
-  {% endif %}
-</section>
-<section class="card">
-  {{ cardhead('Vs the thesis', thesis.sub or 'The written target mix, scored against the live portfolio.', thesis.window or '') }}
-  {% if thesis.nudge %}
-  <div class="nudge">{{ thesis.nudge }}</div>
-  {% else %}
-  <div class="drift">
-    {% for r in thesis.rows %}
-    <div class="driftrow">
-      <span class="dlabel">{{ r.label }}</span>
-      <div class="dtrack"><span class="dfill{{ ' ' + r.state if r.state }}" style="width:{{ r.fill }}%"></span><span class="dtick" style="left:{{ r.tick }}%"></span></div>
-      <span class="dnum num"><b class="{{ r.state }}">{{ r.now }}</b> <span class="dtarget">{{ r.target }} {{ r.band }}</span>{% if r.delta %} <span class="ddelta {{ r.state }}">{{ r.delta }}</span>{% endif %}</span>
-    </div>
-    {% endfor %}
-  </div>
-  {% if thesis.conc %}<p class="concline num">{{ thesis.conc }}</p>{% endif %}
-  {% if thesis.notes %}<p class="goalfoot">{{ thesis.notes }}</p>{% endif %}
-  {{ tablewin('Current allocation vs the written targets, over invested dollars.',
-              ['Class', 'Value', 'Now', 'Target'],
-              thesis.rows | map(attribute='trow') | list) }}
-  {% endif %}
-</section>
-</div>
-
-<div class="grid {{ 'g-chesh' if env_rows else 'g-solo' }}">
-<section class="card">
-  {{ cardhead(ch.title, "The month's cheshbon — the monthly review closes the book.", ch.window) }}
-  <div class="statrow num">
-    <div class="stat"><div class="l">in</div><div class="v">{{ ch.inc }}</div></div>
-    <div class="stat"><div class="l">out</div><div class="v">{{ ch.exp }}</div></div>
-    <div class="stat"><div class="l">net</div><div class="v {{ ch.net_cls }}">{{ ch.net }}</div></div>
-  </div>
-  {% if ch.ribbon %}
-  <div class="ribbon" role="img" aria-label="{{ ch.ribbon_aria }}">
-    {% for s in ch.ribbon %}<div class="seg rib-{{ loop.index }}" style="width:{{ s.width }}%"></div>{% endfor %}
-  </div>
-  <div class="riblegend">
-    {% for s in ch.ribbon %}
-    <span class="li"><span class="sw rib-{{ loop.index }}" aria-hidden="true"></span>{{ s.name }} <b>{{ s.amt }}</b></span>
-    {% endfor %}
-  </div>
-  {% endif %}
-  {% if ch.closed %}<p class="goalfoot">{{ ch.closed.month }}, closed: in {{ ch.closed.inc }} · out {{ ch.closed.exp }} · net {{ ch.closed.net }}.</p>{% endif %}
-  {% if ch.table_rows %}{{ tablewin(ch.table_caption, ['Category', 'Spent'], ch.table_rows) }}{% endif %}
-</section>
-{% if env_rows %}
-<section class="card">
-  {{ cardhead('Projects', projects_sub) }}
-  {% for e in env_rows %}{{ meterrow('#' + e.tag, e.width, e.amt, e.over) }}{% endfor %}
-</section>
-{% endif %}
-</div>
-
+<div class="wrap">
 <footer>
   <p class="tagline">Decision support, not licensed advice · every figure
   names its window and is verified against the ledger · Sara keeps the books</p>
@@ -2449,6 +3346,7 @@ try { var t = localStorage.getItem('sara-home-theme');
   <a href="dashboard.html">dashboard.html</a> · the microscope:
   <code>scripts/dashboard.sh</code> (fava).</p>
 </footer>
+</div>
 </main>
 <script id="sara-data" type="application/json">{{ island }}</script>
 <script>{{ echarts }}</script>
@@ -2477,18 +3375,21 @@ def _pace_ctx(pace: Pace) -> dict:
         sub = (f"typical = the median path of your last "
                f"{len(pace.typical_window)} full months "
                f"({window_label(pace.typical_window)}).")
+        # hero color follows the verdict tile's band: inside ±PACE_BAND of
+        # typical the number stays neutral — green/red only when it means it
+        band = PACE_BAND * pace.typical
         if pace.fallback:
             d = round(pace.spent - pace.typical)
             hero = (f"{m0(abs(d))} {'under' if d < 0 else 'over'}"
                     if d else "on pace")
-            hero_cls = "good" if d < 0 else ("bad" if d > 0 else "")
+            hero_cls = "good" if d < -band else ("bad" if d > band else "")
             herolab = (f"a typical month's total — {month_full} closed at "
                        f"{m0(pace.spent)} against a typical {m0(pace.typical)}")
         elif pace.pace_delta is not None:
             d = round(pace.pace_delta)
             hero = (f"{m0(abs(d))} {'under' if d < 0 else 'over'}"
                     if d else "on pace")
-            hero_cls = "good" if d < 0 else ("bad" if d > 0 else "")
+            hero_cls = "good" if d < -band else ("bad" if d > band else "")
             herolab = (("with" if d == 0 else "") +
                        f" the typical path through {month_name} "
                        f"{pace.through_day} (≈{m0(pace.typical_by_now or 0)} "
@@ -2518,44 +3419,116 @@ def _pace_ctx(pace: Pace) -> dict:
     }
 
 
-def _kpi_ctx(liquid: float, asof: date | None, pace: Pace,
-             net_mtd: float, wa: Walkaway | None,
-             surv_teaser: str = "") -> list[dict]:
-    """The hero strip: the four numbers the household always sees first,
-    each with its tiny window label. '—' + a reason, never a fake zero."""
-    ledger_lbl = f"through {mon_d(asof)}" if asof else "ledger empty"
+def _spend_tile(pace: Pace, streak: int) -> dict:
+    """Verdict first, number second: Under pace / On pace / Running hot,
+    judged against the typical path with a ±PACE_BAND band. The streak chip
+    appears only when ≥ 2 closed months ran under their own typical."""
     month_name = MONTH_ABBR[pace.cur[1]]
-    tiles = [{"k": "Liquid net worth", "v": m0(liquid), "sub": ledger_lbl,
-              "cls": ""}]
-    if pace.left is not None:
-        left_sub = (f"{month_name} vs typical · latest imported"
-                    if pace.fallback else
-                    f"a typical {month_name} runs {m0(pace.typical or 0)}")
-        tiles.append({"k": "Left this month", "v": m0(pace.left),
-                      "sub": left_sub, "cls": "neg" if pace.left < 0 else ""})
+    tile = {"verdict": "Finding pace", "cls": "", "fig": "", "glow": False,
+            "sub": f"needs {MIN_FULL_MONTHS} full months for a verdict",
+            "streak": ""}
+    if pace.typical is None:
+        if pace.daily_cum:
+            tile["fig"] = f"{m0(pace.spent)} spent so far"
+        else:
+            tile["sub"] = "import a statement and the verdict starts"
+        return tile
+    band = PACE_BAND * pace.typical
+    if pace.fallback:
+        d, vs, when = (pace.spent - pace.typical, "a typical month",
+                       f"{month_name}, the latest imported month")
+    elif pace.pace_delta is not None:
+        d, vs, when = (pace.pace_delta, "the typical path",
+                       f"through {month_name} {pace.through_day}")
     else:
-        tiles.append({"k": "Left this month", "v": "—",
-                      "sub": f"needs {MIN_FULL_MONTHS} full months", "cls": ""})
-    net_sub = (f"{month_name} 1–{pace.through_day} · in − out"
-               if pace.through_day else f"{month_name} · nothing imported yet")
-    # a mid-month negative net is payday timing, not trouble — never red here;
-    # the closed month gets its honest color in the cheshbon card
-    if round(net_mtd) < 0 and pace.through_day:
-        net_sub += " · paydays land later in the month"
-    tiles.append({"k": "Net this month", "v": delta0(net_mtd), "sub": net_sub,
-                  "cls": "pos" if round(net_mtd) > 0 else ""})
-    if wa:
-        approx = "" if wa.src == "set" else "≈"
-        wa_sub = (f"of {approx}{m0(wa.target)} — the pot where "
-                  f"work turns optional")
-        if surv_teaser:
-            wa_sub += f" · {surv_teaser}"
-        tiles.append({"k": "Walk-away", "v": pct_display(wa.pct),
-                      "sub": wa_sub, "cls": ""})
+        d, vs, when = 0.0, "the typical path", f"{month_name} · nothing spent yet"
+    if d > band:
+        tile.update(verdict="Running hot", cls="bad")
+    elif d < -band:
+        tile.update(verdict="Under pace", cls="good", glow=True)
     else:
-        tiles.append({"k": "Walk-away", "v": "—",
-                      "sub": "needs a spend baseline", "cls": ""})
-    return tiles
+        tile.update(verdict="On pace", cls="")
+    tile["fig"] = (f"{m0(abs(round(d)))} {'under' if d < 0 else 'over'} {vs}"
+                   if round(d) else f"right on {vs}")
+    tile["sub"] = f"{when} · typical {month_name} runs {m0(pace.typical)}"
+    if streak >= 2:
+        tile["streak"] = f"{streak} closed months under typical"
+    return tile
+
+
+def _auto_tile(mach: dict) -> dict:
+    """The machine, as one verdict + one dot per lane."""
+    rows = mach["rows"]
+    n = len(rows)
+    if not n:
+        return {"verdict": "Nothing wired", "cls": "", "dots": [], "aria": "",
+                "sub": "tell Sara your standing orders and I'll watch them"}
+    green = sum(1 for r in rows if r["dot"] == "ok")
+    broken = sum(1 for r in rows if r["dot"] == "bad")
+    watching = sum(1 for r in rows if r["dot"] == "watch")
+    if broken:
+        verdict, cls = (f"{broken} need{'s' if broken == 1 else ''} a look",
+                        "bad")
+        sub = "the machine wants a hand — details in Autopilot"
+    elif watching:
+        verdict, cls = f"{green} of {n} green", ""
+        sub = f"{watching} watching for a first arrival"
+    else:
+        verdict, cls = f"All {n} green", "good"
+        sub = "paychecks, invests, floors — all landing"
+    return {"verdict": verdict, "cls": cls, "sub": sub,
+            "dots": [r["dot"] for r in rows],
+            "aria": f"{green} of {n} lanes green"}
+
+
+def _humanize_verb(verb: str) -> str:
+    """The Next line is the page's most human slot: strip a leading
+    "Check `tools/run x`; " style command prefix (check-authored fix text)
+    down to the plain-words action that follows it."""
+    m = re.match(r"^(?:Check|Run)\s+`[^`]+`\s*[;,:]\s*(.+)$", verb.strip())
+    if not m:
+        return verb
+    rest = m.group(1).strip()
+    return rest[:1].upper() + rest[1:] if rest else verb
+
+
+def _next_ctx(needs_state: str, cards: list[Card], more: int,
+              moves_human: list[dict]) -> dict:
+    """THE one next action under the tiles: the top alert, else the nearest
+    dated obligation (deadline card or money that must move), else honest
+    quiet. Everything else waits inside the rooms."""
+    alerts = [c for c in cards if c.kind == "alert"]
+    if alerts:
+        return {"label": "Next", "quiet": False,
+                "text": _codespans(_humanize_verb(alerts[0].verb)),
+                "meta": alerts[0].why[:80]}
+    dated_cards = [c for c in cards
+                   if c.kind == "deadline" and c.days is not None]
+    best_card = (min(dated_cards, key=lambda c: c.days or 0)
+                 if dated_cards else None)
+    best_move = (min(moves_human, key=lambda mv: mv["days"])
+                 if moves_human else None)
+    if best_card is not None and (best_move is None
+                                  or (best_card.days or 0) <= best_move["days"]):
+        return {"label": "Next", "quiet": False,
+                "text": _codespans(best_card.verb), "meta": best_card.why}
+    if best_move is not None:
+        # the bullet text carries its own $ figure (must_move requires one)
+        return {"label": "Next", "quiet": False,
+                "text": _codespans(best_move["text"]),
+                "meta": f"due {best_move['day_lbl']} · {best_move['when']}"}
+    if needs_state == "none":
+        return {"label": "First run", "quiet": True,
+                "text": "Ask Sara to run the checks — this line fills itself.",
+                "meta": ""}
+    if cards:
+        n = len(cards) + more
+        return {"label": "All quiet", "quiet": True,
+                "text": (f"Nothing urgent — {n} small thing"
+                         f"{'s' if n != 1 else ''} idling in Autopilot."),
+                "meta": ""}
+    return {"label": "All quiet", "quiet": True,
+            "text": "Nothing needs you today. Go be a person.", "meta": ""}
 
 
 def ordinal(n: int) -> str:
@@ -2670,6 +3643,9 @@ def _walkaway_ctx(wa: Walkaway | None, liquid: float,
 
 def _education_ctx(accounts: list[EduAccount], pace: float | None,
                    goals: dict, today: date) -> dict:
+    """The 529 card (Goals room) AND its glance tile, one source of truth.
+    `tile` = {label, verdict, cls, fig, sub}; `grid` = the what-if slider's
+    precomputed table when a target exists."""
     target = _as_float(goals.get("education_target"))
     if not accounts:
         empty = (Markup("<b>Target set — {}</b> — but no 529 account in the "
@@ -2680,18 +3656,29 @@ def _education_ctx(accounts: list[EduAccount], pace: float | None,
                         "ledger, its story lives here — balance, pace, and "
                         "the date it gets there."))
         return {"title": "The college fund", "sub": "Education savings, per kid.",
-                "empty": empty}
+                "empty": empty, "grid": None,
+                "tile": {"label": "College fund", "cls": "",
+                         "verdict": ("Target set, no 529" if target
+                                     else "No 529 yet"),
+                         "fig": "",
+                         "sub": "open one and the story starts here"}}
     total = sum(a.value for a in accounts)
     kids = ", ".join(sorted({a.kid for a in accounts}))
+    college_year, _src = _college_year(today, accounts)
+    title = f"{kids}’s 529" if len(accounts) == 1 else "The 529s"
+    grid = edu_grid(total, target, pace, today, college_year)
+    tile = {"label": title, "verdict": "", "cls": "",
+            "fig": f"{m0(total)} saved", "sub": ""}
     ctx = {
-        "title": f"{kids}’s 529" if len(accounts) == 1 else "The 529s",
+        "title": title,
         "sub": "Education savings — the long game with a date on it.",
         "empty": "", "value": m0(total),
         "val_lbl": ("valued at cost — no market price on file yet"
                     if any(a.at_cost for a in accounts)
                     else "at the latest prices on file"),
         "fill": None, "pct": "", "of": "saved", "nudge": None, "foot": None,
-        "perkid": [],
+        "perkid": [], "grid": grid,
+        "grid_max": (len(grid["steps"]) - 1) if grid else 0, "tile": tile,
     }
     if target:
         pct = 100.0 * total / target
@@ -2703,15 +3690,26 @@ def _education_ctx(accounts: list[EduAccount], pace: float | None,
                 "On pace for <b>≈{} {}</b> at ≈{}/mo (median of recent "
                 "contributions), ignoring market growth.").format(
                     MONTH_ABBR[eta.month], eta.year, m0(pace))
+            late = college_year is not None and eta.year > college_year
+            tile.update(verdict=f"On pace for ≈{eta.year}",
+                        cls="warn" if late else "good",
+                        sub=(f"college is {college_year} — worth a look" if late
+                             else f"of {m0(target)} at ≈{m0(pace)}/mo"))
         elif total >= target:
             ctx["foot"] = "Past the target — time to raise it, or rest easy."
+            tile.update(verdict="Past the target", cls="good",
+                        sub=f"of {m0(target)} — raise it or rest easy")
         else:
             ctx["foot"] = ("No regular contributions detected yet — no arrival "
                            "date to forecast.")
+            tile.update(verdict="No pace yet",
+                        sub="no regular contributions detected")
     else:
         pace_bit = f" Contributions are running ≈{m0(pace)}/mo." if pace else ""
         ctx["nudge"] = (f"No target set yet — pick the college number with "
                         f"Sara and this card grows a finish line.{pace_bit}")
+        tile.update(verdict="Needs a target", cls="warn",
+                    sub="pick the college number with Sara")
     if len(accounts) > 1:  # the per-kid-bar pattern, when a second 529 appears
         mx = max(a.value for a in accounts) or 1.0
         ctx["perkid"] = [
@@ -2968,10 +3966,11 @@ def _thesis_ctx(view, asof: date | None) -> dict:
 
 
 def _cheshbon_ctx(pace: Pace) -> dict:
-    """This month's money in vs out, how last month closed, and the category
-    ribbon (top spenders + Other, 2px surface gaps, legend carries the
-    names and dollars). Follows the paced month so a stale ledger shows its
-    latest real month, not zeros."""
+    """This month's money in vs out and how last month closed. Categories
+    live next door in the clickable rail, so this card stays three numbers.
+    Follows the paced month so a stale ledger shows its latest real month,
+    not zeros. A mid-month negative net is payday timing, not trouble — the
+    closed month gets the honest wink instead."""
     ym = pace.cur
     inc, exp = month_in_out(ym)
     net = inc - exp
@@ -2979,38 +3978,43 @@ def _cheshbon_ctx(pace: Pace) -> dict:
                    if pace.through_day else "nothing imported yet")
     prev = (ym[0] - 1, 12) if ym[1] == 1 else (ym[0], ym[1] - 1)
     pinc, pexp = month_in_out(prev)
-    closed = None
+    closed, wink = None, ""
     if pinc or pexp:
         pnet = pinc - pexp
         closed = {"month": mon_yr(prev), "inc": m0(pinc), "exp": m0(pexp),
-                  "net": delta0(pnet),
-                  "cls": "pos" if round(pnet) > 0 else ("neg" if round(pnet) < 0 else "")}
-    cats = month_categories(ym)
-    ribbon, table_rows = [], []
-    if len(cats) >= 2:
-        total = sum(v for _, v in cats)
-        segs = cats[:RIBBON_SLOTS]
-        other = sum(v for _, v in cats[RIBBON_SLOTS:])
-        rows = [(c.replace("Expenses:", "") or "Other", v) for c, v in segs]
-        if other > 0.005:
-            rows.append(("Other", other))
-        ribbon = [{"name": name, "amt": m0(v),
-                   "width": f"{max(1.0, 100.0 * v / total):.1f}"}
-                  for name, v in rows]
-        table_rows = [(c.replace("Expenses:", "") or "Other", m0(v))
-                      for c, v in cats]
+                  "net": delta0(pnet)}
+        wink = (" — the book balances itself when you're not looking."
+                if round(pnet) > 0 else ".")
+    # a partial month's negative net is payday timing, not trouble — it stays
+    # neutral with the reason named; only a full month earns red ink
+    partial = not pace.fallback
+    if round(net) > 0:
+        net_cls = "pos"
+    elif round(net) < 0 and not partial:
+        net_cls = "neg"
+    else:
+        net_cls = ""
     return {
         "title": f"{MONTH_FULL[ym[1]]} money in / out",
         "window": f"{mon_yr(ym)} · {through_lbl}",
-        "net_raw": net,   # the KPI strip reuses this — one query, one truth
         "inc": m0(inc), "exp": m0(exp), "net": delta0(net),
-        "net_cls": "pos" if round(net) > 0 else ("neg" if round(net) < 0 else ""),
-        "closed": closed, "ribbon": ribbon,
-        "ribbon_aria": ("Where the month went: "
-                        + ", ".join(f"{s['name']} {s['amt']}" for s in ribbon)),
-        "table_caption": f"Where {MONTH_ABBR[ym[1]]} went, by category ({through_lbl}).",
-        "table_rows": table_rows,
+        "net_cls": net_cls,
+        "payday_note": ("paydays land later in the month — the net settles"
+                        if partial and round(net) < 0 else ""),
+        "closed": closed, "wink": wink,
     }
+
+
+def _moneymap_ctx(balances: list[tuple[str, float]], liquid: float,
+                  asof: date | None) -> dict | None:
+    """The Money-map card: treemap payload + its window + the no-JS table
+    (every liquid account, liabilities included)."""
+    data = moneymap_data(balances, liquid)
+    if not data:
+        return None
+    return {**data,
+            "window": f"through {mon_d(asof)}" if asof else "",
+            "table_rows": [(a, m0(v)) for a, v in balances]}
 
 
 def _envelope_rows(envelopes: list[Envelope]) -> list[dict]:
@@ -3122,7 +4126,11 @@ def build_page(now: datetime | None = None) -> str:
         last_m = max(ym for ym, _ in totals)
         if last_m < pace.cur:
             pace = spend_pace(today, asof, totals, month=last_m)
-    wa = walkaway(liquid, paper, true_spend_baseline(today, totals), goals)
+    # the Independence room is opt-in (show_walkaway_room's one rule); when
+    # it's off, none of the walk-away math runs and none of it ships
+    indy = show_walkaway_room(goals)
+    wa = (walkaway(liquid, paper, true_spend_baseline(today, totals), goals)
+          if indy else None)
     edu_accounts = education_accounts()
     edu_pace = education_pace(edu_accounts) if edu_accounts else None
     alloc = allocation_view()
@@ -3131,7 +4139,6 @@ def build_page(now: datetime | None = None) -> str:
     else:
         stock_pct, stock_src = DEFAULT_STOCK_PCT, "the skill default"
     wig = wi_ctx = None
-    surv_teaser = ""
     if wa and wa.baseline:
         save = net_savings_baseline(wa.baseline.months)
         wig = whatif_grid(liquid, wa.baseline, save, today, goals,
@@ -3158,9 +4165,6 @@ def build_page(now: datetime | None = None) -> str:
                 "the ≈{} target; nothing more from the pot").format(
                 ev.college_year, m0(ev.college_529_path), m0(ev.college_cost))
         surv = wig["surv"]
-        _dsurv = surv["survived"][wig["def"]["ri"]]
-        surv_teaser = (f"history check: {_dsurv} of {surv['nSeq']} "
-                       f"since {surv['window'].split(', ')[1].split('–')[0]} — details in Play with it")
         wi_ctx = {
             "max_ri": wig["nRates"] - 1, "max_si": wig["nSpends"] - 1,
             "max_gi": wig["nGrowths"] - 1,
@@ -3210,6 +4214,23 @@ def build_page(now: datetime | None = None) -> str:
     series, baseline_cut = networth_series(liquid, asof)
     cards, more, needs_state = needs_you(today)
     ch = _cheshbon_ctx(pace)
+    sp = spending_data(pace)
+    mapd = _moneymap_ctx(balances, liquid, asof)
+    all_moves = must_move(today)
+    moves = [mv for mv in all_moves if not mv["plumbing"]]
+    plumbing = [mv for mv in all_moves if mv["plumbing"]]
+    edu = _education_ctx(edu_accounts, edu_pace, goals, today)
+    mach = _machine_ctx(lane_status(today))
+    nw = _networth_ctx(series, baseline_cut, liquid, asof)
+    spark = _sparkline(series)
+    glance = {
+        "spend": _spend_tile(pace, under_streak(totals, pace.cur)),
+        "nw": {"v": m0(liquid), "chip": nw["delta"], "spark": spark,
+               "sub": ("liquid · " + nw["asof"]),
+               "glow": bool(nw["delta"] and nw["delta"]["cls"] == "good")},
+        "auto": _auto_tile(mach),
+        "edu": edu["tile"],
+    }
 
     names = household("names")
     hour = now.hour
@@ -3222,7 +4243,12 @@ def build_page(now: datetime | None = None) -> str:
 
     island = {"pace": _pace_chart_data(pace), "nw": _nw_chart_data(series, asof),
               "whatif": ({k: v for k, v in wig.items() if k != "_ev"}
-                         if wig else None)}
+                         if wig else None),
+              "spending": ({k: v for k, v in sp.items()
+                            if not k.startswith("table_") and k != "six_lbl"}
+                           if sp else None),
+              "map": {"tree": mapd["tree"]} if mapd else None,
+              "edu": edu.get("grid")}
     # '<' escaped so no payee can smuggle a </script> into the island
     island_json = json.dumps(island, separators=(",", ":")).replace("<", "\\u003c")
     css = (CSS_TEMPLATE
@@ -3237,18 +4263,24 @@ def build_page(now: datetime | None = None) -> str:
         ledger_stamp=(f"Ledger through {mon_d(asof)}" if asof
                       else "Ledger empty"),
         checks_stamp=checks_stamp,
-        kpis=_kpi_ctx(liquid, asof, pace, ch["net_raw"], wa, surv_teaser),
+        g=glance,
+        nxt=_next_ctx(needs_state, cards, more, moves),
+        sp=sp,
+        map=mapd,
         p=_pace_ctx(pace),
-        mach=_machine_ctx(lane_status(today)),
-        needs={"state": needs_state, "cards": cards, "more": more},
-        moves=must_move(today),
+        mach=mach,
+        needs={"state": needs_state, "cards": cards, "more": more,
+               "sub": "Anything that wants a decision or a quick hand this week."},
+        moves=moves,
+        plumbing=plumbing,
         mustmove_days=MUSTMOVE_DAYS,
+        indy=indy,
         wa=_walkaway_ctx(wa, liquid, asof),
         wi=wi_ctx,
         min_months=MIN_FULL_MONTHS,
-        edu=_education_ctx(edu_accounts, edu_pace, goals, today),
+        edu=edu,
         wins=_wins_ctx(saras_wins(today), today),
-        nw=_networth_ctx(series, baseline_cut, liquid, asof),
+        nw=nw,
         attr=_attribution_ctx(series, asof),
         thesis=_thesis_ctx(alloc, asof),
         ch=ch,

@@ -1,0 +1,22 @@
+# Personal MCP — remote MCP server on Cloudflare Workers.
+# Deploys to YOUR Cloudflare account: `wrangler login` (personal account),
+# verify with `wrangler whoami`, then `npm run deploy`.
+name = "personal-mcp"
+main = "src/index.ts"
+compatibility_date = "2026-06-11"
+compatibility_flags = ["nodejs_compat"]
+
+# Workers Logs — `wrangler tail` shows the structured log lines.
+[observability]
+enabled = true
+
+[vars]
+# Identity shown to MCP clients.
+SERVER_NAME = "personal-mcp"
+# The private GitHub repo that holds the finance vault (owner/repo/branch).
+# Edit to yours; never put tokens here — tokens are secrets:
+#   wrangler secret put GITHUB_TOKEN      (fine-grained PAT, Contents: read-only)
+#   wrangler secret put SARA_MCP_TOKEN    (the bearer token MCP clients present)
+GITHUB_OWNER = "your-github-username"
+GITHUB_REPO = "your-vault-repo"
+GITHUB_BRANCH = "main"

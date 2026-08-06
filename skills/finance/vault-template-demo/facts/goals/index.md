@@ -16,6 +16,7 @@ deadline_horizon_days: 45          # surface anything due within this window
 anomaly_min_amount: 400            # ignore charges below this
 savings_rate_target_pct: 20        # of net income
 retirement_target: 2000000         # invested, household, by 2055
+show_walkaway: true                # Sara Home's Independence room (walk-away number, what-if dials, history replay). Rule: this flag wins when set; with no flag the room appears exactly when retirement_target is set. The demo keeps it on so the full product shows.
 education_target: 120000           # Riley's 529 by 2038
 house_downpayment: 120000          # the house fund target (THESIS: by 2029)
 house_year: 2029                   # target purchase year
