@@ -8,3 +8,31 @@ include "prices.beancount"
 2026-01-01 custom "fava-option" "locale" "en_US"  ; comma-grouped numbers in fava
 2026-01-01 custom "fava-option" "invert-income-liabilities-equity" "true"  ; display income/liabilities with human signs
 2026-01-01 custom "fava-option" "default-page" "income_statement/?time=year"  ; land on this-year view, never unlabeled all-time
+
+; Fava extensions (installed in the vault venv by init_vault.sh).
+; fava_dashboards renders ../dashboards.yaml as chart panels; fava_investor
+; adds allocation / tax-loss-harvest / cash-drag pages. Edit the patterns to
+; match this household's institutions as they are onboarded.
+2026-01-01 custom "fava-extension" "fava_dashboards" "{'config': '../dashboards.yaml'}"
+2026-01-01 custom "fava-extension" "fava_investor" "{
+  'asset_alloc_by_account': [
+    {'title': 'Assets by institution',
+     'pattern_type': 'account_name',
+     'pattern': 'Assets:[^:]+:[^:]+$',
+     'include_children': True},
+  ],
+  'asset_alloc_by_class': {
+    'accounts_patterns': ['Assets:.*'],
+    'skip_tax_adjustment': True,
+  },
+  'tlh': {
+    'account_field': 'account',
+    'accounts_pattern': 'Assets:.*Brokerage',
+    'loss_threshold': 10,
+    'wash_pattern': 'Assets',
+  },
+  'cashdrag': {
+    'accounts_pattern': 'Assets',
+    'min_threshold': 100,
+  },
+}"

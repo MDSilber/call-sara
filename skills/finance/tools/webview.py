@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
-"""Generate reports/dashboard.html — the vault's static glanceable dashboard.
+"""Generate reports/dashboard.html — the vault's static morning page.
 
 Run:    tools/run webview.py [forecast-days]      (default 60)
 Writes: reports/dashboard.html — the ONLY file this tool writes; everything
         else is read-only. One fully self-contained page (inline CSS/SVG/JS,
         zero external requests) so it can be opened from disk and never
         phones home. fava (scripts/dashboard.sh) stays the drill-down; this
-        is the beauty view (scripts/dashboard.sh --pretty).
+        is the glanceable brief (scripts/dashboard.sh --pretty).
+
+Morning-page structure: the ACTION QUEUE leads (open alerts/watches from
+reports/findings.md, each with its one-line fix, ranked by severity then
+consequence), then dated deadlines inside the goals horizon as
+days-remaining chips, then the next-30-days bill strip projected by
+forecast.py, then milestone progress when facts/goals configures
+milestone_net_worth_above. Charts follow. Sara narrates one line up top;
+everything below is data with sources, never invented.
 
 Data surfaces reused, never re-derived: reports.liquid_balances/paper_value
 (the not-counted illiquid convention), forecast.build_forecast (projections),
@@ -31,14 +39,15 @@ import json
 import re
 import sys
 from calendar import monthrange
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vault import (REPORTS, VAULT, amount, illiquid_currency_regex,  # noqa: E402
-                   money, query)
+from vault import (REPORTS, VAULT, amount, dated_bullets,  # noqa: E402
+                   illiquid_currency_regex, money, query)
 from reports import liquid_balances, paper_value  # noqa: E402
 from forecast import build_forecast  # noqa: E402
+from checks import goals as goals_config  # noqa: E402
 
 MAX_CURVE_POINTS = 24      # two years of month-ends is a curve; more is wallpaper
 SPEND_BAR_ROWS = 10        # categories shown as bars; the tail folds into Other
@@ -289,6 +298,94 @@ def parse_findings():
         findings.append({"title": title, "severity": sev, "check": check,
                          "detail": " ".join(detail)})
     return findings, (counts.group(1) if counts else ""), errors
+
+
+# ------------------------------------------------------------- action queue
+# One imperative line per check kind — what to DO, not what happened. The
+# finding's own text stays alongside; this is the handle to grab it by.
+FIX_BY_CHECK = {
+    "review-queue": "Add [[payee_rules]] to rules.toml, then `tools/run recategorize.py --write`.",
+    "projected-shortfall": "Check `tools/run forecast.py`; move money or shift the payment date before it lands.",
+    "fixed-balance": "Sweep or top up to the fixed amount — THESIS.md names the destination.",
+    "subscriptions": "Unwanted? Cancel it. Wanted? Downgrade, go annual, or make the retention call.",
+    "coverage": "Pull a fresh export from the institution and import it.",
+    "anomaly": "Verify the charge; dispute or get the refund if it's not right.",
+    "concentration": "Illiquid paper: act at the liquidity event, per THESIS. Liquid: trim now.",
+    "reconciliation": "Re-import the account or correct the balance assertion.",
+    "goals": "Fill in the blank threshold in facts/goals/index.md.",
+}
+QUEUE_ORDER = ["projected-shortfall", "fixed-balance", "review-queue", "anomaly",
+               "subscriptions", "coverage", "reconciliation", "concentration", "goals"]
+
+
+def fix_line(f):
+    fix = FIX_BY_CHECK.get(f["check"])
+    if fix:
+        return fix
+    first = re.split(r"(?<=[.!?]) ", f["detail"].strip(), maxsplit=1)[0]
+    return first[:110] if first else ""
+
+
+def action_queue(findings):
+    """Open alerts + watches (deadlines excluded — they get chips), ranked:
+    severity first, then how actionable the check kind is."""
+    if not findings:
+        return []
+    rows = [f for f in findings if f["severity"] in ("alert", "watch")
+            and f["check"] != "deadlines"]
+    rank = {c: i for i, c in enumerate(QUEUE_ORDER)}
+    rows.sort(key=lambda f: (0 if f["severity"] == "alert" else 1,
+                             rank.get(f["check"], len(QUEUE_ORDER))))
+    return [{**f, "fix": fix_line(f)} for f in rows]
+
+
+def deadline_items(today, horizon_days):
+    """Dated `- YYYY-MM-DD — text` bullets across facts/ falling inside the
+    horizon, freshest read (not via findings.md), with days-remaining."""
+    out = []
+    for d, text, relpath in dated_bullets():
+        days = (d - today).days
+        if 0 <= days <= horizon_days:
+            out.append({"date": d, "days": days, "text": text, "src": str(relpath)})
+    return out
+
+
+def bill_rows(fc, days=30):
+    """Projected money OUT over the next `days`, one row per flow: recurring
+    streams (expense + transfer legs, negative side only, so an autopay
+    shows once) plus quantified one-offs from facts/. All projections (~)."""
+    today, end = fc["today"], fc["today"] + timedelta(days=days)
+    rows = []
+    for a in fc["accounts"]:
+        for f in a["flows"]:
+            if f["amount"] < 0 and f["date"] <= end:
+                rows.append({"date": f["date"], "label": f["label"],
+                             "amount": f["amount"], "kind": f["kind"],
+                             "acct_label": acct_display(a["account"]),
+                             "overdue": f["date"] < today})
+    for o in fc["household"]["oneoffs"]:
+        if o["amount"] < 0 and o["date"] <= end:
+            rows.append({"date": o["date"], "label": o["text"], "amount": o["amount"],
+                         "kind": "one-off", "acct_label": "facts/",
+                         "overdue": False})
+    rows.sort(key=lambda r: (r["date"], r["amount"]))
+    return rows
+
+
+def milestone_state(liquid):
+    """None unless facts/goals configures milestone_net_worth_above; else
+    {targets, crossed, next, pct} for a progress meter."""
+    g = goals_config()
+    nums = re.findall(r"-?\d+(?:\.\d+)?", str(g.get("milestone_net_worth_above") or ""))
+    targets = sorted(float(x) for x in nums)
+    if not targets:
+        return None
+    crossed_raw = re.findall(r"-?\d+(?:\.\d+)?",
+                             str(g.get("milestone_net_worth_above_crossed") or ""))
+    crossed = sorted(float(x) for x in crossed_raw)
+    nxt = next((t for t in targets if liquid < t), None)
+    pct = min(100.0, 100.0 * liquid / nxt) if nxt else 100.0
+    return {"targets": targets, "crossed": crossed, "next": nxt, "pct": pct}
 
 
 # ------------------------------------------------------------------ marks
@@ -620,6 +717,45 @@ svg.nw:focus { outline:none; }
 .allclear { display:flex; gap:10px; align-items:center; color:var(--ink2);
   font-size:13.5px; margin-top:8px; }
 
+/* action queue extras */
+.herolab { color:var(--ink); font-weight:600; }
+.qhead { color:var(--muted); font-size:11.5px; text-transform:uppercase;
+  letter-spacing:.05em; margin-top:16px; }
+.chiprow { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+.chip { display:inline-flex; gap:6px; align-items:baseline; max-width:100%;
+  border:1px solid var(--border); border-radius:999px; padding:4px 12px;
+  font-size:12.5px; color:var(--ink2); background:var(--surface); }
+.chip b { color:var(--ink); font-variant-numeric:tabular-nums; font-weight:650;
+  flex:none; }
+.chip .cdate { color:var(--muted); font-size:11.5px; flex:none; }
+.chip.warn { border-color:var(--warning); border-width:1.5px; }
+.chip.crit { border-color:var(--critical); border-width:1.5px; }
+.chip.crit b { color:var(--critical); }
+
+/* upcoming bill strip */
+.bills { display:grid; }
+.billrow { display:grid; grid-template-columns:64px 1fr 84px 150px 96px;
+  gap:10px; align-items:baseline; padding:7px 0;
+  border-bottom:1px solid var(--grid); font-size:13px; }
+.billrow:last-child { border-bottom:none; }
+.bdate { color:var(--ink2); font-variant-numeric:tabular-nums; white-space:nowrap; }
+.bwho { color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bnote { color:var(--muted); font-size:11.5px; font-style:italic; }
+.bkind { color:var(--muted); font-size:11.5px; text-transform:uppercase;
+  letter-spacing:.04em; }
+.bacct { color:var(--ink2); font-size:12px; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; }
+.bamt { text-align:right; font-variant-numeric:tabular-nums; color:var(--ink); }
+.billrow.more .bwho, .billrow.more .bamt { color:var(--muted); }
+@media (max-width:700px){ .billrow { grid-template-columns:56px 1fr 90px; }
+  .bkind, .bacct { display:none; } }
+
+/* milestone */
+.mline { font-size:14px; color:var(--ink2); margin-bottom:8px; }
+.mline b { color:var(--ink); font-size:16px; }
+.mcrossed { color:var(--muted); }
+.meter.mbig { height:8px; border-radius:4px; margin-top:0; }
+
 /* tables + misc */
 .tv { margin-top:10px; }
 .tv summary { color:var(--muted); font-size:12.5px; cursor:pointer; }
@@ -748,8 +884,29 @@ def build_page():
     findings, counts_line, check_errors = parse_findings()
     scores = health_scores()
     today = date.today()
+    queue = action_queue(findings)
+    try:
+        horizon = int(goals_config().get("deadline_horizon_days") or 45)
+    except (TypeError, ValueError):
+        horizon = 45
+    deadlines = deadline_items(today, horizon)
+    bills = bill_rows(fc, days=BILL_DAYS)
+    mstate = milestone_state(liquid)
 
     # ---- masthead
+    n_alert = sum(1 for q in queue if q["severity"] == "alert")
+    n_watch = sum(1 for q in queue if q["severity"] == "watch")
+    bits = []
+    if n_alert:
+        bits.append(f"{n_alert} alert{'s' if n_alert != 1 else ''}")
+    if n_watch:
+        bits.append(f"{n_watch} to watch")
+    if deadlines:
+        d0 = deadlines[0]
+        bits.append("a deadline today" if d0["days"] == 0 else
+                    f"next deadline in {d0['days']} day{'s' if d0['days'] != 1 else ''}")
+    sara_line = (f"Sara’s morning brief · {today.strftime('%A, %B %-d')} · "
+                 + (" · ".join(bits) if bits else "all quiet"))
     delta_html = ""
     if len(series) >= 2:
         prev = series[-2]
@@ -774,11 +931,121 @@ def build_page():
                          f"file: " + ", ".join(f"<code>{esc(a)}</code>" for a, _ in unpriced[:4])
                          + ("…" if len(unpriced) > 4 else "") + "</p>")
     masthead = f"""<header>
-  <p class="eyebrow">Household finances — liquid net worth</p>
+  <p class="eyebrow">{esc(sara_line)}</p>
   <p class="hero">{esc(money(liquid))}</p>
-  <p class="hero-sub">{delta_html} {esc(asof_txt)}</p>
+  <p class="hero-sub"><span class="herolab">Liquid net worth</span> ·{delta_html} {esc(asof_txt)}</p>
   {paper_html}{unpriced_html}
 </header>"""
+
+    # ---- action queue (the morning page leads with what needs doing)
+    qparts = []
+    for f in queue:
+        icon = ICON_ALERT if f["severity"] == "alert" else ICON_WATCH
+        qparts.append(
+            f"<div class='finding {f['severity']}'>{icon}<div>"
+            f"<div class='k'>{esc(f['severity'])} · {esc(f['check'])}</div>"
+            f"<div class='t'>{code_spans(esc(f['title']))}</div>"
+            + (f"<div class='d'>{code_spans(esc(f['fix']))}</div>" if f["fix"] else "")
+            + "</div></div>")
+    for e in check_errors:
+        qparts.append(f"<div class='finding watch'>{ICON_WATCH}<div>"
+                      f"<div class='k'>check error</div>"
+                      f"<div class='d'>{code_spans(esc(e))}</div></div></div>")
+    if findings is None:
+        q_body = ("<div class='empty'>No findings yet — run <code>tools/run run_checks.py</code> "
+                  "and regenerate to fill the queue.</div>")
+    elif not qparts:
+        q_body = (f"<div class='allclear'><svg class='ic' viewBox='0 0 16 16' "
+                  f"aria-hidden='true'><circle cx='8' cy='8' r='7' fill='var(--good)'/>"
+                  f"<path d='M4.6 8.4 7 10.8l4.4-5' stroke='#fff' stroke-width='1.8' "
+                  f"fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>"
+                  f"Nothing needs your hands today — no open alerts or watch items.</div>")
+    else:
+        q_body = "".join(qparts)
+    chip_parts = []
+    for dl in deadlines:
+        urgency = " crit" if dl["days"] <= 7 else (" warn" if dl["days"] <= 21 else "")
+        when = "today" if dl["days"] == 0 else f"{dl['days']}d"
+        text = dl["text"][:92] + "…" if len(dl["text"]) > 92 else dl["text"]
+        chip_parts.append(
+            f"<span class='chip{urgency}' title=\"{esc(dl['src'])}\">"
+            f"<b>{esc(when)}</b> <span class='cdate'>{esc(dl['date'].strftime('%b %-d'))}</span> "
+            f"{esc(text)}</span>")
+    deadlines_html = ""
+    if chip_parts:
+        deadlines_html = (f"<p class='qhead'>Deadlines — next {horizon} days</p>"
+                          f"<div class='chiprow'>{''.join(chip_parts)}</div>")
+    elif findings is not None:
+        deadlines_html = (f"<p class='qhead'>Deadlines — next {horizon} days</p>"
+                          f"<p class='empty' style='padding:6px 0 0'>Nothing dated inside the horizon. "
+                          f"Dated bullets in facts/ land here automatically.</p>")
+    q_bits = []
+    if n_alert:
+        q_bits.append(f"{n_alert} alert{'s' if n_alert != 1 else ''}")
+    if n_watch:
+        q_bits.append(f"{n_watch} watch item{'s' if n_watch != 1 else ''}")
+    if deadlines:
+        q_bits.append(f"{len(deadlines)} deadline{'s' if len(deadlines) != 1 else ''}")
+    q_sub = ((" · ".join(q_bits) + " · ") if q_bits else "") + \
+        "from reports/findings.md and dated facts — regenerate with <code>tools/run run_checks.py</code>"
+    queue_card = f"""<section class="card">
+  <h2>Action queue</h2>
+  <p class="sub">{q_sub}</p>
+  {q_body}
+  {deadlines_html}
+</section>"""
+
+    # ---- bill strip: projected money out, next 30 days
+    shown_bills = bills[:BILL_ROWS]
+    folded_bills = bills[BILL_ROWS:]
+    total_out = sum(b["amount"] for b in bills)
+    brows = []
+    for b in shown_bills:
+        kind = "bill" if b["kind"] == "expense" else b["kind"]
+        note = " <span class='bnote'>expected already — feed lag</span>" if b["overdue"] else ""
+        brows.append(
+            f"<div class='billrow'>"
+            f"<span class='bdate'>{esc(b['date'].strftime('%b %-d'))}</span>"
+            f"<span class='bwho'>{esc(b['label'][:44])}{note}</span>"
+            f"<span class='bkind'>{esc(kind)}</span>"
+            f"<span class='bacct'>{esc(b['acct_label'])}</span>"
+            f"<span class='bamt'>~{esc(money(b['amount']))}</span></div>")
+    if folded_bills:
+        rest = sum(b["amount"] for b in folded_bills)
+        brows.append(f"<div class='billrow more'><span class='bdate'></span>"
+                     f"<span class='bwho'>+ {len(folded_bills)} more</span><span class='bkind'></span>"
+                     f"<span class='bacct'></span><span class='bamt'>~{esc(money(rest))}</span></div>")
+    bills_body = ("".join(brows) if brows else
+                  "<div class='empty'>No recurring outflows detected on a steady rhythm yet — "
+                  "import a few months of history and regenerate.</div>")
+    bills_card = f"""<section class="card">
+  <h2>Upcoming — next {BILL_DAYS} days</h2>
+  <p class="sub">Cadence-projected outflows and dated one-offs, oldest first. All figures are
+  projections (~), total ~{esc(money(abs(total_out)))} out. Income is not netted here.</p>
+  <div class="bills">{bills_body}</div>
+</section>"""
+
+    # ---- milestone progress (only when configured in facts/goals)
+    milestone_card = ""
+    if mstate:
+        if mstate["next"] is not None:
+            gap = mstate["next"] - liquid
+            m_line = (f"<b>{esc(money(liquid))}</b> of {esc(money(mstate['next']))} — "
+                      f"{esc(money(gap))} to go")
+            pct = mstate["pct"]
+        else:
+            m_line = f"all {len(mstate['targets'])} configured milestones crossed"
+            pct = 100.0
+        crossed_html = ""
+        if mstate["crossed"]:
+            crossed_html = ("<span class='mcrossed'>crossed: "
+                            + ", ".join(esc(money(c)) for c in mstate["crossed"]) + "</span>")
+        milestone_card = f"""<section class="card">
+  <h2>Milestone</h2>
+  <p class="sub">Liquid net worth vs facts/goals <code>milestone_net_worth_above</code>. {crossed_html}</p>
+  <div class="mline">{m_line}</div>
+  <div class="meter mbig"><i style="width:{pct:.1f}%"></i></div>
+</section>"""
 
     # ---- tiles: health scores if an assessment wrote them, else groups
     tiles = []
@@ -923,39 +1190,16 @@ def build_page():
   {fc_body}
 </section>"""
 
-    # ---- findings
-    if findings is None:
-        f_body = ("<div class='empty'>No findings file — run <code>tools/run run_checks.py</code> "
-                  "to generate reports/findings.md.</div>")
-    else:
-        open_f = [f for f in findings if f["severity"] in ("alert", "watch")]
-        info_f = [f for f in findings if f["severity"] == "info"]
-        parts = []
-        for f in open_f:
-            icon = ICON_ALERT if f["severity"] == "alert" else ICON_WATCH
-            parts.append(f"<div class='finding {f['severity']}'>{icon}<div>"
-                         f"<div class='k'>{esc(f['severity'])} · {esc(f['check'])}</div>"
-                         f"<div class='t'>{code_spans(esc(f['title']))}</div>"
-                         f"<div class='d'>{code_spans(esc(f['detail']))}</div></div></div>")
-        if not open_f:
-            parts.append(f"<div class='allclear'><svg class='ic' viewBox='0 0 16 16' "
-                         f"aria-hidden='true'><circle cx='8' cy='8' r='7' fill='var(--good)'/>"
-                         f"<path d='M4.6 8.4 7 10.8l4.4-5' stroke='#fff' stroke-width='1.8' "
-                         f"fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>"
-                         f"Nothing on fire — no open alerts or watch items.</div>")
-        if info_f:
-            items = "".join(f"<li>{ICON_INFO}<span>{code_spans(esc(f['title']))}</span></li>"
-                            for f in info_f)
-            parts.append(f"<ul class='infolist'>{items}</ul>")
-        for e in check_errors:
-            parts.append(f"<div class='finding watch'>{ICON_WATCH}<div>"
-                         f"<div class='k'>check error</div>"
-                         f"<div class='d'>{code_spans(esc(e))}</div></div></div>")
-        f_body = "".join(parts)
-    findings_card = f"""<section class="card">
-  <h2>Findings</h2>
-  <p class="sub">{esc(counts_line) if counts_line else 'From reports/findings.md.'}</p>
-  {f_body}
+    # ---- notes: info-grade findings (alerts/watches live in the queue up top)
+    notes_card = ""
+    info_f = [f for f in (findings or []) if f["severity"] == "info"]
+    if info_f:
+        items = "".join(f"<li>{ICON_INFO}<span>{code_spans(esc(f['title']))}</span></li>"
+                        for f in info_f)
+        notes_card = f"""<section class="card">
+  <h2>Worth knowing</h2>
+  <p class="sub">Informational findings — nothing to do, good to know.</p>
+  <ul class='infolist'>{items}</ul>
 </section>"""
 
     # ---- footer
@@ -980,11 +1224,14 @@ def build_page():
 <body>
 <div class="wrap">
 {masthead}
+{queue_card}
+{bills_card}
+{milestone_card}
 {tiles_html}
 {curve_card}
 {spend_cards}
 {forecast_card}
-{findings_card}
+{notes_card}
 {footer}
 </div>
 <div id="tip" class="tip" hidden></div>
@@ -995,6 +1242,8 @@ def build_page():
 
 
 FORECAST_DAYS = 60
+BILL_DAYS = 30             # the upcoming strip's horizon
+BILL_ROWS = 14             # rows shown; the tail folds into one "+N more"
 
 
 def dashboard():

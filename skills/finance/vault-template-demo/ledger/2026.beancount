@@ -15,7 +15,43 @@
 2026-01-01 open Income:US:Salary:CedarGroveSD        USD   ; jordan
 2026-01-01 open Expenses:Childcare                   USD
 
-; --- Prices (as of the last statement) ----------------------------------
+; --- Commodities (names + asset classes for fava's Investor pages) ------
+2026-01-01 commodity VTI
+  name: "Vanguard Total Stock Market ETF"
+  asset_allocation_equity_us: 100
+2026-01-01 commodity VXUS
+  name: "Vanguard Total International Stock ETF"
+  asset_allocation_equity_intl: 100
+2026-01-01 commodity BND
+  name: "Vanguard Total Bond Market ETF"
+  asset_allocation_bond_us: 100
+2026-01-01 commodity AGGRX
+  name: "Aggressive Growth 529 Portfolio"
+  asset_allocation_equity_us: 100
+2026-01-01 commodity USD
+  asset_allocation_cash: 100
+
+; --- Prices (month-end closes; the last row is the latest statement) ----
+2026-02-28 price VTI    274.00 USD
+2026-02-28 price VXUS    60.80 USD
+2026-02-28 price BND     70.30 USD
+2026-02-28 price AGGRX   28.10 USD
+2026-03-31 price VTI    279.50 USD
+2026-03-31 price VXUS    61.90 USD
+2026-03-31 price BND     70.10 USD
+2026-03-31 price AGGRX   28.60 USD
+2026-04-30 price VTI    271.00 USD
+2026-04-30 price VXUS    59.40 USD
+2026-04-30 price BND     71.20 USD
+2026-04-30 price AGGRX   27.90 USD
+2026-05-31 price VTI    283.75 USD
+2026-05-31 price VXUS    62.60 USD
+2026-05-31 price BND     71.60 USD
+2026-05-31 price AGGRX   29.00 USD
+2026-06-30 price VTI    290.20 USD
+2026-06-30 price VXUS    64.10 USD
+2026-06-30 price BND     71.90 USD
+2026-06-30 price AGGRX   29.60 USD
 2026-07-31 price VTI    295.00 USD
 2026-07-31 price VXUS    65.00 USD
 2026-07-31 price BND     72.00 USD

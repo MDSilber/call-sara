@@ -38,7 +38,10 @@
 2000-01-01 open Expenses:Taxes                 USD
 
 ; Commodities you hold get declared once. Tag market-traded ones with a
-; price source and scripts/update_prices.sh keeps them current:
+; price source and scripts/update_prices.sh keeps them current. The
+; asset_allocation_* metadata (percentages, must sum to 100) feeds fava's
+; Investor -> Asset Allocation Classes page:
 ;   2020-01-01 commodity VTSAX
 ;     name: "Vanguard Total Stock Market Index Admiral"
 ;     price: "USD:yahoo/VTSAX"
+;     asset_allocation_equity_us: 100

@@ -97,6 +97,16 @@ if [ -f "$VAULT/ledger/main.beancount" ] && [ -f "$VAULT/CLAUDE.md" ] && [ -f "$
     fi
     if "$VENV_PY" -c 'import fava' >/dev/null 2>&1; then
       pass "vault .venv has fava (dashboard.sh)"
+      if "$VENV_PY" -c 'import fava_dashboards, fava_investor' >/dev/null 2>&1; then
+        pass "vault .venv has fava_dashboards + fava_investor (dashboard panels)"
+      else
+        warn "fava_dashboards / fava_investor not importable — the Dashboards and Investor pages in fava will error" \
+             "$VAULT/.venv/bin/pip install fava-dashboards fava-investor"
+      fi
+      if [ ! -f "$VAULT/dashboards.yaml" ]; then
+        warn "no dashboards.yaml in the vault — fava's Dashboards page has nothing to render" \
+             "cp $SKILL_DIR/vault-template/dashboards.yaml $VAULT/dashboards.yaml"
+      fi
     else
       warn "fava not importable — dashboard.sh cannot launch" \
            "$VAULT/.venv/bin/pip install fava"

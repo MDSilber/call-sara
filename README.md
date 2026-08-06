@@ -49,6 +49,10 @@ cd ~/code/call-sara
 skills/finance/scripts/init_vault.sh --demo /tmp/demo-vault
 skills/finance/scripts/dashboard.sh --vault /tmp/demo-vault   # opens your browser, random local port
 ```
+The fava view ships with chart dashboards (net worth, allocation donuts,
+income vs expenses) plus fava-investor's tax-loss-harvest and allocation
+pages — see the Dashboards and Investor tabs in the sidebar (the
+Dashboards tab needs `--writable`; the script prints a hint).
 If anything's weird, `skills/finance/scripts/doctor.sh --vault /tmp/demo-vault`
 tells you what. (Brand-new Mac? Set `git config --global user.email you@wherever.com`
 first, the vault is a git repo and will ask.)

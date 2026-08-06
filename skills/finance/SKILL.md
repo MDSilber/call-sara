@@ -195,7 +195,13 @@ session starts already knowing them.
 - `scripts/update_prices.sh` — refresh market prices for every commodity
   tagged with a `price:` source; run before reviews and dashboard sessions.
 - `scripts/dashboard.sh` — local-only visual dashboard (fava) over the
-  ledger: net worth, drill-downs, query console. Offer it when the user
-  wants to SEE their money, not just hear numbers. `--pretty` skips the
-  server and opens the static glanceable page instead.
+  ledger: net worth, drill-downs, query console, plus the Dashboards tab
+  (chart panels from the vault's `dashboards.yaml`) and fava-investor's
+  Investor tab (asset allocation, tax-loss harvesting, cash drag). Offer
+  it when the user wants to SEE their money, not just hear numbers.
+  Default is read-only, where the Dashboards tab cannot render (its
+  panels POST; the script prints the hint) — `--writable` enables it
+  for a session. `--pretty` skips the server and opens the static
+  glanceable page instead. If tabs error, `doctor.sh` names the missing
+  piece.
 - `scripts/file_downloads.py` — identify / dedupe / rename / file downloaded PDFs.

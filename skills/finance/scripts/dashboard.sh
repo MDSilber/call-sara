@@ -15,6 +15,13 @@
 # local browser could try to reach it — close the dashboard tab when done
 # and Ctrl-C the server rather than leaving it up.
 #   scripts/dashboard.sh [--vault <dir>] [--port <n>] [--writable] [--pretty]
+#
+# fava-dashboards caveat: the Dashboards page renders every panel through a
+# POST endpoint, which fava's read-only mode rejects (verified: the page
+# shell loads, each panel errors 401). Read-only stays the UNCONDITIONAL
+# default anyway — a writable fava exposes ledger-editing endpoints to any
+# local page while it runs. When a dashboards config is present this script
+# prints a hint; opt into the Dashboards tab per-session with --writable.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -74,6 +81,15 @@ fi
 
 MODE_ARGS=(--read-only)
 MODE_NOTE="read-only"
+# fava-dashboards renders panels via POST, which --read-only rejects (401 on
+# every panel), so the Dashboards tab only works under --writable. Read-only
+# remains the unconditional default — never auto-dropped — because a writable
+# fava exposes ledger-editing endpoints to any local page while it runs.
+if [ "$WRITABLE" != 1 ] && [ -f "$VAULT/dashboards.yaml" ] \
+   && "$VAULT/.venv/bin/python" -c 'import fava_dashboards' >/dev/null 2>&1; then
+  echo "ℹ️  dashboards.yaml detected — rerun with --writable to enable the Dashboards tab"
+  echo "   (fava-dashboards renders panels via POST, which read-only mode blocks; all other pages work read-only)"
+fi
 if [ "$WRITABLE" = 1 ]; then
   MODE_ARGS=()
   MODE_NOTE="WRITABLE"

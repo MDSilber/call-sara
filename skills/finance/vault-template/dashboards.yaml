@@ -1,0 +1,479 @@
+# dashboards.yaml — fava-dashboards panels for this vault (starter set).
+# Rendered by the fava_dashboards extension (see ledger/main.beancount:
+#   custom "fava-extension" "fava_dashboards" "{'config': '../dashboards.yaml'}")
+# Open via scripts/dashboard.sh -> Dashboards in the sidebar.
+#
+# HOUSEHOLD-SPECIFIC — edit when the household config changes:
+#   * Illiquid/shadow currencies are EXCLUDED from every liquid figure with the
+#     literal regex  ^(USD\.EQ)  — if rules.toml [household] sets
+#     illiquid_commodity_prefixes (e.g. ["ACME"]), extend every occurrence
+#     here to  ^(ACME|USD\.EQ)  (search and replace).
+#   * The "Illiquid paper" tile values those holdings in the shadow currency
+#     USD.EQ — paper is shown, never counted in liquid. With no illiquid
+#     positions the tile shows a dash.
+#
+# Honesty rules (mirrors tools/webview.py, the ground-truth static page):
+#   * The net-worth curve starts only once >=95% (dollar-weighted) of
+#     Equity:Opening balances are booked — earlier months would misstate the
+#     household as poorer, not younger.
+#   * Months valued mostly at cost (no dated price yet) draw DASHED.
+#   * Numbers match tools/run query.py networth (same BQL convention).
+
+utils:
+  inline: |
+    // ---- palette (dataviz-validated; light + dark selected per mode) ----
+    const LIGHT = {
+      cat: ["#2a78d6","#eb6834","#1baf7a","#eda100","#e87ba4","#008300","#4a3aa7","#e34948"],
+      ink: "#0b0b0b", ink2: "#52514e", muted: "#898781",
+      grid: "#e1e0d9", axis: "#c3c2b7", surface: "#fcfcfb",
+      up: "#006300", down: "#d03b3b",
+    };
+    const DARK = {
+      cat: ["#3987e5","#d95926","#199e70","#c98500","#d55181","#008300","#9085e9","#e66767"],
+      ink: "#ffffff", ink2: "#c3c2b7", muted: "#898781",
+      grid: "#2c2c2a", axis: "#383835", surface: "#1a1a19",
+      up: "#0ca30c", down: "#e66767",
+    };
+    function theme() {
+      const dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+      return dark ? DARK : LIGHT;
+    }
+    const FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif";
+
+    // money formatters — Intl when the ledger currency is a real ISO code,
+    // plain grouped digits otherwise (shadow currencies like USD.EQ are not).
+    function moneyFmt(ccy) {
+      try {
+        const f = new Intl.NumberFormat(undefined, { style: "currency", currency: ccy, maximumFractionDigits: 0 });
+        return (v) => (v == null ? "" : f.format(v));
+      } catch (e) {
+        return (v) => (v == null ? "" : (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString());
+      }
+    }
+    function moneyShort(ccy) {
+      const money = moneyFmt(ccy);
+      return (v) => {
+        if (v == null) return "";
+        const a = Math.abs(v);
+        if (a >= 1e6) return (v < 0 ? "-$" : "$") + (a / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M";
+        if (a >= 1e4) return (v < 0 ? "-$" : "$") + Math.round(a / 1e3) + "K";
+        return money(v);
+      };
+    }
+
+    // one number out of an Inventory cell ({CCY: number}), 0 when absent
+    function inv(cell, ccy) { return (cell && cell[ccy]) || 0; }
+    // an Inventory that converted COMPLETELY into ccy (no leftover units)
+    function fullyConverted(cell, ccy) {
+      if (!cell) return false;
+      const keys = Object.keys(cell);
+      return keys.length > 0 && keys.every((k) => k === ccy);
+    }
+    // market value when priced, cost basis otherwise; flags the fallback
+    function marketOrCost(row, ccy) {
+      if (fullyConverted(row.market, ccy)) return { v: inv(row.market, ccy), atCost: false };
+      return { v: inv(row.book, ccy), atCost: true };
+    }
+    const monthEnd = (y, m) => new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+    const mLabel = (y, m) => new Date(Date.UTC(y, m - 1, 1)).toLocaleString(undefined, { month: "short", year: "2-digit", timeZone: "UTC" }).replace(" ", " ’");
+
+    // shared chart chrome, per dataviz mark spec: hairline grid, recessive axes
+    function chrome(t) {
+      return {
+        textStyle: { fontFamily: FONT, color: t.ink2 },
+        grid: { left: 12, right: 18, top: 28, bottom: 34, containLabel: true },
+        tooltip: { trigger: "axis", backgroundColor: t.surface, borderColor: t.grid,
+                   textStyle: { color: t.ink, fontFamily: FONT } },
+      };
+    }
+    function catAxis(t, labels) {
+      return { type: "category", data: labels,
+               axisLine: { lineStyle: { color: t.axis } }, axisTick: { show: false },
+               axisLabel: { color: t.muted, fontFamily: FONT } };
+    }
+    function moneyAxis(t, ccy) {
+      return { type: "value",
+               splitLine: { lineStyle: { color: t.grid } },
+               axisLabel: { color: t.muted, fontFamily: FONT, formatter: moneyShort(ccy) } };
+    }
+    // big-number HTML tile (panel title is the label; this is the value line)
+    function tile(valueHtml, subHtml, color) {
+      return `<div style="font-family:${FONT}; text-align:center; padding-top:6px;">
+        <div style="font-size:34px; font-weight:650; letter-spacing:-.01em; color:${color};">${valueHtml}</div>
+        <div style="font-size:12.5px; margin-top:2px; color:${theme().muted};">${subHtml || ""}</div></div>`;
+    }
+    function emptyNote(text) {
+      return { title: { text: text, left: "center", top: "middle",
+                        textStyle: { color: theme().muted, fontFamily: FONT, fontSize: 13, fontWeight: 400 } } };
+    }
+    return { theme, FONT, moneyFmt, moneyShort, inv, fullyConverted, marketOrCost,
+             monthEnd, mLabel, chrome, catAxis, moneyAxis, tile, emptyNote };
+
+dashboards:
+- name: Overview
+  panels:
+
+  - title: ""
+    height: 110px
+    link: ../../balance_sheet/
+    queries:
+    - name: liquid
+      bql: |
+        SELECT CONVERT(SUM(position), '{{ledger.ccy}}') AS value
+        WHERE account ~ '^(Assets|Liabilities)' AND NOT currency ~ '^(USD\.EQ)'
+    - name: paper
+      bql: |
+        SELECT CONVERT(SUM(position), 'USD.EQ') AS value
+        WHERE account ~ '^Assets' AND currency ~ '^(USD\.EQ)'
+    - name: cards
+      bql: |
+        SELECT CONVERT(SUM(position), '{{ledger.ccy}}') AS value
+        WHERE account ~ '^Liabilities'
+    type: html
+    script: |
+      const t = utils.theme();
+      const money = utils.moneyFmt(ledger.ccy);
+      const liquid = utils.inv(panel.queries[0].result[0]?.value, ledger.ccy);
+      const paper = utils.inv(panel.queries[1].result[0]?.value, "USD.EQ");
+      const cards = utils.inv(panel.queries[2].result[0]?.value, ledger.ccy);
+      const cells = [
+        { label: "Liquid net worth", v: money(liquid), sub: "spendable, at latest prices", strong: true },
+      ];
+      if (paper) {
+        cells.push({ label: "Illiquid paper", v: money(paper), sub: "shadow $ — not counted in liquid" });
+        cells.push({ label: "Combined picture", v: money(liquid + paper), sub: "liquid + illiquid paper" });
+      }
+      cells.push(cards
+        ? { label: "Credit cards owed", v: money(-cards), sub: "clears on autopay" }
+        : { label: "Credit cards owed", v: money(0), sub: "nothing outstanding" });
+      return `<div style="font-family:${utils.FONT}; display:flex; gap:12px; align-items:stretch; height:100%;">`
+        + cells.map((c) => `<div style="flex:1; padding:10px 6px 0; text-align:center;">
+            <div style="font-size:12.5px; color:${t.ink2};">${c.label}</div>
+            <div style="font-size:30px; font-weight:650; letter-spacing:-.01em; margin-top:2px; color:${c.strong ? t.ink : t.ink2};">${c.v}</div>
+            <div style="font-size:11.5px; margin-top:1px; color:${t.muted};">${c.sub}</div>
+          </div>`).join("")
+        + `</div>`;
+
+  - title: Net worth over time
+    height: 360px
+    link: ../../balance_sheet/
+    queries:
+    - name: deltas
+      bql: |
+        SELECT year, month, currency, SUM(position) AS units, SUM(COST(position)) AS cost
+        WHERE account ~ '^(Assets|Liabilities)' AND NOT currency ~ '^(USD\.EQ)'
+        GROUP BY year, month, currency ORDER BY year, month
+    - name: prices
+      bql: "SELECT date, currency, amount FROM #prices ORDER BY date"
+    - name: opening
+      bql: |
+        SELECT date, CONVERT(SUM(position), '{{ledger.ccy}}') AS value
+        WHERE account ~ '^Equity:Opening' GROUP BY date ORDER BY date
+    type: echarts
+    script: |
+      const t = utils.theme();
+      const ccy = ledger.ccy;
+      const money = utils.moneyFmt(ccy);
+      const rows = panel.queries[0].result;
+      if (!rows.length) return utils.emptyNote("No ledger history yet — import statements and reload.");
+
+      // price history {ccy: [[date, px]…]} from explicit price directives
+      const prices = {};
+      for (const r of panel.queries[1].result) {
+        if (r.amount && r.amount.currency === ccy)
+          (prices[r.currency] = prices[r.currency] || []).push([r.date, r.amount.number]);
+      }
+      const priceAsOf = (c, d) => {
+        let px = null;
+        for (const [pd, p] of prices[c] || []) { if (pd <= d) px = p; else break; }
+        return px;
+      };
+
+      // opening-balance baseline: curve starts once >=95% ($-weighted) is booked
+      const open = panel.queries[2].result.map((r) => [r.date, Math.abs(utils.inv(r.value, ccy))]);
+      const openTotal = open.reduce((s, [, v]) => s + v, 0);
+      let baseline = null, run = 0;
+      for (const [d, v] of open) { run += v; if (run >= 0.95 * openTotal) { baseline = d; break; } }
+
+      // cumulate per-currency units + cost, value each month end
+      const byMonth = new Map();
+      for (const r of rows) {
+        const k = r.year * 100 + r.month;
+        if (!byMonth.has(k)) byMonth.set(k, []);
+        byMonth.get(k).push(r);
+      }
+      const cum = {};
+      const pts = [];
+      const ks = [...byMonth.keys()].sort((a, b) => a - b);
+      for (const k of ks) {
+        const y = Math.floor(k / 100), m = k % 100;
+        for (const r of byMonth.get(k)) {
+          const c = (cum[r.currency] = cum[r.currency] || { u: 0, c: 0 });
+          c.u += r.currency === ccy ? utils.inv(r.units, ccy) : utils.inv(r.units, r.currency);
+          c.c += utils.inv(r.cost, ccy);
+        }
+        let d = utils.monthEnd(y, m);
+        if (ledger.dateLast && ledger.dateLast < d) d = ledger.dateLast;  // partial month, dated honestly
+        // the FINAL point is the headline: latest prices, even if a price
+        // directive postdates the last transaction — hero and curve agree
+        const priceDate = k === ks[ks.length - 1] ? "9999-12-31" : d;
+        let total = 0, atCost = 0;
+        for (const [c, uc] of Object.entries(cum)) {
+          if (c === ccy) { total += uc.u; continue; }
+          if (Math.abs(uc.u) < 1e-9) continue;
+          const px = priceAsOf(c, priceDate);
+          if (px != null) total += uc.u * px;
+          else { total += uc.c; atCost += Math.abs(uc.c); }
+        }
+        pts.push({ d, y, m, v: Math.round(total), est: atCost > 0.10 * Math.max(Math.abs(total), 1) });
+      }
+      const kept = baseline ? pts.filter((p) => p.d >= baseline) : pts;
+      const shown = kept.slice(-24);
+      if (shown.length < 2)
+        return utils.emptyNote("Not enough post-baseline history for a curve yet — it grows monthly from here.");
+
+      const labels = shown.map((p) => utils.mLabel(p.y, p.m));
+      // dashed where the month leans on cost basis, solid where market-priced
+      const seg = (want) => shown.map((p, i) => {
+        const active = p.est || (i > 0 && shown[i - 1].est) || (i + 1 < shown.length && shown[i + 1].est);
+        return (want ? active : !p.est) ? p.v : null;
+      });
+      const note = (baseline && kept.length < pts.length)
+        ? `starts ${labels[0]} — opening balances complete from here` : "";
+      return {
+        ...utils.chrome(t),
+        grid: { ...utils.chrome(t).grid, right: 100 },
+        tooltip: { ...utils.chrome(t).tooltip, trigger: "axis",
+          valueFormatter: (v) => (v == null ? "" : money(v)) },
+        title: note ? { text: note, right: 10, top: 0,
+          textStyle: { color: t.muted, fontSize: 11, fontWeight: 400, fontFamily: utils.FONT } } : undefined,
+        xAxis: { ...utils.catAxis(t, labels), boundaryGap: false },
+        yAxis: utils.moneyAxis(t, ccy),
+        series: [
+          { name: "at cost (no dated price yet)", type: "line", data: seg(true),
+            connectNulls: false, showSymbol: false, z: 1,
+            lineStyle: { color: t.cat[0], width: 2, type: [5, 5], opacity: 0.75 } },
+          { name: "market-priced", type: "line", data: seg(false),
+            connectNulls: false, showSymbol: false, z: 2,
+            lineStyle: { color: t.cat[0], width: 2 },
+            areaStyle: { color: t.cat[0], opacity: 0.09 },
+            endLabel: { show: true, color: t.ink, fontWeight: 650, fontFamily: utils.FONT,
+                        formatter: (p) => (p.value == null ? "" : money(p.value)) } },
+        ],
+        legend: shown.some((p) => p.est)
+          ? { bottom: 0, textStyle: { color: t.ink2, fontFamily: utils.FONT } } : undefined,
+      };
+
+  - title: Income vs expenses
+    width: 50%
+    height: 320px
+    link: ../../income_statement/
+    queries:
+    - name: Income
+      bql: |
+        SELECT year, month, CONVERT(SUM(position), '{{ledger.ccy}}', LAST(date)) AS value
+        WHERE account ~ '^Income:' GROUP BY year, month ORDER BY year, month
+      link: ../../account/Income/?time={time}
+    - name: Expenses
+      bql: |
+        SELECT year, month, CONVERT(SUM(position), '{{ledger.ccy}}', LAST(date)) AS value
+        WHERE account ~ '^Expenses:' GROUP BY year, month ORDER BY year, month
+      link: ../../account/Expenses/?time={time}
+    type: echarts
+    script: |
+      const t = utils.theme();
+      const ccy = ledger.ccy;
+      const money = utils.moneyFmt(ccy);
+      const seen = new Set();
+      for (const q of panel.queries) for (const r of q.result) seen.add(r.year * 100 + r.month);
+      if (!seen.size) return utils.emptyNote("No income or expense history yet.");
+      const months = [...seen].sort((a, b) => a - b).slice(-13);
+      const key = (r) => r.year * 100 + r.month;
+      const series = panel.queries.map((q, i) => {
+        const by = {};
+        for (const r of q.result) by[key(r)] = (i === 0 ? -1 : 1) * utils.inv(r.value, ccy);
+        return { name: q.name, type: "bar", barGap: "10%",
+                 itemStyle: { color: t.cat[i], borderRadius: [4, 4, 0, 0] },
+                 data: months.map((m) => Math.round(by[m] || 0)) };
+      });
+      const lastYm = ledger.dateLast ? Number(ledger.dateLast.slice(0, 7).replace("-", "")) : null;
+      const partial = months.includes(lastYm)
+        && ledger.dateLast < utils.monthEnd(Math.floor(lastYm / 100), lastYm % 100);
+      const lbl = (m) => utils.mLabel(Math.floor(m / 100), m % 100) + (m === lastYm && partial ? "*" : "");
+      return {
+        ...utils.chrome(t),
+        title: partial ? { text: `* through ${ledger.dateLast} — month in progress`, right: 10, top: 0,
+          textStyle: { color: t.muted, fontSize: 11, fontWeight: 400, fontFamily: utils.FONT } } : undefined,
+        legend: { bottom: 0, textStyle: { color: t.ink2, fontFamily: utils.FONT } },
+        tooltip: { ...utils.chrome(t).tooltip, valueFormatter: (v) => money(v) },
+        xAxis: utils.catAxis(t, months.map(lbl)),
+        yAxis: utils.moneyAxis(t, ccy),
+        series,
+        onClick: (event) => {
+          const q = panel.queries.find((qq) => qq.name === event.seriesName);
+          if (!q) return;
+          const m = months[event.dataIndex];
+          window.open(helpers.urlFor(q.link.replace("{time}", `${Math.floor(m / 100)}-${String(m % 100).padStart(2, "0")}`)));
+        },
+      };
+
+  - title: Where the money goes
+    width: 50%
+    height: 320px
+    link: ../../income_statement/
+    queries:
+    - bql: |
+        SELECT year, month, root(account, 2) AS cat,
+               CONVERT(SUM(position), '{{ledger.ccy}}', LAST(date)) AS value
+        WHERE account ~ '^Expenses:' GROUP BY year, month, cat ORDER BY year, month
+      link: ../../account/{account}/?time={time}
+    type: echarts
+    script: |
+      const t = utils.theme();
+      const ccy = ledger.ccy;
+      const money = utils.moneyFmt(ccy);
+      const rows = panel.queries[0].result;
+      if (!rows.length) return utils.emptyNote("No categorized spending yet.");
+      const key = (r) => r.year * 100 + r.month;
+      const months = [...new Set(rows.map(key))].sort((a, b) => a - b).slice(-6);
+      const keep = new Set(months);
+      const totals = {};
+      for (const r of rows) {
+        if (!keep.has(key(r))) continue;
+        const c = (r.cat || "").replace(/^Expenses:?/, "") || "Uncategorized";
+        totals[c] = (totals[c] || 0) + utils.inv(r.value, ccy);
+      }
+      const ranked = Object.entries(totals).sort(([, a], [, b]) => b - a).map(([c]) => c);
+      const top = ranked.slice(0, 7);
+      const fold = new Set(ranked.slice(7));
+      const names = fold.size ? [...top, `Other (${fold.size})`] : top;
+      const data = Object.fromEntries(names.map((n) => [n, Object.fromEntries(months.map((m) => [m, 0]))]));
+      for (const r of rows) {
+        if (!keep.has(key(r))) continue;
+        const c0 = (r.cat || "").replace(/^Expenses:?/, "") || "Uncategorized";
+        const c = fold.has(c0) ? `Other (${fold.size})` : c0;
+        data[c][key(r)] += utils.inv(r.value, ccy);
+      }
+      const lastYm = ledger.dateLast ? Number(ledger.dateLast.slice(0, 7).replace("-", "")) : null;
+      const partial = months.includes(lastYm)
+        && ledger.dateLast < utils.monthEnd(Math.floor(lastYm / 100), lastYm % 100);
+      const lbl = (m) => utils.mLabel(Math.floor(m / 100), m % 100) + (m === lastYm && partial ? "*" : "");
+      return {
+        ...utils.chrome(t),
+        title: partial ? { text: `* through ${ledger.dateLast} — month in progress`, right: 10, top: 0,
+          textStyle: { color: t.muted, fontSize: 11, fontWeight: 400, fontFamily: utils.FONT } } : undefined,
+        legend: { bottom: 0, itemWidth: 12, itemHeight: 12,
+                  textStyle: { color: t.ink2, fontFamily: utils.FONT, fontSize: 11 } },
+        tooltip: { ...utils.chrome(t).tooltip, valueFormatter: (v) => money(v) },
+        xAxis: utils.catAxis(t, months.map(lbl)),
+        yAxis: utils.moneyAxis(t, ccy),
+        series: names.map((n, i) => ({
+          name: n, type: "bar", stack: "spend",
+          itemStyle: { color: n.startsWith("Other") ? t.muted : t.cat[i % t.cat.length],
+                       borderColor: t.surface, borderWidth: 2 },
+          data: months.map((m) => Math.round(data[n][m] || 0)),
+        })),
+        onClick: (event) => {
+          const m = months[event.dataIndex];
+          const acct = event.seriesName.startsWith("Other") ? "Expenses"
+            : "Expenses:" + event.seriesName;
+          window.open(helpers.urlFor(panel.queries[0].link
+            .replace("{account}", acct)
+            .replace("{time}", `${Math.floor(m / 100)}-${String(m % 100).padStart(2, "0")}`)));
+        },
+      };
+
+- name: Allocation
+  panels:
+
+  - title: Assets by account group
+    width: 50%
+    height: 340px
+    link: ../../balance_sheet/
+    queries:
+    - bql: |
+        SELECT root(account, 3) AS grp, currency,
+               CONVERT(SUM(position), '{{ledger.ccy}}') AS market,
+               COST(SUM(position)) AS book
+        WHERE account ~ '^Assets' AND NOT currency ~ '^(USD\.EQ)'
+        GROUP BY grp, currency
+    type: echarts
+    script: |
+      const t = utils.theme();
+      const ccy = ledger.ccy;
+      const money = utils.moneyFmt(ccy);
+      const groups = {};
+      let anyAtCost = false;
+      for (const r of panel.queries[0].result) {
+        const mc = utils.marketOrCost({ market: r.market, book: r.book }, ccy);
+        anyAtCost = anyAtCost || (mc.atCost && Math.abs(mc.v) > 0.5);
+        const name = (r.grp || "").replace(/^Assets:(US:)?/, "");
+        groups[name] = (groups[name] || 0) + mc.v;
+      }
+      const ranked = Object.entries(groups).filter(([, v]) => v > 0.5).sort(([, a], [, b]) => b - a);
+      if (!ranked.length) return utils.emptyNote("No priced asset positions yet.");
+      const top = ranked.slice(0, 7);
+      const rest = ranked.slice(7);
+      const data = top.map(([name, value]) => ({ name, value: Math.round(value) }));
+      if (rest.length) data.push({ name: `Other (${rest.length})`, value: Math.round(rest.reduce((s, [, v]) => s + v, 0)) });
+      const total = data.reduce((s, d) => s + d.value, 0);
+      return {
+        textStyle: { fontFamily: utils.FONT, color: t.ink2 },
+        tooltip: { backgroundColor: t.surface, borderColor: t.grid,
+          textStyle: { color: t.ink, fontFamily: utils.FONT },
+          formatter: (p) => `${p.marker} ${p.name}&nbsp;&nbsp;<b>${money(p.value)}</b> (${p.percent.toFixed(0)}%)` },
+        title: { text: money(total), subtext: anyAtCost ? "total · partly at cost" : "total",
+          left: "center", top: "42%",
+          textStyle: { color: t.ink, fontSize: 22, fontWeight: 650, fontFamily: utils.FONT },
+          subtextStyle: { color: t.muted, fontSize: 11, fontFamily: utils.FONT } },
+        series: [{ type: "pie", radius: ["58%", "82%"], padAngle: 1,
+          itemStyle: { borderColor: t.surface, borderWidth: 2, borderRadius: 4 },
+          label: { color: t.ink2, fontFamily: utils.FONT,
+                   formatter: (p) => `${p.name}  ${p.percent.toFixed(0)}%` },
+          labelLine: { lineStyle: { color: t.axis } },
+          color: t.cat, data }],
+      };
+
+  - title: Assets by holding
+    width: 50%
+    height: 340px
+    link: ../../balance_sheet/
+    queries:
+    - bql: |
+        SELECT currency,
+               CONVERT(SUM(position), '{{ledger.ccy}}') AS market,
+               COST(SUM(position)) AS book
+        WHERE account ~ '^Assets' AND NOT currency ~ '^(USD\.EQ)'
+        GROUP BY currency
+    type: echarts
+    script: |
+      const t = utils.theme();
+      const ccy = ledger.ccy;
+      const money = utils.moneyFmt(ccy);
+      const rows = [];
+      for (const r of panel.queries[0].result) {
+        const mc = utils.marketOrCost({ market: r.market, book: r.book }, ccy);
+        if (mc.v <= 0.5) continue;
+        const nm = r.currency === ccy ? `Cash (${ccy})` : r.currency;
+        rows.push({ name: nm, value: Math.round(mc.v), atCost: mc.atCost,
+                    long: ledger.commodities[r.currency]?.meta?.name || nm });
+      }
+      if (!rows.length) return utils.emptyNote("No priced holdings yet.");
+      rows.sort((a, b) => b.value - a.value);
+      const top = rows.slice(0, 7);
+      const rest = rows.slice(7);
+      const data = top.map((r) => ({ ...r }));
+      if (rest.length) data.push({ name: `Other (${rest.length})`,
+        value: rest.reduce((s, r) => s + r.value, 0), long: rest.map((r) => r.name).join(", ") });
+      return {
+        textStyle: { fontFamily: utils.FONT, color: t.ink2 },
+        tooltip: { backgroundColor: t.surface, borderColor: t.grid,
+          textStyle: { color: t.ink, fontFamily: utils.FONT },
+          formatter: (p) => `${p.marker} ${p.data.long}${p.data.atCost ? " · at cost" : ""}&nbsp;&nbsp;<b>${money(p.value)}</b> (${p.percent.toFixed(0)}%)` },
+        series: [{ type: "pie", radius: ["58%", "82%"], padAngle: 1,
+          itemStyle: { borderColor: t.surface, borderWidth: 2, borderRadius: 4 },
+          label: { color: t.ink2, fontFamily: utils.FONT,
+                   formatter: (p) => `${p.name}  ${p.percent.toFixed(0)}%` },
+          labelLine: { lineStyle: { color: t.axis } },
+          color: t.cat, data }],
+      };
