@@ -7,3 +7,4 @@ include "prices.beancount"
 
 2026-01-01 custom "fava-option" "locale" "en_US"  ; comma-grouped numbers in fava
 2026-01-01 custom "fava-option" "invert-income-liabilities-equity" "true"  ; display income/liabilities with human signs
+2026-01-01 custom "fava-option" "default-page" "income_statement/?time=year"  ; land on this-year view, never unlabeled all-time
