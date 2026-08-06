@@ -11,6 +11,7 @@
 # priced in the shadow currency below and NEVER counted in spendable net worth.
 illiquid_commodity_prefixes = []          # e.g. ["ACME"] for a private-stock ticker
 shadow_currency = "USD.EQ"
+# names = "Avery & Sam"                   # optional: how Sara Home greets you
 
 # ---------------------------------------------------------------------------
 # Account routing — which ledger account an OFX/QFX <ACCTID> or a Chase CSV

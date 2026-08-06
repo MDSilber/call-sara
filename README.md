@@ -48,6 +48,7 @@ Not ready to hand over real data? Same, at first:
 cd ~/code/call-sara
 skills/finance/scripts/init_vault.sh --demo /tmp/demo-vault
 skills/finance/scripts/dashboard.sh --vault /tmp/demo-vault   # opens your browser, random local port
+skills/finance/scripts/dashboard.sh --vault /tmp/demo-vault --home   # Sara Home — the morning page (spend pace, needs-you, goals)
 ```
 The fava view ships with chart dashboards (net worth, allocation donuts,
 income vs expenses) plus fava-investor's tax-loss-harvest and allocation

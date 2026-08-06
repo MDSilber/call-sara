@@ -3,7 +3,7 @@
 
 Run:    tools/run reports.py
 Writes: reports/net-worth.md, reports/spend-by-month.md, reports/upcoming.md,
-        reports/dashboard.html (via webview.py)
+        reports/dashboard.html (via webview.py), reports/home.html (via home.py)
 Arithmetic is code; the agent reads these files and reasons about them.
 """
 import re
@@ -131,7 +131,8 @@ def upcoming():
 if __name__ == "__main__":
     REPORTS.mkdir(exist_ok=True)
     from webview import dashboard  # noqa: E402 — imported lazily: webview reuses this module's math
-    for fn in (net_worth, spend_by_month, upcoming, dashboard):
+    from home import home  # noqa: E402 — same: home reuses this module + webview
+    for fn in (net_worth, spend_by_month, upcoming, dashboard, home):
         try:
             fn()
             print(f"ok   {fn.__name__}")

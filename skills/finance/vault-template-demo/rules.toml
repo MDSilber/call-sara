@@ -4,6 +4,7 @@
 # category gets corrected, then run  tools/run recategorize.py --write.
 
 [household]
+names = "Alex & Jordan"                   # how Sara Home greets the household
 illiquid_commodity_prefixes = []          # the Demo household has no private paper
 shadow_currency = "USD.EQ"
 

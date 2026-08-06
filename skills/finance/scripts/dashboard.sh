@@ -3,10 +3,12 @@
 # a query console — as a LOCAL-ONLY web page. Nothing leaves the machine:
 # fava binds to 127.0.0.1 and reads the ledger straight off disk.
 #
-# Two views: fava (the default, below) is the interactive drill-down;
-# --pretty instead generates and opens the STATIC glanceable page
-# (reports/dashboard.html, via tools/webview.py) — no server, a plain
-# self-contained file you can leave open or print.
+# Three views: fava (the default, below) is the interactive drill-down;
+# --pretty generates and opens the STATIC dense brief (reports/dashboard.html,
+# via tools/webview.py); --home generates and opens Sara Home
+# (reports/home.html, via tools/home.py) — the spouse-legible morning page.
+# The static pages need no server: plain self-contained files you can leave
+# open or print.
 #
 # Read-only by default: the page can VIEW everything but cannot edit the
 # ledger. --writable re-enables fava's editor for a session that needs it.
@@ -14,7 +16,7 @@
 # isn't guessable-by-default. While the server runs, ANY page open in a
 # local browser could try to reach it — close the dashboard tab when done
 # and Ctrl-C the server rather than leaving it up.
-#   scripts/dashboard.sh [--vault <dir>] [--port <n>] [--writable] [--pretty]
+#   scripts/dashboard.sh [--vault <dir>] [--port <n>] [--writable] [--pretty] [--home]
 #
 # fava-dashboards caveat: the Dashboards page renders every panel through a
 # POST endpoint, which fava's read-only mode rejects (verified: the page
@@ -29,13 +31,15 @@ VAULT="${FINANCE_VAULT:-}"
 PORT=""
 WRITABLE=0
 PRETTY=0
+HOME_PAGE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --vault) VAULT="$2"; shift 2 ;;
     --port)  PORT="$2";  shift 2 ;;
     --writable) WRITABLE=1; shift ;;
     --pretty) PRETTY=1; shift ;;
-    *) echo "usage: dashboard.sh [--vault <dir>] [--port <n>] [--writable] [--pretty]" >&2; exit 1 ;;
+    --home) HOME_PAGE=1; shift ;;
+    *) echo "usage: dashboard.sh [--vault <dir>] [--port <n>] [--writable] [--pretty] [--home]" >&2; exit 1 ;;
   esac
 done
 if [ -z "$VAULT" ] && [ -f "$HOME/.finance-vault" ]; then
@@ -51,14 +55,20 @@ if [ -z "$VAULT" ] && [ -f "$HOME/.finance-vault" ]; then
 fi
 VAULT="${VAULT:-$HOME/Finance}"
 
-# --pretty: the static beauty view — generate reports/dashboard.html and open
-# it as a plain file. No server, no port, nothing to Ctrl-C.
-if [ "$PRETTY" = 1 ]; then
+# --pretty / --home: the static views — generate the page and open it as a
+# plain file. No server, no port, nothing to Ctrl-C.
+if [ "$PRETTY" = 1 ] || [ "$HOME_PAGE" = 1 ]; then
   PY="$VAULT/.venv/bin/python"
   [ -x "$PY" ] || { echo "❌ no vault venv at $PY — is the vault set up?" >&2; exit 1; }
-  FINANCE_VAULT="$VAULT" "$PY" "$HERE/../tools/webview.py"
-  PAGE="$VAULT/reports/dashboard.html"
-  echo "✓ static dashboard at $PAGE  (self-contained file; fava remains the drill-down)"
+  if [ "$HOME_PAGE" = 1 ]; then
+    FINANCE_VAULT="$VAULT" "$PY" "$HERE/../tools/home.py"
+    PAGE="$VAULT/reports/home.html"
+    echo "✓ Sara Home at $PAGE  (self-contained file; --pretty is the dense brief, fava the drill-down)"
+  else
+    FINANCE_VAULT="$VAULT" "$PY" "$HERE/../tools/webview.py"
+    PAGE="$VAULT/reports/dashboard.html"
+    echo "✓ static dashboard at $PAGE  (self-contained file; fava remains the drill-down)"
+  fi
   command -v open >/dev/null && open "$PAGE"
   exit 0
 fi

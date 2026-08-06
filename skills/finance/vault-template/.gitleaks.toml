@@ -40,8 +40,8 @@ regex = '''(?:[０-９][ -]?){7,}[０-９]'''
 tags = ["pii"]
 
 [allowlist]
-description = "documents/ and inbox/ hold binary source docs (gitignored anyway); .venv is tooling. The regexes allowlist ONLY the machine-metadata lines the importers emit (hashes, bank row ids, filed-document paths) — matched per LINE, so ledger/ and reports/ are otherwise fully scanned."
-paths = ['''^documents/''', '''^inbox/''', '''^\.venv/''']
+description = "documents/ and inbox/ hold binary source docs (gitignored anyway); .venv is tooling. reports/home.html is a GENERATED page whose vendored chart library + inlined fonts trip the digit-run rules — everything readable on it derives from ledger/facts/findings, which stay fully scanned. The regexes allowlist ONLY the machine-metadata lines the importers emit (hashes, bank row ids, filed-document paths) — matched per LINE, so ledger/ and the other reports are otherwise fully scanned."
+paths = ['''^documents/''', '''^inbox/''', '''^\.venv/''', '''^reports/home\.html$''']
 regexTarget = "line"
 regexes = [
   '''^\s*import-hash:\s*"[0-9a-f]{8,64}"''',

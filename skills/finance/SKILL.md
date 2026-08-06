@@ -184,7 +184,9 @@ session starts already knowing them.
   (shareable; no personal identifiers).
 - `tools/` — `run` (wrapper), `query.py`, `reports.py`, `run_checks.py`,
   `checks.py`, `forecast.py`, `webview.py` (renders the static
-  `reports/dashboard.html`), `recategorize.py`, `rules.py`, `vault.py`,
+  `reports/dashboard.html`), `home.py` (renders `reports/home.html` —
+  Sara Home, the spouse-legible morning page), `recategorize.py`,
+  `rules.py`, `vault.py`,
   `importers/{ofx,chase_csv,invest_ofx,holdings_ofx}.py`. The transaction
   importers take `--write` (append after dry-run), `--all` (disable
   dedupe), and `--since YYYY-MM-DD` (trim pre-snapshot history) —
@@ -202,6 +204,7 @@ session starts already knowing them.
   Default is read-only, where the Dashboards tab cannot render (its
   panels POST; the script prints the hint) — `--writable` enables it
   for a session. `--pretty` skips the server and opens the static
-  glanceable page instead. If tabs error, `doctor.sh` names the missing
+  glanceable page instead; `--home` opens Sara Home, the beautiful
+  morning page for humans. If tabs error, `doctor.sh` names the missing
   piece.
 - `scripts/file_downloads.py` — identify / dedupe / rename / file downloaded PDFs.
