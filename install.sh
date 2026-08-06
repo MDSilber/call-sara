@@ -5,6 +5,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 mkdir -p ~/.claude/skills
 for d in "$here"/skills/*/ ; do
   name="$(basename "$d")"
+  # sara-lite is for UPLOADING to chat surfaces (claude.ai skills), not local
+  # install — locally the full finance skill covers everything it does
+  [ "$name" = "sara-lite" ] && continue
   target=~/.claude/skills/"$name"
   if [ -L "$target" ] || [ -e "$target" ]; then
     echo "skip  $name (exists)"
