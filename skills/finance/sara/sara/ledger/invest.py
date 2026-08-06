@@ -100,9 +100,38 @@ def cash_amount(a: CanonInvestTxn) -> Decimal:
     return sign * abs(a.units * a.price)
 
 
-def build(a: CanonInvestTxn, account: str, payee: str, h: str) -> tuple[str, UnitDeltas, set[str]]:
-    """One canonical action -> (entry_text, {ticker: unit_delta}, accounts_used)."""
+BuiltEntry = tuple[str, UnitDeltas, set[str], bool]  # (text, deltas, accounts, cash_only)
+
+
+def renders_zero_units(units: Decimal) -> bool:
+    """Would this quantity print as zero on a posting? A zero-unit position
+    with a costspec is a booking hazard (beancount divides cost by units) —
+    such an action must book as pure cash instead."""
+    return Decimal(fmt_units(abs(units))) == 0
+
+
+def build(a: CanonInvestTxn, account: str, payee: str, h: str) -> BuiltEntry:
+    """One canonical action -> (entry_text, {ticker: unit_delta},
+    accounts_used, cash_only).
+
+    THE ZERO-UNITS WALL: any position kind whose quantity would PRINT as
+    zero (qty-unreported aggregator rows, sub-1e-6 dust) books as a
+    cash-effect-only entry — settlement USD leg + category leg, provenance
+    metadata intact, cash_only=True so the pipeline can bucket it. A
+    `0.000 X {{total}}` posting would crash beancount's booking with
+    DivisionByZero; nothing this function returns can.
+    """
     when, kind = a.date, a.kind
+    if kind in (*BUY_KINDS, *SELL_KINDS, "REINVEST") and renders_zero_units(a.units):
+        sign = Decimal(1) if kind in SELL_KINDS else Decimal(-1)
+        total = a.total if a.total is not None else sign * abs(a.units * a.price)
+        counter = categorize(payee, kind, total, account)
+        if counter in ("Income:US:Other", "Expenses:Uncategorized"):
+            counter = invbanktran_default(account) or counter
+        entry = _render(when, payee, {"ofx-type": kind, "import-hash": h,
+                                      "fitid": a.source_id},
+                        [f"  {account}   {total:.2f} USD", f"  {counter}"])
+        return entry, {}, {account, counter}, True
     if kind == "INVBANKTRAN":
         t = a.cash_txn
         assert t is not None
@@ -117,7 +146,7 @@ def build(a: CanonInvestTxn, account: str, payee: str, h: str) -> tuple[str, Uni
         entry = _render(when, t.payee, {"ofx-type": t.kind, "import-hash": h,
                                         "fitid": t.source_id},
                         [f"  {account}   {t.amount:.2f} USD", f"  {counter}"])
-        return entry, {}, {account, counter}
+        return entry, {}, {account, counter}, False
     ticker, units, price = a.ticker, a.units, a.price
     if kind in BUY_KINDS:
         total = -abs(a.total if a.total is not None else units * price)
@@ -125,7 +154,7 @@ def build(a: CanonInvestTxn, account: str, payee: str, h: str) -> tuple[str, Uni
                                       "fitid": a.source_id},
                         [f"  {account}   {fmt_units(units)} {ticker} {_cost(units, price, total)}",
                          f"  {account}   {total:.2f} USD"])
-        return entry, {ticker: units}, {account}
+        return entry, {ticker: units}, {account}, False
     if kind in SELL_KINDS:
         total = abs(a.total if a.total is not None else units * price)
         entry = _render(when, payee, {"ofx-type": kind, "import-hash": h,
@@ -134,7 +163,7 @@ def build(a: CanonInvestTxn, account: str, payee: str, h: str) -> tuple[str, Uni
                          f"  ; whole lots (FIFO if set) — broker lot data governs at tax time",
                          f"  {account}   {total:.2f} USD",
                          f"  {GAINS}"])
-        return entry, {ticker: -abs(units)}, {account, GAINS}
+        return entry, {ticker: -abs(units)}, {account, GAINS}, False
     if kind == "REINVEST":
         income_acct = INCOME_ACCOUNTS.get(a.income, INCOME_DEFAULT)
         # Sign follows the ROW: a normal reinvest carries negative TOTAL
@@ -147,14 +176,14 @@ def build(a: CanonInvestTxn, account: str, payee: str, h: str) -> tuple[str, Uni
                                       "fitid": a.source_id},
                         [f"  {account}   {fmt_units(units)} {ticker} {_cost(units, price, total)}",
                          f"  {income_acct}   {total:.2f} USD"])
-        return entry, {ticker: units}, {account, income_acct}
+        return entry, {ticker: units}, {account, income_acct}, False
     # INCOME (cash distribution)
     income_acct = INCOME_ACCOUNTS.get(a.income, INCOME_DEFAULT)
     total = a.total if a.total is not None else ZERO
     entry = _render(when, payee, {"ofx-type": kind, "import-hash": h,
                                   "fitid": a.source_id},
                     [f"  {account}   {total:.2f} USD", f"  {income_acct}"])
-    return entry, {}, {account, income_acct}
+    return entry, {}, {account, income_acct}, False
 
 
 def reconcile(account: str, stated: dict[str, Decimal], asof: date,

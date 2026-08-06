@@ -205,6 +205,11 @@ INVEST_TOTAL_TOLERANCE = Decimal("0.01")
 
 FAMILY_OFX, FAMILY_PLAID = "ofx", "plaid"
 INVEST_TIER_LABEL = f"units±{INVEST_WINDOW_DAYS}d"
+INVEST_INCOME_TIER_LABEL = f"reinvest-income±{INVEST_WINDOW_DAYS}d"
+# The invest tier applies only to these kinds: INCOME rows match the
+# income FACET of a reinvest, position kinds match its units facet, and
+# plain cash (INVBANKTRAN) never touches the invest index at all.
+POSITION_KINDS = ("BUYMF", "BUYSTOCK", "SELLMF", "SELLSTOCK", "REINVEST")
 
 
 class InvestLedgerRow(NamedTuple):
@@ -212,12 +217,16 @@ class InvestLedgerRow(NamedTuple):
     units: Decimal
     total: Decimal | None  # |cash effect|, else the lot cost; None = unknowable
     family: str  # FAMILY_OFX / FAMILY_PLAID / "" (hand or legacy entry)
+    income_facet: bool = False  # entry also posts to Income: (a reinvest)
 
 
 InvestIndex = dict[str, list[InvestLedgerRow]]
 
 _DOUBLE_COST = re.compile(r"\{\{([\d,.]+)\s+USD\}\}")
 _SINGLE_COST = re.compile(r"\{([\d,.]+)\s+USD")
+
+
+_INCOME_POSTING = re.compile(r"^[ \t]+Income:", re.M)
 
 
 def _entry_family(body: str) -> str:
@@ -264,6 +273,7 @@ def invest_index(account: str) -> InvestIndex:
                 continue
             body = m.group(1)
             family = _entry_family(body)
+            income_facet = bool(_INCOME_POSTING.search(body))
             usd_sum = ZERO
             units_legs: list[tuple[Decimal, str, str]] = []
             for pm in posting.finditer(body):
@@ -287,15 +297,23 @@ def invest_index(account: str) -> InvestIndex:
                 else:
                     total = None
                 idx.setdefault(ticker, []).append(
-                    InvestLedgerRow(when, units, total, family))
+                    InvestLedgerRow(when, units, total, family, income_facet))
     return idx
 
 
-def claim_invest_duplicate(idx: InvestIndex, when: date, ticker: str, units: Decimal,
-                           total: Decimal | None, family: str,
+def claim_invest_duplicate(idx: InvestIndex, when: date, ticker: str,
+                           units: Decimal | None, total: Decimal | None, family: str,
                            window: int = INVEST_WINDOW_DAYS) -> bool:
     """True when a cross-family ledger row corroborates this action — and
-    CONSUME that row, so each ledger entry vouches for at most one candidate."""
+    CONSUME that row from THIS pool, so each facet of a ledger entry vouches
+    for at most one candidate.
+
+    `units=None` waives the units check — commodity, window, family, and the
+    cents-exact total still have to line up. Two callers waive: the
+    qty-unreported degradation (Vanguard via Plaid ships sweep reinvests as
+    `buy, quantity 0, amount $X`) and the income facet (a DIV row has no
+    units by nature).
+    """
     rows = idx.get(ticker)
     if not rows or total is None:
         return False
@@ -306,7 +324,8 @@ def claim_invest_duplicate(idx: InvestIndex, when: date, ticker: str, units: Dec
             continue  # cash unknowable (opening snapshot) — never corroborates
         if abs((row.when - when).days) > window:
             continue
-        if units.quantize(row.units, rounding=ROUND_HALF_EVEN) != row.units:
+        if units is not None and \
+                units.quantize(row.units, rounding=ROUND_HALF_EVEN) != row.units:
             continue  # exact at the ledger row's precision, sign included
         if abs(abs(row.total) - abs(total)) > INVEST_TOTAL_TOLERANCE:
             continue
@@ -335,7 +354,8 @@ class AccountDedupe:
                                 if enabled else {})
         self.new_hashes: HashIndex = {}
         self.new_sids: set[str] = set()
-        self._invest_idx: InvestIndex | None = None  # built lazily on first invest check
+        self._invest_idx: InvestIndex | None = None  # units facet, lazy
+        self._invest_income_idx: InvestIndex | None = None  # income facet, lazy
 
     def hash_for(self, when: date, amount: Decimal, payee: str) -> str:
         return import_hash(when, amount, payee, self.account)
@@ -354,24 +374,42 @@ class AccountDedupe:
         return None
 
     def check_invest(self, when: date, amount: Decimal, payee: str, source_id: str,
-                     *, ticker: str, units: Decimal, family: str,
+                     *, kind: str, ticker: str, units: Decimal, family: str,
                      h: str | None = None) -> str | None:
-        """The cash tiers, then the invest cross-source tier: a units-bearing
-        action whose commodity/units/date/total line up with a ledger entry
-        from ANOTHER source family is the same transaction wearing different
-        ids. `amount` (the signed cash effect) doubles as the total."""
+        """The cash tiers, then the invest cross-source tier.
+
+        A cross-family REINVEST ledger entry fuses two facts — units bought,
+        income received — and some sources deliver those as TWO rows (Plaid:
+        a cash DIV plus a qty-0 buy). So the entry carries two independently
+        consumable FACETS: position kinds claim the units facet (units exact,
+        waived when qty is unreported as zero), INCOME rows claim the income
+        facet of reinvest entries, and plain cash rows never touch either.
+        `amount` (the signed cash effect) doubles as the total."""
         why = self.check(when, amount, payee, source_id, h)
-        if why:
+        if why or not self.enabled or not ticker:
             return why
-        if self.enabled and ticker and claim_invest_duplicate(
-                self._invest_index(), when, ticker, units, amount, family):
+        if kind in POSITION_KINDS and claim_invest_duplicate(
+                self._units_pool(), when, ticker,
+                None if units == 0 else units, amount, family):
             return INVEST_TIER_LABEL
+        if kind == "INCOME" and claim_invest_duplicate(
+                self._income_pool(), when, ticker, None, amount, family):
+            return INVEST_INCOME_TIER_LABEL
         return None
 
-    def _invest_index(self) -> InvestIndex:
+    def _units_pool(self) -> InvestIndex:
         if self._invest_idx is None:
-            self._invest_idx = invest_index(self.account)
+            full = invest_index(self.account)
+            self._invest_idx = full
+            self._invest_income_idx = {
+                ticker: [r for r in rows if r.income_facet]
+                for ticker, rows in full.items()}
         return self._invest_idx
+
+    def _income_pool(self) -> InvestIndex:
+        self._units_pool()
+        assert self._invest_income_idx is not None
+        return self._invest_income_idx
 
     def record(self, h: str, source_id: str) -> None:
         self.new_hashes.setdefault(h, set())

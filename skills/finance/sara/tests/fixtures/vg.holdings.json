@@ -1,38 +1,66 @@
 {
-  "accounts": [
-    {
-      "account_id": "plaid-acct-brokerage",
-      "name": "Demo Brokerage",
-      "mask": "8642",
-      "type": "investment",
-      "subtype": "brokerage",
-      "balances": {"current": 2300.00, "available": null, "iso_currency_code": "USD"}
-    }
-  ],
-  "securities": [
-    {"security_id": "sec-tif", "ticker_symbol": "TIF", "name": "Test Index Fund", "type": "mutual fund"},
-    {"security_id": "sec-twc", "ticker_symbol": "TWC", "name": "Test Widget Corp", "type": "equity"}
-  ],
-  "holdings": [
-    {
-      "account_id": "plaid-acct-brokerage",
-      "security_id": "sec-tif",
-      "quantity": 7.81,
-      "institution_price": 42.00,
-      "institution_value": 328.02,
-      "institution_price_as_of": "2026-07-01",
-      "cost_basis": 315.00,
-      "iso_currency_code": "USD"
-    },
-    {
-      "account_id": "plaid-acct-brokerage",
-      "security_id": "sec-twc",
-      "quantity": 10.5,
-      "institution_price": 100.00,
-      "institution_value": 1050.00,
-      "institution_price_as_of": "2026-07-01",
-      "cost_basis": 900.00,
-      "iso_currency_code": "USD"
-    }
-  ]
+ "accounts": [
+  {
+   "account_id": "plaid-acct-brokerage",
+   "name": "Demo Brokerage",
+   "mask": "8642",
+   "type": "investment",
+   "subtype": "brokerage",
+   "balances": {
+    "current": 2300.0,
+    "available": null,
+    "iso_currency_code": "USD"
+   }
+  }
+ ],
+ "securities": [
+  {
+   "security_id": "sec-tif",
+   "ticker_symbol": "TIF",
+   "name": "Test Index Fund",
+   "type": "mutual fund"
+  },
+  {
+   "security_id": "sec-twc",
+   "ticker_symbol": "TWC",
+   "name": "Test Widget Corp",
+   "type": "equity"
+  },
+  {
+   "security_id": "s-vmot",
+   "ticker_symbol": "VMOT",
+   "name": "Micro Holding"
+  }
+ ],
+ "holdings": [
+  {
+   "account_id": "plaid-acct-brokerage",
+   "security_id": "sec-tif",
+   "quantity": 7.81,
+   "institution_price": 42.0,
+   "institution_value": 328.02,
+   "institution_price_as_of": "2026-07-01",
+   "cost_basis": 315.0,
+   "iso_currency_code": "USD"
+  },
+  {
+   "account_id": "plaid-acct-brokerage",
+   "security_id": "sec-twc",
+   "quantity": 10.5,
+   "institution_price": 100.0,
+   "institution_value": 1050.0,
+   "institution_price_as_of": "2026-07-01",
+   "cost_basis": 900.0,
+   "iso_currency_code": "USD"
+  },
+  {
+   "account_id": "plaid-acct-brokerage",
+   "security_id": "s-vmot",
+   "quantity": 0.0001,
+   "institution_price": 100.0,
+   "institution_value": 0.01,
+   "institution_price_as_of": "2026-07-01",
+   "iso_currency_code": "USD"
+  }
+ ]
 }

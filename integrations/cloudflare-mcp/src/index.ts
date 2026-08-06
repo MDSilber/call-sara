@@ -35,6 +35,13 @@ const apiHandler = {
 const defaultHandler = {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname === "/plaid-oauth") {
+      // Plaid OAuth requires an HTTPS redirect URI; this route only bounces the
+      // browser back to the local link server, carrying Plaid's query params.
+      // No auth: the params are useless outside the initiating localhost session.
+      return Response.redirect("http://localhost:8484/?" + url.searchParams.toString(), 302);
+    }
     if (url.pathname === "/authorize") {
       return handleAuthorize(request, env);
     }

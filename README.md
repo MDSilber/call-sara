@@ -49,7 +49,19 @@ cd ~/code/call-sara
 skills/finance/scripts/init_vault.sh --demo /tmp/demo-vault
 skills/finance/scripts/dashboard.sh --vault /tmp/demo-vault   # opens your browser, random local port
 skills/finance/scripts/dashboard.sh --vault /tmp/demo-vault --home   # Sara Home — the morning page (spend pace, needs-you, goals)
+skills/finance/scripts/dashboard.sh --vault /tmp/demo-vault --app    # Sara App — the interactive one (see below)
 ```
+My favorite thing lately is Sara App (`--app` above). It's a little
+local web app that serves the whole picture live: spending pace, a
+transaction feed, the money map, investments, goals, autopilot. Click
+an uncategorized transaction and teach her the rule right there, and
+she recategorizes your history on the spot (same gated tools she uses
+herself, bean-check and all). It runs on 127.0.0.1 only, the page ships
+prebuilt so there's no node anything to install, and writes need a
+per-launch token the page carries, so random browser tabs can't poke
+it. The static pages still exist because you can't email a server to
+your spouse.
+
 The fava view ships with chart dashboards (net worth, allocation donuts,
 income vs expenses) plus fava-investor's tax-loss-harvest and allocation
 pages — see the Dashboards and Investor tabs in the sidebar (the

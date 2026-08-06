@@ -218,8 +218,14 @@ session starts already knowing them.
   panels POST; the script prints the hint) — `--writable` enables it
   for a session. `--pretty` skips the server and opens the static
   glanceable page instead; `--home` opens Sara Home, the beautiful
-  morning page for humans; `--digest` opens the weekly letter. If tabs
-  error, `doctor.sh` names the missing piece.
+  morning page for humans; `--digest` opens the weekly letter. `--app`
+  launches SARA APP — the interactive local web app (the daily driver):
+  the glance over six rooms (Spending, Activity, Money map, Investments,
+  Goals, Autopilot), every number assembled by the same verified
+  builders, plus three gated write actions — teach a categorization rule
+  from an uncategorized transaction, set a goal target, dismiss a
+  finding until a date. 127.0.0.1 only, prebuilt frontend, no node
+  needed. If tabs error, `doctor.sh` names the missing piece.
 - `scripts/file_downloads.py` — identify / dedupe / rename / file downloaded PDFs.
 - `scripts/inbox-watch.plist.example` — launchd template that runs
   `inbox.py` when something lands in the drop zone (documented inside;

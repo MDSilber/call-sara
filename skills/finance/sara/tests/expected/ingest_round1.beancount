@@ -49,6 +49,13 @@
   Assets:US:Demo:Checking0766   -23.40 USD
   Expenses:Food:Groceries
 
+2026-07-02 * "BUY 0.000 VMFXX @ 0.00" ""
+  plaid-type: "BUYSTOCK"
+  import-hash: "832c5fc583126780"
+  plaid-id: "vg-008"
+  Assets:US:Demo:Brokerage8642   -25.00 USD
+  Expenses:Uncategorized
+
 2026-07-03 * "ACME PAYROLL DIRECT DEP" ""
   plaid-type: "other"
   import-hash: "af7683d1f38cf878"
@@ -56,6 +63,13 @@
   plaid-category: "INCOME_WAGES (high)"
   Assets:US:Demo:Checking0766   2500.00 USD
   Income:US:Other
+
+2026-07-03 * "BUY 0.0001 VMOT @ 100.00" ""
+  plaid-type: "BUYSTOCK"
+  import-hash: "9ba065af28b0ec66"
+  plaid-id: "vg-010"
+  Assets:US:Demo:Brokerage8642   0.0001 VMOT {100.00 USD}
+  Assets:US:Demo:Brokerage8642   -0.01 USD
 
 2026-07-05 * "Blue Bottle Coffee" ""
   plaid-type: "in store"

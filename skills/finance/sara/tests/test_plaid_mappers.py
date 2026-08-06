@@ -192,6 +192,24 @@ class TestInvestmentMapper:
         out = map_investment_transaction(inv(date=None), TICKERS)
         assert isinstance(out, UnmappedRow)
 
+    def test_zero_units_with_cash_stays_on_its_invest_kind(self) -> None:
+        # qty-unreported degradation: dedupe needs the ticker/total context,
+        # and the renderer's zero-units wall books any survivor as cash
+        a = map_investment_transaction(inv(quantity=0, price=0, amount=25.00), TICKERS)
+        assert isinstance(a, CanonInvestTxn)
+        assert (a.kind, a.units, a.total) == ("BUYSTOCK", D("0"), D("-25.00"))
+
+    def test_zero_units_zero_cash_is_dropped_loudly(self) -> None:
+        out = map_investment_transaction(inv(quantity=0, price=0, amount=0), TICKERS)
+        assert isinstance(out, UnmappedRow)
+        assert "nothing to book" in out.reason
+
+    def test_sub_penny_units_stay_a_real_position(self) -> None:
+        a = map_investment_transaction(
+            inv(quantity=0.0001, price=100.0, amount=0.01), TICKERS)
+        assert isinstance(a, CanonInvestTxn)
+        assert (a.kind, a.units, a.total) == ("BUYSTOCK", D("0.0001"), D("-0.01"))
+
 
 class TestInvestmentBatch:
     def test_fixture_reconciles_and_positions_map(self) -> None:
@@ -199,9 +217,10 @@ class TestInvestmentBatch:
         holdings = json.loads((FIXTURES / "vg.holdings.json").read_text())
         batch = map_investments(pages, holdings)
         assert batch.reconciles()
-        assert batch.fetched == 7 and len(batch.actions) == 6 and len(batch.unmapped) == 1
+        assert batch.fetched == 10 and len(batch.actions) == 8 and len(batch.unmapped) == 2
         pos = batch.positions["plaid-acct-brokerage"]
-        assert {(p.ticker, p.units) for p in pos} == {("TIF", D("7.81")), ("TWC", D("10.5"))}
+        assert {(p.ticker, p.units) for p in pos} == {("TIF", D("7.81")), ("TWC", D("10.5")),
+                                                      ("VMOT", D("0.0001"))}
         assert pos[0].priced_asof == date(2026, 7, 1)
 
 

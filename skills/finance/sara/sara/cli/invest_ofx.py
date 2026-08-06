@@ -153,13 +153,13 @@ def main(argv: list[str] | None = None) -> None:
             amt = cash_amount(a)
             h = deduper.hash_for(a.date, amt, payee)
             why = deduper.check_invest(a.date, amt, payee, a.source_id,
-                                       ticker=a.ticker, units=a.units,
+                                       kind=a.kind, ticker=a.ticker, units=a.units,
                                        family=FAMILY_OFX, h=h)
             if why:
                 skipped.append((a, amt, payee, why))
                 continue
             deduper.record(h, a.source_id)
-            entry, deltas, used = build(a, account, payee, h)
+            entry, deltas, used, _cash_only = build(a, account, payee, h)
             entries.append((a.date, entry))
             used_accounts |= used
             if deltas:

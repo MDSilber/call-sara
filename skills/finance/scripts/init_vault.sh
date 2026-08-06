@@ -90,7 +90,7 @@ python3 -m venv .venv
 }
 # The sara package (canonical importers + the Plaid lane), editable so skill
 # updates flow straight through; brings pydantic + plaid-python with it.
-./.venv/bin/pip install -q -e "$HERE/../sara" || {
+./.venv/bin/pip install -q -e "$HERE/../sara[app]" || {
   echo "❌ sara package install failed via this machine's configured package index." >&2
   echo "   Retry against the public index:" >&2
   echo "   PIP_INDEX_URL=https://pypi.org/simple $VAULT/.venv/bin/pip install -e $HERE/../sara" >&2

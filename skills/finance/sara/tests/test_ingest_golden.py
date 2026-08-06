@@ -57,6 +57,8 @@ class TestReportOnly:
         assert "REPORT ONLY" in r.stdout
         assert r.stdout.count("✓ counts reconcile") == 3  # demo txns, vg txns, vg invest
         assert "UNMAPPED (never silent): invest 2026-07-01" in r.stdout  # the stock distribution
+        assert "nothing to book; dropped" in r.stdout       # the zero-zero marker row
+        assert "cash-only invest rows (zero units): 1" in r.stdout  # the qty-0 $25 row
         assert "new 2 (sum 2,476.60 USD)" in r.stdout  # checking
         assert "new 2 (sum 488.75 USD)" in r.stdout   # card
         assert "pending excluded 1" in r.stdout

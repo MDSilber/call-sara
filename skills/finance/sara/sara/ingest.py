@@ -377,19 +377,20 @@ def run_item(alias: str, cfg: dict[str, Any], env: dict[str, str],
             kept_sum = ZERO
             kept_n, first_activity = 0, None
             skipped_n = 0
+            cash_only: list[str] = []
             for a in sorted(inv_routed[account], key=lambda x: x.date):
                 payee = payee_for(a)
                 amt = cash_amount(a)
                 h = deduper.hash_for(a.date, amt, payee)
                 why = deduper.check_invest(a.date, amt, payee, a.source_id,
-                                           ticker=a.ticker, units=a.units,
+                                           kind=a.kind, ticker=a.ticker, units=a.units,
                                            family=FAMILY_PLAID, h=h)
                 if why:
                     skipped_n += 1
                     run.add(f"      deduped ({why}) {a.date} {amt:.2f} {payee}")
                     continue
                 deduper.record(h, a.source_id)
-                entry, deltas, _used = build(a, account, payee, h)
+                entry, deltas, _used, is_cash_only = build(a, account, payee, h)
                 # Plaid provenance belongs in plaid-* metadata, not the OFX keys
                 entry = entry.replace('  fitid: "', '  plaid-id: "') \
                              .replace('  ofx-type: "', '  plaid-type: "')
@@ -397,10 +398,17 @@ def run_item(alias: str, cfg: dict[str, Any], env: dict[str, str],
                 kept_n += 1
                 kept_sum += amt
                 first_activity = first_activity or a.date
+                if is_cash_only:
+                    cash_only.append(f"{a.date} {amt:.2f} {payee}")
                 for tk, u in deltas.items():
                     kept_units[tk] = kept_units.get(tk, ZERO) + u
             run.add(f"    {account}: new {kept_n} (cash effect {kept_sum:,.2f} USD), "
                     f"deduped {skipped_n}")
+            if cash_only:
+                run.add(f"      cash-only invest rows (zero units): {len(cash_only)} — "
+                        f"booked as settlement cash, no position posting")
+                for line in cash_only:
+                    run.add(f"        {line}")
             positions = [p for pid, plist in inv.positions.items()
                          if account_map.get(pid) == account for p in plist]
             if positions:

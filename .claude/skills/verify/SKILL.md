@@ -59,6 +59,7 @@ T=skills/finance/tools
 "$T/run" recategorize.py [--write]                       # rules.toml -> ledger rewrite loop
 bash skills/finance/scripts/update_prices.sh --vault "$V"  # informative exit when nothing is tagged
 bash skills/finance/scripts/dashboard.sh --vault "$V"      # fava on 127.0.0.1 (Ctrl-C to stop)
+bash skills/finance/scripts/dashboard.sh --vault "$V" --app # Sara App (FastAPI, port 8787)
 $V/.venv/bin/bean-check $V/ledger/main.beancount        # ledger must validate after any import
 ```
 
@@ -68,6 +69,22 @@ and no account arg (skip message, no crash); `FINANCE_VAULT=/nonexistent
 tools/run …` (clear error); commit a full account number inside the vault
 (the gitleaks pre-commit hook must block it); a `[[payee_rules]]` block with
 no predicate (must warn + be ignored, not match everything).
+
+The Sara App server (skills/finance/sara/sara/server/) has its own lane:
+
+```bash
+cd skills/finance/sara
+FINANCE_TEST_VAULT=<built-demo-vault> python -m pytest tests/test_server_app.py -q
+# contract tests: every GET 200, eight figures vs query.py to the dollar,
+# categorize/set-goal/dismiss e2e on a throwaway copy (source vault untouched)
+cd ../../../app && npm run build && npm run lint          # rebuild static + eslint
+SARA_E2E_VAULT=<built-demo-vault> npm run e2e             # Playwright, SYSTEM Chrome
+# (playwright uses channel:'chrome' on purpose — no browser downloads;
+#  keep PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 on any install)
+```
+
+`npm run build` regenerates `sara/server/static/` — commit it with the
+frontend change; installs never run node.
 
 For the real vault (`~/Finance`), never leave the ledger modified: check
 `git -C ~/Finance status` before and after, and run `bean-check`.

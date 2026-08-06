@@ -18,7 +18,14 @@
 # isn't guessable-by-default. While the server runs, ANY page open in a
 # local browser could try to reach it — close the dashboard tab when done
 # and Ctrl-C the server rather than leaving it up.
-#   scripts/dashboard.sh [--vault <dir>] [--port <n>] [--writable] [--pretty] [--home] [--digest]
+#   scripts/dashboard.sh [--vault <dir>] [--port <n>] [--writable] [--pretty] [--home] [--digest] [--app]
+#
+# --app launches SARA APP — the interactive local web app (FastAPI +
+# prebuilt frontend, python -m sara.server). Fixed default port 8787 (the
+# server validates Host and gates every write behind a per-launch token, so
+# a guessable URL exposes nothing); --port overrides. The static pages above
+# stay: the app is the daily driver, --home/--pretty remain the file-shaped
+# artifacts you can mail or print.
 #
 # fava-dashboards caveat: the Dashboards page renders every panel through a
 # POST endpoint, which fava's read-only mode rejects (verified: the page
@@ -35,6 +42,7 @@ WRITABLE=0
 PRETTY=0
 HOME_PAGE=0
 DIGEST=0
+APP=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --vault) VAULT="$2"; shift 2 ;;
@@ -43,7 +51,8 @@ while [ $# -gt 0 ]; do
     --pretty) PRETTY=1; shift ;;
     --home) HOME_PAGE=1; shift ;;
     --digest) DIGEST=1; shift ;;
-    *) echo "usage: dashboard.sh [--vault <dir>] [--port <n>] [--writable] [--pretty] [--home] [--digest]" >&2; exit 1 ;;
+    --app) APP=1; shift ;;
+    *) echo "usage: dashboard.sh [--vault <dir>] [--port <n>] [--writable] [--pretty] [--home] [--digest] [--app]" >&2; exit 1 ;;
   esac
 done
 if [ -z "$VAULT" ] && [ -f "$HOME/.finance-vault" ]; then
@@ -58,6 +67,26 @@ if [ -z "$VAULT" ] && [ -f "$HOME/.finance-vault" ]; then
   fi
 fi
 VAULT="${VAULT:-$HOME/Finance}"
+
+# --app: Sara App — the interactive local web app. Reads assemble the same
+# verified builders the static pages use; the three write actions (teach a
+# categorization rule, set a goal, dismiss a finding) run through the same
+# gated tools a session would use. 127.0.0.1 only.
+if [ "$APP" = 1 ]; then
+  PY="$VAULT/.venv/bin/python"
+  [ -x "$PY" ] || { echo "❌ no vault venv at $PY — is the vault set up?" >&2; exit 1; }
+  if ! "$PY" -c 'import fastapi, uvicorn' >/dev/null 2>&1; then
+    echo "installing the app server into this vault's venv (one time)…"
+    "$VAULT/.venv/bin/pip" install -q -e "$HERE/../sara[app]" || {
+      echo "❌ install failed. If your pip index is broken, retry:" >&2
+      echo "   PIP_INDEX_URL=https://pypi.org/simple $VAULT/.venv/bin/pip install -e '$HERE/../sara[app]'" >&2
+      exit 1
+    }
+  fi
+  [ -n "$PORT" ] || PORT=8787
+  command -v open >/dev/null && ( sleep 1; open "http://127.0.0.1:$PORT/" ) &
+  exec env FINANCE_VAULT="$VAULT" "$PY" -m sara.server --port "$PORT"
+fi
 
 # --pretty / --home / --digest: the static views — generate the page and
 # open it as a plain file. No server, no port, nothing to Ctrl-C.

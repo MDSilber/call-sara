@@ -311,6 +311,15 @@ def map_investment_transaction(txn: Raw, tickers: dict[str, str]) -> CanonInvest
         return CanonInvestTxn(kind="INVBANKTRAN", date=when, source_id=sid,
                               cash_txn=cash, account_key=account_id)
 
+    if ty in ("buy", "sell") and quantity == 0 and amount == 0:
+        # no units, no cash — a marker row (corporate action, memo). There is
+        # NOTHING to book; dropping it loudly beats inventing a 0.00 entry.
+        return UnmappedRow(source_id=sid,
+                           reason="zero units and zero cash — nothing to book; dropped",
+                           raw_ref=_ref("invest", txn))
+    # NOTE: zero units WITH cash stays on its invest kind — the dedupe tier
+    # matches it against its real-units twin (qty-unreported degradation),
+    # and the renderer's zero-units wall books any survivor as pure cash.
     if ty == "buy":
         if "reinvest" in subtype:
             # income earned convention: negative total = the income leg

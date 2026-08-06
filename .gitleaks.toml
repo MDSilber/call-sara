@@ -43,7 +43,8 @@ paths = ['''skills/finance/tools/importers/tests/fixtures/.*''',
          '''skills/finance/tools/importers/tests/expected/.*''',
          '''skills/finance/tools/assets/.*''',
          '''integrations/cloudflare-mcp/dev/.*''',
-         '''skills/finance/sara/tests/.*''']
+         '''skills/finance/sara/tests/.*''',
+         '''skills/finance/sara/sara/server/static/.*''']
 regexTarget = "line"
 regexes = [
   '''^\s*import-hash:\s*"[0-9a-f]{8,64}"''',

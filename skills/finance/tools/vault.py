@@ -130,3 +130,10 @@ def dated_bullets():
                 continue
             out.append((d, m.group(2).strip(), f.relative_to(VAULT)))
     return sorted(out)
+
+
+def reset_rules_cache():
+    """Forget the parsed rules.toml — call after writing it so a long-lived
+    process (Sara App's server) sees the new rules without a restart."""
+    global _rules_cache
+    _rules_cache = None

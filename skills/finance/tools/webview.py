@@ -47,6 +47,7 @@ from vault import (REPORTS, VAULT, amount, dated_bullets,  # noqa: E402
                    illiquid_currency_regex, money, query)
 from reports import liquid_balances, paper_value  # noqa: E402
 from forecast import build_forecast  # noqa: E402
+from dismissals import filter_findings  # noqa: E402
 from checks import goals as goals_config  # noqa: E402
 
 MAX_CURVE_POINTS = 24      # two years of month-ends is a curve; more is wallpaper
@@ -332,10 +333,13 @@ def fix_line(f):
 
 def action_queue(findings):
     """Open alerts + watches (deadlines excluded — they get chips), ranked:
-    severity first, then how actionable the check kind is."""
+    severity first, then how actionable the check kind is. Findings the
+    household dismissed (reports/dismissals.json, written by Sara App) are
+    filtered here — the one chokepoint every needs-you surface shares."""
     if not findings:
         return []
-    rows = [f for f in findings if f["severity"] in ("alert", "watch")
+    rows = [f for f in filter_findings(findings)
+            if f["severity"] in ("alert", "watch")
             and f["check"] != "deadlines"]
     rank = {c: i for i, c in enumerate(QUEUE_ORDER)}
     rows.sort(key=lambda f: (0 if f["severity"] == "alert" else 1,
