@@ -13,7 +13,11 @@ Data surfaces reused, never re-derived: reports.liquid_balances/paper_value
 reports/findings.md (checks). History curve: month-end valuation at the
 latest dated price on or before each month end, else cost basis — the
 endpoint is the headline number itself (latest prices), so hero and curve
-always agree.
+always agree. Honesty rules for the curve: months that predate the ledger's
+opening balances are dropped (they'd misstate the household — accounts with
+no baseline yet read as missing money, not history), and months whose value
+leans on cost basis for lack of a dated price are drawn dashed and labelled
+"at cost". A partial current month is labelled with its through-date.
 
 Security: ledger payees, findings text, and account names are bank-
 controlled DATA. Every string is HTML-escaped before it touches markup;
@@ -52,20 +56,6 @@ def jattr(obj):
     """JSON for a data-* attribute — html.escape makes it inert in markup;
     the browser's attribute parser hands JSON.parse the exact original."""
     return esc(json.dumps(obj, separators=(",", ":")))
-
-
-def compact(v):
-    """$1.2M / $115K / $950 — axis-tick money."""
-    a = abs(v)
-    if a >= 1e6:
-        s = f"${a / 1e6:.1f}M".replace(".0M", "M")
-    elif a >= 1e4:
-        s = f"${a / 1e3:.0f}K"
-    elif a >= 1e3:
-        s = f"${a / 1e3:.1f}K".replace(".0K", "K")
-    else:
-        s = f"${a:,.0f}"
-    return "-" + s if v < 0 else s
 
 
 def month_label(y, m):
@@ -127,11 +117,42 @@ def _units(cell, currency):
     return total
 
 
+COST_SHARE_EST = 0.10      # >10% of a month's value on cost fallback = "at cost"
+BASELINE_SHARE = 0.95      # curve starts once 95% of opening-balance dollars exist
+
+
+def baseline_complete_date():
+    """The date by which ≥95% (dollar-weighted) of opening-balance value had
+    been booked, or None if the ledger has no Equity:Opening postings. Before
+    this date at least one account is missing its baseline, so a month-end
+    total there is missing money — not history."""
+    rows = query("SELECT date, sum(convert(position, 'USD')) AS v "
+                 "WHERE account ~ '^Equity:Opening' GROUP BY date ORDER BY date")
+    dated = []
+    for r in rows:
+        try:
+            dated.append((date.fromisoformat(r["date"]), abs(amount(r["v"]))))
+        except (KeyError, TypeError, ValueError):
+            continue
+    total = sum(v for _, v in dated)
+    if not total:
+        return None
+    run = 0.0
+    for d, v in dated:
+        run += v
+        if run >= BASELINE_SHARE * total:
+            return d
+    return dated[-1][0]
+
+
 def networth_series(liquid_now, asof):
-    """[(date, value)…] month-end liquid net worth. One ledger query: monthly
+    """[{d, v, est}…] month-end liquid net worth. One ledger query: monthly
     deltas per currency in units + cost; valued at the latest dated price on
-    or before each month end, else cost basis. The final point IS liquid_now
-    (the headline, at latest prices) so hero and curve can never disagree."""
+    or before each month end, else cost basis. est=True marks a month leaning
+    on cost fallback for >10% of its value (drawn dashed, labelled at cost).
+    Months before the opening-balance baseline are dropped. The final point
+    IS liquid_now (the headline, at latest prices) so hero and curve can
+    never disagree."""
     excl = illiquid_currency_regex()
     where = ("account ~ '^(Assets|Liabilities)'"
              + (f" AND NOT currency ~ '{excl.replace(chr(39), chr(39) * 2)}'" if excl else ""))
@@ -151,28 +172,39 @@ def networth_series(liquid_now, asof):
         per_month[ym][cur] = [u + d_units, c + d_cost]
     months = sorted(per_month)
     if not months:
-        return []
+        return [], 0
     prices = price_history()
     cum = {}  # currency -> [units, cost]
     points = []
-    for i, (y, m) in enumerate(months):
+    for y, m in months:
         for cur, (du, dc) in per_month[(y, m)].items():
             u, c = cum.setdefault(cur, [0.0, 0.0])
             cum[cur] = [u + du, c + dc]
         d = date(y, m, monthrange(y, m)[1])
-        total = 0.0
+        total, at_cost = 0.0, 0.0
         for cur, (u, c) in cum.items():
             if cur == "USD":
                 total += u
             elif abs(u) > 1e-9:
                 px = [p for pd, p in prices.get(cur, []) if pd <= d]
                 total += u * px[-1] if px else c
-        points.append((d, round(total, 2)))
+                if not px:
+                    at_cost += abs(c)
+        points.append({"d": d, "v": round(total, 2),
+                       "est": at_cost > COST_SHARE_EST * max(abs(total), 1.0)})
     # the last month is partial (data reaches asof, not month end): date it
-    # honestly and pin it to the headline valuation
-    end_date = asof or points[-1][0]
-    points[-1] = (min(points[-1][0], end_date) if asof else points[-1][0], liquid_now)
-    return points[-MAX_CURVE_POINTS:]
+    # honestly and pin it to the headline valuation — the headline is the
+    # latest-prices number by definition, never a cost estimate
+    if asof:
+        points[-1]["d"] = min(points[-1]["d"], asof)
+    points[-1]["v"] = liquid_now
+    points[-1]["est"] = False
+    baseline = baseline_complete_date()
+    cut = 0
+    if baseline:
+        kept = [p for p in points if p["d"] >= baseline]
+        cut, points = len(points) - len(kept), kept
+    return points[-MAX_CURVE_POINTS:], cut
 
 
 def spend_data():
@@ -265,16 +297,18 @@ def code_spans(escaped):
     return re.sub(r"`([^`]{1,80})`", r"<code>\1</code>", escaped)
 
 
-def svg_line_chart(points):
+def svg_line_chart(points, asof=None):
     """Net-worth curve: 2px line, 10% area wash, end dot + ring, direct end
-    label, hairline grid, crosshair+tooltip layer driven by data-points."""
+    label, hairline grid, crosshair+tooltip layer driven by data-points.
+    Months flagged est (mostly cost basis, no dated price yet) draw dashed
+    with an annotated seam where market pricing begins."""
     if len(points) < 2:
         return ("<div class='empty'>Not enough ledger history to draw a curve yet "
                 "&mdash; import more statements and regenerate.</div>")
     W, H = 860, 280
-    ML, MR, MT, MB = 64, 96, 18, 34
-    xs = [d.toordinal() for d, _ in points]
-    vs = [v for _, v in points]
+    ML, MR, MT, MB = 78, 96, 18, 34
+    xs = [p["d"].toordinal() for p in points]
+    vs = [p["v"] for p in points]
     ticks = nice_ticks(min(vs), max(vs))
     lo, hi = min(ticks[0], min(vs)), max(ticks[-1], max(vs))
     span_x = (xs[-1] - xs[0]) or 1
@@ -290,24 +324,53 @@ def svg_line_chart(points):
     for t in ticks:
         y = Y(t)
         grid.append(f"<line x1='{ML}' y1='{y:.1f}' x2='{W - MR}' y2='{y:.1f}' class='grid'/>")
-        ylab.append(f"<text x='{ML - 8}' y='{y + 4:.1f}' class='tick' text-anchor='end'>{esc(compact(t))}</text>")
+        ylab.append(f"<text x='{ML - 8}' y='{y + 4:.1f}' class='tick' text-anchor='end'>{esc(money(t))}</text>")
     step = max(1, round(len(points) / 6))
     xlab = []
-    for i, (d, _) in enumerate(points):
+    for i, p in enumerate(points):
         if i % step == 0 or i == len(points) - 1:
             anchor = "end" if i == len(points) - 1 else "middle"
+            d = p["d"]
             lbl = MONTH_ABBR[d.month] + (f" ’{str(d.year)[2:]}"
                                          if d.month == 1 or i == 0 else "")
             xlab.append(f"<text x='{X(xs[i]):.1f}' y='{H - 10}' class='tick' "
                         f"text-anchor='{anchor}'>{esc(lbl)}</text>")
     pts = [(X(o), Y(v)) for o, v in zip(xs, vs)]
-    path = "M" + " L".join(f"{x:.1f} {y:.1f}" for x, y in pts)
-    area = path + f" L{pts[-1][0]:.1f} {H - MB} L{pts[0][0]:.1f} {H - MB} Z"
+    # dashed where a segment touches an at-cost month, solid where priced;
+    # contiguous runs keep the path count tiny
+    segs = []
+    for i in range(1, len(pts)):
+        est = points[i - 1]["est"] or points[i]["est"]
+        if segs and segs[-1][0] == est:
+            segs[-1][1].append(pts[i])
+        else:
+            segs.append([est, [pts[i - 1], pts[i]]])
+    paths = "".join(
+        f"<path d=\"M{' L'.join(f'{x:.1f} {y:.1f}' for x, y in seg)}\" "
+        f"class='line1{' est' if est else ''}'/>"
+        for est, seg in segs)
+    area = ("M" + " L".join(f"{x:.1f} {y:.1f}" for x, y in pts)
+            + f" L{pts[-1][0]:.1f} {H - MB} L{pts[0][0]:.1f} {H - MB} Z")
+    # seam: first priced month after the at-cost era gets a labelled rule
+    seam = ""
+    seam_i = next((i for i in range(1, len(points))
+                   if points[i - 1]["est"] and not points[i]["est"]), None)
+    if seam_i is not None:
+        sx = pts[seam_i][0]
+        seam = (f"<line x1='{sx:.1f}' y1='{MT}' x2='{sx:.1f}' y2='{H - MB}' class='seam'/>"
+                f"<text x='{sx - 5:.1f}' y='{MT + 11}' class='tick' text-anchor='end'>"
+                f"at cost ←</text>"
+                f"<text x='{sx + 5:.1f}' y='{MT + 11}' class='tick'>"
+                f"→ market prices</text>")
     ex, ey = pts[-1]
-    payload = [{"x": round(x, 1), "y": round(y, 1),
-                "l": month_label(d.year, d.month) + ("" if i < len(points) - 1 else " (as of)"),
-                "v": money(v)}
-               for i, ((x, y), (d, v)) in enumerate(zip(pts, points))]
+    payload = []
+    for i, ((x, y), p) in enumerate(zip(pts, points)):
+        lbl = month_label(p["d"].year, p["d"].month)
+        if i == len(points) - 1 and asof:
+            lbl += f" · through {MONTH_ABBR[asof.month]} {asof.day}"
+        elif p["est"]:
+            lbl += " · at cost"
+        payload.append({"x": round(x, 1), "y": round(y, 1), "l": lbl, "v": money(p["v"])})
     return f"""<figure class="chart">
 <svg viewBox="0 0 {W} {H}" role="img" aria-label="Liquid net worth by month"
      class="nw" data-points="{jattr(payload)}" tabindex="0">
@@ -315,7 +378,7 @@ def svg_line_chart(points):
   <line x1="{ML}" y1="{H - MB}" x2="{W - MR}" y2="{H - MB}" class="axis"/>
   {''.join(ylab)}{''.join(xlab)}
   <path d="{area}" class="wash"/>
-  <path d="{path}" class="line1"/>
+  {paths}{seam}
   <line class="xhair" x1="0" y1="{MT}" x2="0" y2="{H - MB}" visibility="hidden"/>
   <circle class="hoverdot" r="5" visibility="hidden"/>
   <circle cx="{ex:.1f}" cy="{ey:.1f}" r="5" class="dot1"/>
@@ -353,7 +416,9 @@ def spend_bars(cats, month_lbl):
     return "<div class='bars'>" + "".join(rows) + "</div>"
 
 
-def trend_columns(trend):
+def trend_columns(trend, mtd=False):
+    """Monthly totals as columns; a partial current month renders half-tone
+    and says month-to-date wherever its number appears."""
     if len(trend) < 2:
         return "<div class='empty'>Not enough months yet for a trend.</div>"
     W, H, MB, MT = 340, 190, 26, 26
@@ -365,20 +430,22 @@ def trend_columns(trend):
     peak = vs.index(max(vs))
     cols, labs = [], []
     for i, ((y, m), v) in enumerate(trend):
+        part = mtd and i == n - 1
         x = 8 + slot * i + (slot - bw) / 2
         h = max(2.0, (H - MB - MT) * v / mx)
         ytop = H - MB - h
-        tip = f"{money(v)} {month_label(y, m)} total spend"
+        tip = f"{money(v)} {month_label(y, m)}" + (" month to date" if part else " total spend")
+        cls = "col2 part" if part else "col2"
         cols.append(
             f"<g tabindex='0' data-tip=\"{esc(tip)}\">"
-            f"<rect x='{x:.1f}' y='{ytop:.1f}' width='{bw:.1f}' height='{h:.1f}' rx='4' class='col2'/>"
-            f"<rect x='{x:.1f}' y='{H - MB - min(4.0, h):.1f}' width='{bw:.1f}' height='{min(4.0, h):.1f}' class='col2'/>"
+            f"<rect x='{x:.1f}' y='{ytop:.1f}' width='{bw:.1f}' height='{h:.1f}' rx='4' class='{cls}'/>"
+            f"<rect x='{x:.1f}' y='{H - MB - min(4.0, h):.1f}' width='{bw:.1f}' height='{min(4.0, h):.1f}' class='{cls}'/>"
             + (f"<text x='{x + bw / 2:.1f}' y='{ytop - 6:.1f}' class='caplab' "
-               f"text-anchor='middle'>{esc(compact(v))}</text>"
+               f"text-anchor='middle'>{esc(money(v))}</text>"
                if i in (peak, n - 1) else "")
             + "</g>")
         labs.append(f"<text x='{x + bw / 2:.1f}' y='{H - 8}' class='tick' "
-                    f"text-anchor='middle'>{esc(MONTH_ABBR[m])}</text>")
+                    f"text-anchor='middle'>{esc(MONTH_ABBR[m] + ('*' if part else ''))}</text>")
     return (f"<figure class='chart'><svg viewBox='0 0 {W} {H}' role='img' "
             f"aria-label='Monthly spend, last {n} months'>"
             f"<line x1='8' y1='{H - MB}' x2='{W - 8}' y2='{H - MB}' class='axis'/>"
@@ -488,9 +555,12 @@ section { margin-top:26px; }
 .wash { fill:var(--s1); opacity:.09; stroke:none; }
 .line1 { fill:none; stroke:var(--s1); stroke-width:2; stroke-linecap:round;
   stroke-linejoin:round; }
+.line1.est { stroke-dasharray:5 5; opacity:.75; }
+.seam { stroke:var(--axis); stroke-width:1; stroke-dasharray:2 3; }
 .dot1 { fill:var(--s1); stroke:var(--surface); stroke-width:2; }
 .dotwarn { fill:var(--critical); stroke:var(--surface); stroke-width:2; }
 .col2 { fill:var(--s2); }
+.col2.part { opacity:.45; }
 g[data-tip]:hover .col2, g[data-tip]:focus .col2 { filter:brightness(1.12); }
 g[data-tip]:focus { outline:none; }
 .xhair { stroke:var(--axis); stroke-width:1; }
@@ -672,7 +742,7 @@ def build_page():
     liquid = sum(v for _, v in balances)
     paper = paper_value()
     asof = latest_ledger_date()
-    series = networth_series(liquid, asof)
+    series, baseline_cut = networth_series(liquid, asof)
     cats, trend, latest_m, mtd = spend_data()
     fc = build_forecast(days=FORECAST_DAYS)
     findings, counts_line, check_errors = parse_findings()
@@ -682,12 +752,15 @@ def build_page():
     # ---- masthead
     delta_html = ""
     if len(series) >= 2:
-        prev_d, prev_v = series[-2]
-        d = liquid - prev_v
+        prev = series[-2]
+        d = liquid - prev["v"]
         if abs(d) >= 1:
             cls, arrow = ("up", "▲") if d > 0 else ("down", "▼")
+            since = f"since {MONTH_ABBR[prev['d'].month]} {prev['d'].day}"
+            if prev["est"]:
+                since += " (then valued at cost)"
             delta_html = (f" <span class='delta {cls}'>{arrow} {esc(money(abs(d)))}</span>"
-                          f" <span>vs {esc(month_label(prev_d.year, prev_d.month))}</span> ·")
+                          f" <span>{esc(since)}</span> ·")
     asof_txt = f"ledger through {asof.isoformat()}" if asof else "no ledger history yet"
     paper_html = ""
     if paper:
@@ -729,17 +802,32 @@ def build_page():
                       f"<div class='tiles'>{''.join(tiles)}</div></section>")
 
     # ---- net worth curve
+    def basis_lbl(i, p):
+        if i == len(series) - 1 and asof:
+            return f"market · through {asof.isoformat()}"
+        return "at cost" if p["est"] else "market"
     nw_table = table_view(
-        "Liquid net worth by month — market value where a dated price exists, "
-        "else cost basis; the endpoint uses latest prices (the headline).",
-        ["Month", "Liquid net worth"],
-        [(esc(month_label(d.year, d.month)), esc(money(v))) for d, v in series])
+        "Liquid net worth at each month end. 'At cost' rows lean on cost basis "
+        "for lack of a dated price; the endpoint uses latest prices (the headline).",
+        ["Month", "Liquid net worth", "Basis"],
+        [(esc(month_label(p["d"].year, p["d"].month)), esc(money(p["v"])),
+          esc(basis_lbl(i, p))) for i, p in enumerate(series)])
+    curve_notes = ["Liquid only — illiquid paper stays out of this curve, same as the headline."]
+    if baseline_cut and series:
+        s0 = series[0]["d"]
+        curve_notes.append(
+            f"Starts {month_label(s0.year, s0.month)}, when the ledger's opening "
+            f"balances were complete — earlier months would misstate the household.")
+    if any(p["est"] for p in series):
+        first_mkt = next((p for p in series if not p["est"]), None)
+        curve_notes.append(
+            "Dashed months lean on cost basis — no dated prices yet"
+            + (f"; market pricing begins {month_label(first_mkt['d'].year, first_mkt['d'].month)}"
+               if first_mkt else "") + ".")
     curve_card = f"""<section class="card">
   <h2>Net worth over time</h2>
-  <p class="sub">Liquid only — illiquid paper stays out of this curve, same as the headline.
-  Months are valued at their latest dated price on file, else cost basis, so the curve
-  steps up where price history begins.</p>
-  {svg_line_chart(series)}{nw_table if series else ''}
+  <p class="sub">{' '.join(esc(n) for n in curve_notes)}</p>
+  {svg_line_chart(series, asof)}{nw_table if series else ''}
 </section>"""
 
     # ---- spend
@@ -755,18 +843,22 @@ def build_page():
     trend_table = table_view(
         "Total spend by month.",
         ["Month", "Total spend"],
-        [(esc(month_label(y, m)), esc(money(v))) for (y, m), v in trend])
+        [(esc(month_label(y, m) + (" (month to date)" if mtd and (y, m) == latest_m else "")),
+          esc(money(v))) for (y, m), v in trend])
+    trend_sub = "Total spend by month."
+    if mtd and latest_m:
+        trend_sub += f" {MONTH_ABBR[latest_m[1]]}* is month to date."
     spend_cards = f"""<section class="cols">
   <div class="card">
     <h2>Spending — {esc(month_lbl)}</h2>
     <p class="sub">Expenses only; transfers and card payments never count. Total {esc(money(spend_total))}.</p>
-    {spend_bars(cats, month_label(*latest_m) if latest_m else "")}
+    {spend_bars(cats, month_lbl)}
     {spend_table if cats else ''}
   </div>
   <div class="card">
     <h2>{TREND_MONTHS}-month trend</h2>
-    <p class="sub">Total spend by month.</p>
-    {trend_columns(trend)}
+    <p class="sub">{esc(trend_sub)}</p>
+    {trend_columns(trend, mtd)}
     {trend_table if len(trend) >= 2 else ''}
   </div>
 </section>"""

@@ -83,5 +83,5 @@ fi
 echo "✓ dashboard on http://127.0.0.1:$PORT  ($MODE_NOTE, local only — Ctrl-C to stop)"
 echo "  Close the dashboard tab when you're done: the page never leaves this machine,"
 echo "  but while the server runs, any page open in a local browser could reach it."
-command -v open >/dev/null && ( sleep 1; open "http://127.0.0.1:$PORT" ) &
+command -v open >/dev/null && ( sleep 1; open "http://127.0.0.1:$PORT/?time=year" ) &  # default window: this year — unfiltered all-time sums read as period figures
 exec "$FAVA" "${MODE_ARGS[@]+"${MODE_ARGS[@]}"}" --host 127.0.0.1 --port "$PORT" "$LEDGER"

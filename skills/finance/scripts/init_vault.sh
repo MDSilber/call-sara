@@ -94,8 +94,9 @@ echo "✓ ledger validates"
 # Demo vaults start fully furnished: generate reports/ so the first session
 # reads precomputed answers instead of an empty directory.
 if [ "$DEMO" = 1 ]; then
-  FINANCE_VAULT="$VAULT" ./.venv/bin/python "$HERE/../tools/reports.py"
+  # checks first: reports.py also renders the dashboard, which shows findings.md
   FINANCE_VAULT="$VAULT" ./.venv/bin/python "$HERE/../tools/run_checks.py"
+  FINANCE_VAULT="$VAULT" ./.venv/bin/python "$HERE/../tools/reports.py"
   echo "✓ demo reports generated"
 fi
 
