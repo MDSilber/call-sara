@@ -13,7 +13,7 @@ import calendar
 import re
 import sys
 from collections import Counter
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -737,6 +737,194 @@ def fixed_balances():
     return out
 
 
+# -------------------------------------------------------------------- lanes
+# "The machine": standing money movements declared in rules.toml [[lanes]] —
+# payroll deposits, auto-invest orders, fixed floors. The detector scans the
+# ledger's recent window and says whether each lane actually ran; the home
+# page renders lane_status() directly and the lanes() check turns broken
+# lanes into findings, so page and findings always agree.
+#
+# A lane:
+#   name    = "Alex's paycheck -> checking"      (required)
+#   kind    = "deposit" | "invest" | "floor"      (required)
+#   account = "Assets:US:..."                     (required)
+#   amount  = 3950.00        approximate is fine; deposits match within ±35%
+#                            unless `source` is given (then source decides and
+#                            amount is display-only). invest/floor: declared
+#                            program size / floor (floor may omit it to mirror
+#                            [fixed_balances]).
+#   cadence = "monthly" | "semimonthly" | "biweekly" | "per-paycheck"
+#   day     = 26             optional, display only ("monthly on the 26th")
+#   source  = "ACME.*PAYROLL"   optional payee regex (case-insensitive)
+#   starts  = 2026-08-20     optional first-expected date: until one cadence
+#                            period past it, a never-seen lane shows amber
+#                            "watching for first arrival" instead of red
+#   commodity = "VTSAX|VTIAX"   invest only: regex of commodities that count
+LANE_PERIOD_DAYS = {"monthly": 31, "semimonthly": 16, "biweekly": 14,
+                    "per-paycheck": 16}
+LANE_WINDOW_PERIODS = 2   # "recent" = the last 2 cadence periods
+LANE_AMOUNT_TOL = 0.35    # deposits: |posting − amount| within 35% counts
+LANE_REINVEST = re.compile(r"REINVEST|DIVIDEND|\bDIV\b", re.I)
+
+
+def _lane_date(value):
+    """tomllib gives a datetime.date for a bare TOML date; accept a string too."""
+    if isinstance(value, date):
+        return value
+    try:
+        return datetime.strptime(str(value), "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
+def _lane_amount(value):
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _lane_deposit_events(account, source, amt):
+    """(date, amount) of USD arrivals that count for this lane, oldest first."""
+    rows = query(f"SELECT date, payee, number WHERE account = '{bql_str(account)}' "
+                 f"AND currency = 'USD' AND number > 0 ORDER BY date")
+    out = []
+    for r in rows:
+        try:
+            d = datetime.strptime(r["date"], "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            continue
+        n = amount(r["number"])
+        if source:
+            if not re.search(source, r["payee"] or "", re.I):
+                continue
+        elif amt is not None and abs(n - amt) > LANE_AMOUNT_TOL * amt:
+            continue
+        out.append((d, n))
+    return out
+
+
+def _lane_invest_events(account, source, commodity):
+    """(date, usd_total) of purchase days — non-USD units bought, valued at
+    cost, reinvested dividends excluded (override with an explicit source)."""
+    rows = query(f"SELECT date, payee, number, currency, cost(position) AS c "
+                 f"WHERE account = '{bql_str(account)}' AND currency != 'USD' "
+                 f"AND number > 0 ORDER BY date")
+    by_day = {}
+    for r in rows:
+        try:
+            d = datetime.strptime(r["date"], "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            continue
+        payee = r["payee"] or ""
+        if source:
+            if not re.search(source, payee, re.I):
+                continue
+        elif LANE_REINVEST.search(payee):
+            continue
+        if commodity and not re.fullmatch(commodity, r["currency"] or ""):
+            continue
+        by_day[d] = by_day.get(d, 0.0) + amount(r["c"])
+    return sorted(by_day.items())
+
+
+def lane_status(today=None):
+    """One row per [[lanes]] entry, in declared order.
+
+    Row: {name, kind, account, cadence, day, amount, status, last,
+    last_amount, expected, balance, floor, note} — status is one of
+    ok | pending | overdue (deposit/invest), intact | below (floor),
+    invalid (misdeclared lane; note says what's wrong)."""
+    today = today or date.today()
+    fixed = rules().get("fixed_balances", {})
+    out = []
+    for lane in rules().get("lanes", []):
+        name = str(lane.get("name") or lane.get("account") or "unnamed lane")
+        kind = str(lane.get("kind") or "")
+        account_name = str(lane.get("account") or "")
+        cadence = str(lane.get("cadence") or "monthly")
+        amt = _lane_amount(lane.get("amount"))
+        row = {"name": name, "kind": kind, "account": account_name,
+               "cadence": cadence, "day": lane.get("day"), "amount": amt,
+               "status": "invalid", "last": None, "last_amount": None,
+               "expected": None, "balance": None, "floor": None, "note": ""}
+        out.append(row)
+        if kind not in ("deposit", "invest", "floor") or not account_name:
+            row["note"] = "kind must be deposit/invest/floor and account is required"
+            continue
+        if kind == "floor":
+            floor = amt if amt is not None else _lane_amount(fixed.get(account_name))
+            if floor is None:
+                row["note"] = ("no floor amount — set `amount` or declare the "
+                               "account under [fixed_balances]")
+                continue
+            rows = query(f"SELECT sum(number) AS v WHERE account = "
+                         f"'{bql_str(account_name)}' AND currency = 'USD'")
+            bal = amount(rows[0].get("v")) if rows else 0.0
+            row.update(floor=floor, balance=bal,
+                       status="intact" if bal >= floor - 0.005 else "below")
+            continue
+        period = LANE_PERIOD_DAYS.get(cadence)
+        if period is None:
+            row["note"] = f"unknown cadence `{cadence}`"
+            continue
+        source = lane.get("source")
+        if kind == "deposit":
+            events = _lane_deposit_events(account_name, source, amt)
+        else:
+            events = _lane_invest_events(account_name, source, lane.get("commodity"))
+        window_start = today - timedelta(days=LANE_WINDOW_PERIODS * period)
+        recent = [e for e in events if e[0] >= window_start]
+        starts = _lane_date(lane.get("starts"))
+        if recent:
+            row.update(status="ok", last=recent[-1][0], last_amount=recent[-1][1])
+        elif events:
+            row.update(status="overdue", last=events[-1][0],
+                       last_amount=events[-1][1],
+                       expected=events[-1][0] + timedelta(days=period))
+        elif starts and today <= starts + timedelta(days=period):
+            row.update(status="pending", expected=starts)
+        else:
+            row.update(status="overdue", expected=starts)
+    return out
+
+
+def lanes():
+    """Findings for broken lanes: a standing order that didn't run is an
+    alert (money is not where the household believes it is), a breached
+    floor is an alert, a misdeclared lane is a watch. Amber
+    watching-for-first-arrival lanes are page-only, not findings."""
+    out = []
+    for row in lane_status():
+        if row["status"] == "overdue":
+            exp = (f" — expected ~{row['expected'].isoformat()}"
+                   if row["expected"] else "")
+            seen = (f"Last ran {row['last'].isoformat()} "
+                    f"({money(row['last_amount'])})." if row["last"]
+                    else "Never seen in the ledger.")
+            out.append(finding(
+                "lanes", "alert",
+                f"The machine: `{row['name']}` hasn't run{exp}",
+                f"{seen} Declared {row['cadence']} on `{row['account']}` in "
+                f"rules.toml [[lanes]]. Check the standing order at the "
+                f"institution (and that the account's statements are "
+                f"imported), or fix the lane declaration."))
+        elif row["status"] == "below":
+            out.append(finding(
+                "lanes", "alert",
+                f"The machine: {row['account']} is under its "
+                f"{money(row['floor'])} floor ({money(row['balance'])})",
+                "rules.toml [[lanes]] holds this account at a floor — top it "
+                "up per THESIS.md, or lower the floor deliberately."))
+        elif row["status"] == "invalid":
+            out.append(finding(
+                "lanes", "watch",
+                f"The machine: lane `{row['name']}` is misdeclared",
+                f"{row['note']}. Fix the [[lanes]] entry in rules.toml — an "
+                f"unwatchable lane protects nothing."))
+    return out
+
+
 # --------------------------------------------------------- projected shortfall
 def projected_shortfall():
     """Any account whose projected minimum (forecast.py's default horizon)
@@ -823,7 +1011,8 @@ def _record_crossed(key, values):
 
 
 ALL = [concentration, deadlines, anomaly, subscriptions, reconciliation, coverage,
-       review_queue, goals_status, milestones, fixed_balances, projected_shortfall]
+       review_queue, goals_status, milestones, fixed_balances, lanes,
+       projected_shortfall]
 
 
 def run_all():

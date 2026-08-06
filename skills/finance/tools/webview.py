@@ -281,7 +281,7 @@ def parse_findings():
     errors = []
     err = re.search(r"^## Check errors\n(.*)", text, re.M | re.S)
     if err:
-        errors = [l[2:].strip() for l in err.group(1).splitlines() if l.startswith("- ")]
+        errors = [ln[2:].strip() for ln in err.group(1).splitlines() if ln.startswith("- ")]
         text = text[:err.start()]
     findings = []
     for block in re.split(r"^### ", text, flags=re.M)[1:]:
@@ -306,6 +306,7 @@ def parse_findings():
 FIX_BY_CHECK = {
     "review-queue": "Add [[payee_rules]] to rules.toml, then `tools/run recategorize.py --write`.",
     "projected-shortfall": "Check `tools/run forecast.py`; move money or shift the payment date before it lands.",
+    "lanes": "Check the standing order at the institution — re-arm or re-date it, or fix the [[lanes]] entry.",
     "fixed-balance": "Sweep or top up to the fixed amount — THESIS.md names the destination.",
     "subscriptions": "Unwanted? Cancel it. Wanted? Downgrade, go annual, or make the retention call.",
     "coverage": "Pull a fresh export from the institution and import it.",
@@ -314,7 +315,7 @@ FIX_BY_CHECK = {
     "reconciliation": "Re-import the account or correct the balance assertion.",
     "goals": "Fill in the blank threshold in facts/goals/index.md.",
 }
-QUEUE_ORDER = ["projected-shortfall", "fixed-balance", "review-queue", "anomaly",
+QUEUE_ORDER = ["projected-shortfall", "lanes", "fixed-balance", "review-queue", "anomaly",
                "subscriptions", "coverage", "reconciliation", "concentration", "goals"]
 
 
@@ -955,11 +956,11 @@ def build_page():
         q_body = ("<div class='empty'>No findings yet — run <code>tools/run run_checks.py</code> "
                   "and regenerate to fill the queue.</div>")
     elif not qparts:
-        q_body = (f"<div class='allclear'><svg class='ic' viewBox='0 0 16 16' "
-                  f"aria-hidden='true'><circle cx='8' cy='8' r='7' fill='var(--good)'/>"
-                  f"<path d='M4.6 8.4 7 10.8l4.4-5' stroke='#fff' stroke-width='1.8' "
-                  f"fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>"
-                  f"Nothing needs your hands today — no open alerts or watch items.</div>")
+        q_body = ("<div class='allclear'><svg class='ic' viewBox='0 0 16 16' "
+                  "aria-hidden='true'><circle cx='8' cy='8' r='7' fill='var(--good)'/>"
+                  "<path d='M4.6 8.4 7 10.8l4.4-5' stroke='#fff' stroke-width='1.8' "
+                  "fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>"
+                  "Nothing needs your hands today — no open alerts or watch items.</div>")
     else:
         q_body = "".join(qparts)
     chip_parts = []

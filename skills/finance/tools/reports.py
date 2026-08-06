@@ -121,8 +121,8 @@ def upcoming():
         lines += [f"- {d.isoformat()} — {t}  _({f})_" for d, t, f in past[-5:]]
     cal = VAULT / "facts" / "household" / "calendar.md"
     if cal.exists():
-        chores = [l for l in cal.read_text().splitlines()
-                  if re.match(r"^- (daily|weekly|monthly|quarterly|yearly)", l, re.I)]
+        chores = [ln for ln in cal.read_text().splitlines()
+                  if re.match(r"^- (daily|weekly|monthly|quarterly|yearly)", ln, re.I)]
         if chores:
             lines += ["\n## Recurring chores"] + chores
     (REPORTS / "upcoming.md").write_text("\n".join(lines) + "\n")

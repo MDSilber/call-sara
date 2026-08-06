@@ -12,5 +12,7 @@ source: demo data (synthetic)
 - yearly (Nov) — re-shop auto insurance before the GEICO renewal
 
 ## Upcoming
+- 2026-08-30 — GEICO renters + auto renewal auto-drafts $418 from Chase checking
+- 2026-09-15 — Q3 federal estimated tax — pay $2,400 (IRS Direct Pay)
 - 2026-10-01 — BrightPath open enrollment window opens (Alex benefits)
 - 2027-04-15 — file 2026 federal and state returns

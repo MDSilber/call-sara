@@ -114,3 +114,50 @@ note = "cash withdrawals"
 [anomaly]
 ignore_payee_regex = "^(ATM |WITHDRAWAL|ZELLE|VENMO|CHECK )"
 ignore_account_regex = "Childcare|Cash|Uncategorized|Investment-Loss|Taxes|Insurance"
+
+# ---------------------------------------------------------------------------
+# The machine — standing money movements Sara watches on the home page and
+# in the checks (the `lanes` check → findings; the "The machine" panel on
+# reports/home.html renders the same detector, so they always agree).
+# One [[lanes]] block per standing order. Fields:
+#   name      how the lane reads on the page                       (required)
+#   kind      "deposit" (money that should keep arriving),          (required)
+#             "invest" (an auto-invest that should keep buying),
+#             "floor"  (a balance held at/above a line)
+#   account   the ledger account the lane watches                   (required)
+#   amount    approximate is fine. deposit: matched within ±35% when no
+#             `source` regex is given (with `source`, display-only).
+#             invest/floor: the declared program size / the floor — a floor
+#             lane may omit it to mirror [fixed_balances] above.
+#   cadence   "monthly" | "semimonthly" | "biweekly" | "per-paycheck"
+#             (deposit/invest; the scan window is 2 cadence periods)
+#   day       optional day-of-month, display only ("monthly on the 26th")
+#   source    optional case-insensitive payee regex that identifies the lane
+#   starts    optional first-expected date (YYYY-MM-DD): until one cadence
+#             period past it, a never-seen lane shows amber "watching for
+#             the first arrival" instead of red
+#   commodity invest only: regex of commodity symbols that count (keeps
+#             money-market sweeps and reinvested dividends out)
+#
+# [[lanes]]
+# name = "Sam's paycheck → checking"
+# kind = "deposit"
+# account = "Assets:US:Ally:Checking1234"
+# amount = 3200.00
+# cadence = "semimonthly"
+# source = "ACME.*PAYROLL"
+#
+# [[lanes]]
+# name = "Auto-invest — $1,000/mo into VTI"
+# kind = "invest"
+# account = "Assets:US:Vanguard:Brokerage5678"
+# amount = 1000
+# cadence = "monthly"
+# day = 15
+# commodity = "VTI"
+#
+# [[lanes]]
+# name = "Emergency-fund floor"
+# kind = "floor"
+# account = "Assets:US:Ally:Savings9876"
+# amount = 20000

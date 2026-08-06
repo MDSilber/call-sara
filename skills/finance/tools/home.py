@@ -5,17 +5,22 @@ Run:    tools/run home.py
 Writes: reports/home.html — the ONLY file written; the vault is otherwise
         read-only. One fully self-contained page (Inter + Apache ECharts
         inlined, CSP default-src 'none') openable straight from disk; it
-        cannot phone home. Three views now: fava (dashboard.sh) is the
+        cannot phone home. Three views: fava (dashboard.sh) is the
         microscope, reports/dashboard.html (--pretty) the dense brief, and
         THIS page (--home) the morning glance a spouse reads in ten seconds.
 
-Page contract, in order: are we okay this month (spend-pace hero: solid
-actual vs dotted typical-path line, "left vs a typical month" number)? does
-anything need us ("Needs you" verb cards from findings + dated facts, with
-an explicit nothing-needs-you state)? are the long lines going up (the
-walk-away number from the true spend baseline, the 529 story card, the
-liquid net-worth curve)? Then the month's cheshbon and project envelopes.
-EVERY figure carries its window label; every delta names its comparison.
+Page contract, in order: the aurora hero (greeting, Sara's one-line verdict,
+freshness stamp) with the four headline KPIs floating over it — liquid net
+worth, left this month, net this month, walk-away % — then: is this month
+unusual (spend-pace: solid actual vs dotted typical-median path)? is the
+machine running (rules.toml [[lanes]] — payroll deposits, auto-invests,
+floors — via checks.lane_status, the same detector the findings use)? does
+anything need us ("Needs you" verb cards + "Money that must move" dated
+obligations with real dollars from facts/)? are the long lines going up
+(walk-away + what-if dials, the 529 story, realized "Sara's wins", the
+liquid net-worth curve)? Then the month's cheshbon with its category ribbon
+and the project envelopes. EVERY figure carries its window label; every
+delta names its comparison.
 
 Money honesty, rendered: Python computes and formats every dollar; JS
 receives chart geometry (plain numbers) and display strings only — no
@@ -23,12 +28,14 @@ toFixed, no float math on money, no compact notation on real values. Whole
 dollars, true minus U+2212, ≈ on every derived or projected figure with its
 window named. Liquid-only counting per THESIS: illiquid paper appears only
 as the labelled "if the paper converts" shadow, never inside a total.
+"Sara's wins" parses only explicit `[x] … realized $N` lines from dated
+notes — no estimate ever counts as found money.
 
-Security: payees, findings text, facts bullets, and account names are
-bank-controlled DATA. Server side: the page renders through jinja2 with
-autoescape on (markupsafe), so every context string is escaped by default;
-the few intentional-HTML fragments are built with Markup.format, which
-escapes their arguments. Chart data rides one
+Security: payees, findings text, facts bullets, lane names, and account
+names are bank-controlled DATA. Server side: the page renders through
+jinja2 with autoescape on (markupsafe), so every context string is escaped
+by default; the few intentional-HTML fragments are built with Markup.format,
+which escapes their arguments. Chart data rides one
 <script type="application/json"> island with '<' escaped so no payload can
 close the tag. Client side: JSON.parse plus textContent / esc()-escaped
 strings only; the CSP meta (default-src 'none') makes zero-network a
@@ -51,12 +58,13 @@ import jinja2
 from markupsafe import Markup, escape
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vault import REPORTS, amount, household, query  # noqa: E402
+from vault import REPORTS, VAULT, amount, dated_bullets, household, query  # noqa: E402
 from reports import liquid_balances, paper_value  # noqa: E402
 from webview import (MONTH_ABBR, action_queue, code_spans,  # noqa: E402
                      deadline_items, latest_ledger_date, month_label,
                      networth_series, nice_ticks, parse_findings)
 from checks import goals as goals_config  # noqa: E402
+from checks import lane_status  # noqa: E402
 
 ASSETS = Path(__file__).resolve().parent / "assets"
 MONTH_FULL = ["", "January", "February", "March", "April", "May", "June",
@@ -68,6 +76,9 @@ MIN_FULL_MONTHS = 3       # fewer than this and a median is a guess, not a basel
 WALKAWAY_LO, WALKAWAY_HI = 25, 28.5   # 4% and 3.5% rules, as spend multiples
 NEEDS_CARDS = 3           # verb cards shown; the rest fold into a count
 DEADLINE_CARD_DAYS = 10   # deadlines this close become cards, not just counts
+MUSTMOVE_DAYS = 60        # dated obligations with dollars, this far ahead
+MUSTMOVE_MAX = 6          # chips shown; facts/ keeps the rest
+RIBBON_SLOTS = 3          # cheshbon ribbon: top categories shown; rest fold to Other
 
 YM = tuple[int, int]      # a calendar month as (year, month)
 
@@ -75,8 +86,8 @@ YM = tuple[int, int]      # a calendar month as (year, month)
 # --------------------------------------------------------- typed containers
 @dataclass(frozen=True)
 class Pace:
-    """The spend-pace hero's numbers. `ideal` is the MEDIAN PATH of the
-    window months (cumulative by day-of-month, median across months) — its
+    """The spend-pace numbers. `ideal` is the MEDIAN PATH of the window
+    months (cumulative by day-of-month, median across months) — its
     endpoint IS the median of the month totals, so hero and line agree."""
     cur: YM
     ndays: int
@@ -87,8 +98,8 @@ class Pace:
     typical_window: list[YM]
     ideal: list[float]            # the typical path, day 1..ndays
     typical_by_now: float | None  # ideal[through_day - 1]
-    left: float | None            # typical − spent (the hero number)
-    pace_delta: float | None      # spent − typical_by_now
+    left: float | None            # typical − spent (the KPI-strip number)
+    pace_delta: float | None      # spent − typical_by_now (the card's hero)
     fallback: bool                # True = pacing the last imported month instead
 
 
@@ -150,6 +161,10 @@ def round1k(x: float) -> float:
     return round(x / 1000.0) * 1000
 
 
+def mon_d(d: date) -> str:
+    return f"{MONTH_ABBR[d.month]} {d.day}"
+
+
 def mon_yr(ym: YM) -> str:
     return f"{MONTH_ABBR[ym[1]]} {ym[0]}"
 
@@ -164,6 +179,11 @@ def window_label(months: list[YM]) -> str:
     if a[0] == b[0]:
         return f"{MONTH_ABBR[a[1]]}–{MONTH_ABBR[b[1]]} {a[0]}"
     return f"{mon_yr(a)} – {mon_yr(b)}"
+
+
+def pct_display(pct: float) -> str:
+    """Never claim 100% early: 99.5–99.99 displays as 99%, not a rounded 100%."""
+    return f"{pct:.0f}%" if pct < 99.5 or pct >= 100 else "99%"
 
 
 def add_months(d: date, n: int) -> date:
@@ -193,6 +213,16 @@ def month_in_out(ym: YM) -> tuple[float, float]:
                  f"AND account ~ '^(Income|Expenses)' GROUP BY r")
     vals = {r["r"]: amount(r["v"]) for r in rows}
     return -vals.get("Income", 0.0), vals.get("Expenses", 0.0)
+
+
+def month_categories(ym: YM) -> list[tuple[str, float]]:
+    """This month's spending by category (root 2), largest first — the
+    cheshbon ribbon's data. Refund-net categories (≤ $0) drop out."""
+    rows = query(f"SELECT root(account,2) AS cat, sum(convert(position,'USD')) "
+                 f"AS v WHERE account ~ '^Expenses' AND year = {ym[0]} "
+                 f"AND month = {ym[1]} GROUP BY cat")
+    cats = [(r["cat"] or "Expenses", amount(r["v"])) for r in rows]
+    return sorted([(c, v) for c, v in cats if v > 0.005], key=lambda cv: -cv[1])
 
 
 def spend_pace(today: date, asof: date | None,
@@ -300,7 +330,6 @@ def walkaway(liquid: float, paper: float, baseline: Baseline | None,
         target=target, src=src, lo=lo, hi=hi, baseline=baseline,
         pct=100.0 * liquid / target if target else 0.0, paper=paper,
         paper_pct=100.0 * (liquid + paper) / target if target else 0.0)
-
 
 
 # ----------------------------------------------------------- what-if grid
@@ -522,12 +551,85 @@ def needs_you(today: date) -> tuple[list[Card], int, str]:
     return shown, more, ("cards" if shown else "ok")
 
 
+# ---------------------------------------------------- money that must move
+MUSTMOVE_AMT = re.compile(r"([~≈]?)\$(\d[\d,]*(?:\.\d+)?)\s*([KkMm]?)(?![\w.])")
+_AMT_MULT = {"": 1, "k": 1_000, "m": 1_000_000}
+
+
+def must_move(today: date) -> list[dict]:
+    """Dated facts bullets inside MUSTMOVE_DAYS that carry a real dollar
+    figure — the obligations calendar. Nothing is invented: no date + amount
+    in the vault, no chip. The first $ figure in the bullet is the chip's
+    number; `~`, `≈`, or a K/M suffix keeps its ≈."""
+    seen, out = set(), []
+    for d, text, _relpath in dated_bullets():
+        days = (d - today).days
+        if not (0 <= days <= MUSTMOVE_DAYS):
+            continue
+        m = MUSTMOVE_AMT.search(text)
+        if not m:
+            continue
+        key = (d, " ".join(text.lower().split())[:80])
+        if key in seen:
+            continue
+        seen.add(key)
+        val = float(m.group(2).replace(",", "")) * _AMT_MULT[m.group(3).lower()]
+        approx = bool(m.group(1)) or bool(m.group(3))
+        when = ("today" if days == 0 else
+                "tomorrow" if days == 1 else f"in {days} days")
+        out.append({"date": d, "days": days, "when": when,
+                    "day_lbl": mon_d(d), "near": days <= DEADLINE_CARD_DAYS,
+                    "amt": ("≈" if approx else "") + m0(val), "text": text})
+    out.sort(key=lambda r: r["date"])
+    return out[:MUSTMOVE_MAX]
+
+
+# --------------------------------------------------------------- Sara's wins
+WIN_LINE = re.compile(r"^\s*[-*]\s*\[[xX]\]\s*(.+)$", re.M)
+WIN_REALIZED = re.compile(
+    r"realized[^$\n]{0,24}\$(\d[\d,]*(?:\.\d+)?)\s*([Kk]?)\s*(/\s*yr|per\s+year)?",
+    re.I)
+
+
+def saras_wins(today: date) -> dict | None:
+    """Realized savings/found money, parsed CONSERVATIVELY from this year's
+    dated notes: only `[x]` checklist lines that say `realized $N` count
+    (the savings-hunt log convention — estimates and captures never blend).
+    Returns {total, items:[{label, amt, peryr}]} or None when nothing
+    parses — no fake trophies."""
+    notes = VAULT / "notes"
+    if not notes.is_dir():
+        return None
+    items = []
+    for f in sorted(notes.glob("*.md")):
+        m = re.match(r"(\d{4})-\d{2}-\d{2}", f.name)
+        if not m or int(m.group(1)) != today.year:
+            continue
+        try:
+            txt = f.read_text()
+        except OSError:
+            continue
+        for line_m in WIN_LINE.finditer(txt):
+            line = line_m.group(1)
+            rm = WIN_REALIZED.search(line)
+            if not rm:
+                continue
+            val = float(rm.group(1).replace(",", "")) * (1000 if rm.group(2) else 1)
+            label = re.sub(r"\s+", " ", line[:rm.start()]).strip(" -—·:;,(")
+            items.append({"label": label[:72] or "Realized saving",
+                          "amt": val, "peryr": bool(rm.group(3))})
+    if not items:
+        return None
+    items.sort(key=lambda i: -i["amt"])
+    return {"total": sum(i["amt"] for i in items), "items": items}
+
+
 SMALL_NUMS = ["zero", "One", "Two", "Three", "Four", "Five", "Six",
               "Seven", "Eight", "Nine"]
 
 
 def sara_line(pace: Pace, cards_state: str, cards: list[Card], more: int) -> str:
-    """One warm, honest sentence for the masthead. States, never invents."""
+    """One warm, honest sentence for the hero. States, never invents."""
     over = (pace.pace_delta or 0) > 0.10 * (pace.typical or float("inf"))
     if cards_state == "none":
         return "First morning here — run the checks and I'll start watching for you."
@@ -578,6 +680,10 @@ def chip(body: Markup | str, cls: str = "") -> dict:
 _ENV = jinja2.Environment(autoescape=True, trim_blocks=True, lstrip_blocks=True)
 _ENV.filters["codespans"] = _codespans
 
+# The aurora system. Light = white cards floating over the 115° gradient
+# band with soft violet shadows; dark = the same layout on a deep-navy
+# canvas, the aurora kept but deepened, cards #131a2e. Declared twice so
+# the OS preference and the explicit toggle both win in their own direction.
 CSS_TEMPLATE = """
 @font-face { font-family:'Inter'; font-style:normal; font-weight:400;
   src:url(data:font/woff2;base64,__INTER_R__) format('woff2'); }
@@ -585,141 +691,225 @@ CSS_TEMPLATE = """
   src:url(data:font/woff2;base64,__INTER_S__) format('woff2'); }
 
 :root { color-scheme:light;
-  --bg:#f5f6f8; --surface:#ffffff; --surface-2:#eef0f4;
-  --border:rgba(16,24,40,.10); --border-strong:rgba(16,24,40,.18);
-  --ink:#0e1420; --ink-2:#4b5364; --muted:#666e7e;
-  --grid:#e6e8ee; --axis:#c8ccd6;
-  --accent:#2a78d6; --accent-soft:rgba(42,120,214,.10); --link:#1e63b8;
-  --pos:#0f7a2e; --pos-soft:rgba(15,122,46,.09);
-  --neg:#c93838; --neg-soft:rgba(201,56,56,.09);
-  --warn:#8a5c06; --warn-soft:rgba(185,125,12,.12);
-  --ideal:#848da0; --code:#eef0f4;
+  --bg:#f6f6fa; --surface:#ffffff; --surface-2:#f1f0f8;
+  --border:rgba(49,42,124,.10); --border-strong:rgba(49,42,124,.22);
+  --ink:#151329; --ink-2:#4c4a63; --muted:#6e6c85;
+  --grid:#eceaf4; --axis:#cfccdf;
+  --accent:#6157ff; --accent-soft:rgba(97,87,255,.10); --link:#4d43e0;
+  --pos:#067647; --pos-soft:#e7f9ef;
+  --neg:#d02b4c; --neg-soft:#fdedf0; --neg-dot:#f43f5e;
+  --warn:#9a5b00; --warn-soft:#fdf3e0; --warn-dot:#f59e0b;
+  --gold:#b26105; --gold-track:#f7e7cd;
+  --gold-fill:linear-gradient(90deg,#d97a06,#f0a63c);
+  --ideal:#8d87b8; --code:#efedf8;
+  --rib-1:#6157ff; --rib-2:#9d8cff; --rib-3:#d97a06; --rib-4:#8579c9;
+  --hero-grad:linear-gradient(115deg,#6157ff 0%,#74c0fc 35%,#ff7eb6 68%,#ffb86b 100%);
+  --hero-wash:radial-gradient(120% 90% at 15% 0%,rgba(255,255,255,.30),transparent 55%);
+  --hero-scrim:linear-gradient(180deg,rgba(30,22,96,.34),rgba(30,22,96,.10) 62%,rgba(30,22,96,0));
+  --walk-grad:linear-gradient(180deg,#ffffff,#f6f5ff);
+  --walk-border:#e6e3fb;
+  --bar-track:#ece9f8; --bar-fill:linear-gradient(90deg,#6157ff,#9d8cff);
+  --shadow-card:0 1px 2px rgba(49,42,124,.05),0 8px 24px rgba(49,42,124,.07);
+  --shadow-float:0 12px 32px rgba(49,42,124,.16);
 }
-/* dark = navy-black, not pure black; declared twice so the OS preference
-   and the explicit toggle both win in their own direction */
 @media screen and (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) { color-scheme:dark;
-    --bg:#0b0f1a; --surface:#141b2b; --surface-2:#1b2334;
-    --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.17);
-    --ink:#e8ebf2; --ink-2:#b6bdcc; --muted:#8b93a6;
-    --grid:#232b3d; --axis:#333d55;
-    --accent:#4a90e2; --accent-soft:rgba(74,144,226,.16); --link:#7aaceb;
-    --pos:#3fbd67; --pos-soft:rgba(63,189,103,.13);
-    --neg:#e05a52; --neg-soft:rgba(224,90,82,.13);
-    --warn:#d9a022; --warn-soft:rgba(217,160,34,.15);
-    --ideal:#6f7994; --code:#1b2334;
+    --bg:#0a0e1e; --surface:#131a2e; --surface-2:#1a2238;
+    --border:rgba(196,200,255,.10); --border-strong:rgba(196,200,255,.24);
+    --ink:#e9ebfa; --ink-2:#b3b8d6; --muted:#8b91b2;
+    --grid:#222b45; --axis:#39415f;
+    --accent:#8f88ff; --accent-soft:rgba(143,136,255,.16); --link:#a9a3ff;
+    --pos:#3ecf7a; --pos-soft:rgba(62,207,122,.13);
+    --neg:#ff6b84; --neg-soft:rgba(255,107,132,.12); --neg-dot:#ff6b84;
+    --warn:#f0b13c; --warn-soft:rgba(240,177,60,.13); --warn-dot:#f0b13c;
+    --gold:#e2a04b; --gold-track:rgba(226,154,61,.18);
+    --gold-fill:linear-gradient(90deg,#c97e1e,#e2a04b);
+    --ideal:#767fa8; --code:#1c2440;
+    --rib-1:#544ae4; --rib-2:#8d80f4; --rib-3:#c97e1e; --rib-4:#8074c4;
+    --hero-grad:linear-gradient(115deg,#4a41d6 0%,#3c7ec2 35%,#d4548c 68%,#d98b3f 100%);
+    --hero-wash:radial-gradient(120% 90% at 15% 0%,rgba(255,255,255,.12),transparent 55%);
+    --hero-scrim:linear-gradient(180deg,rgba(6,8,30,.42),rgba(6,8,30,.16) 62%,rgba(6,8,30,0));
+    --walk-grad:linear-gradient(180deg,#161d36,#181d3e);
+    --walk-border:#2c3158;
+    --bar-track:#242b4c; --bar-fill:linear-gradient(90deg,#6a61f0,#9d8cff);
+    --shadow-card:0 1px 2px rgba(0,0,0,.3),0 10px 28px rgba(0,0,0,.34);
+    --shadow-float:0 14px 36px rgba(0,0,0,.5);
   }
 }
 :root[data-theme="dark"] { color-scheme:dark;
-  --bg:#0b0f1a; --surface:#141b2b; --surface-2:#1b2334;
-  --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.17);
-  --ink:#e8ebf2; --ink-2:#b6bdcc; --muted:#8b93a6;
-  --grid:#232b3d; --axis:#333d55;
-  --accent:#4a90e2; --accent-soft:rgba(74,144,226,.16); --link:#7aaceb;
-  --pos:#3fbd67; --pos-soft:rgba(63,189,103,.13);
-  --neg:#e05a52; --neg-soft:rgba(224,90,82,.13);
-  --warn:#d9a022; --warn-soft:rgba(217,160,34,.15);
-  --ideal:#6f7994; --code:#1b2334;
+  --bg:#0a0e1e; --surface:#131a2e; --surface-2:#1a2238;
+  --border:rgba(196,200,255,.10); --border-strong:rgba(196,200,255,.24);
+  --ink:#e9ebfa; --ink-2:#b3b8d6; --muted:#8b91b2;
+  --grid:#222b45; --axis:#39415f;
+  --accent:#8f88ff; --accent-soft:rgba(143,136,255,.16); --link:#a9a3ff;
+  --pos:#3ecf7a; --pos-soft:rgba(62,207,122,.13);
+  --neg:#ff6b84; --neg-soft:rgba(255,107,132,.12); --neg-dot:#ff6b84;
+  --warn:#f0b13c; --warn-soft:rgba(240,177,60,.13); --warn-dot:#f0b13c;
+  --gold:#e2a04b; --gold-track:rgba(226,154,61,.18);
+  --gold-fill:linear-gradient(90deg,#c97e1e,#e2a04b);
+  --ideal:#767fa8; --code:#1c2440;
+  --rib-1:#544ae4; --rib-2:#8d80f4; --rib-3:#c97e1e; --rib-4:#8074c4;
+  --hero-grad:linear-gradient(115deg,#4a41d6 0%,#3c7ec2 35%,#d4548c 68%,#d98b3f 100%);
+  --hero-wash:radial-gradient(120% 90% at 15% 0%,rgba(255,255,255,.12),transparent 55%);
+  --hero-scrim:linear-gradient(180deg,rgba(6,8,30,.42),rgba(6,8,30,.16) 62%,rgba(6,8,30,0));
+  --walk-grad:linear-gradient(180deg,#161d36,#181d3e);
+  --walk-border:#2c3158;
+  --bar-track:#242b4c; --bar-fill:linear-gradient(90deg,#6a61f0,#9d8cff);
+  --shadow-card:0 1px 2px rgba(0,0,0,.3),0 10px 28px rgba(0,0,0,.34);
+  --shadow-float:0 14px 36px rgba(0,0,0,.5);
 }
 
 * { box-sizing:border-box; margin:0; }
 html { -webkit-text-size-adjust:100%; }
 body { background:var(--bg); color:var(--ink);
   font:15px/1.5 'Inter',system-ui,-apple-system,'Segoe UI',sans-serif; }
-.wrap { max-width:1040px; margin:0 auto; padding:36px 28px 44px; }
+.wrap { max-width:1200px; margin:0 auto; padding:0 28px; }
 a { color:var(--link); text-decoration-thickness:1px; text-underline-offset:2px; }
 code { background:var(--code); border-radius:4px; padding:.08em .35em;
   font-size:.9em; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
 :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
-/* tabular numerals where figures align vertically or sit inline with text;
-   the two hero figures keep Inter's proportional digits (large standalone
-   numbers set tighter that way) */
+/* tabular numerals wherever figures align or sit inline; the two biggest
+   heroes (the pace card's delta, the walk-away number) keep Inter's
+   proportional digits — large standalone numbers set tighter that way */
 .num, td, .tick { font-variant-numeric:tabular-nums lining-nums; }
 .pos { color:var(--pos); } .neg { color:var(--neg); }
 
-/* masthead */
-.mast { display:flex; justify-content:space-between; align-items:flex-start;
-  gap:20px; margin-bottom:22px; }
-.greet { font-size:25px; font-weight:600; letter-spacing:-.01em; line-height:1.2;
-  text-wrap:balance; }
-.saraline { color:var(--ink-2); font-size:15px; margin-top:5px; max-width:56ch; }
-.stampcol { text-align:right; flex:none; }
-.stamp { color:var(--muted); font-size:12.5px; line-height:1.55; }
-.themebtn { background:var(--surface); color:var(--ink-2); border:1px solid var(--border);
-  border-radius:999px; padding:3px 12px; font:12.5px 'Inter',system-ui,sans-serif;
-  cursor:pointer; margin-bottom:8px; }
-.themebtn:hover { border-color:var(--border-strong); }
+/* ---- the aurora hero band ---- */
+.hero { background:var(--hero-grad); color:#fff; position:relative;
+  padding:30px 0 96px; }
+.hero::before { content:""; position:absolute; inset:0;
+  background:var(--hero-wash); pointer-events:none; }
+.hero::after { content:""; position:absolute; inset:0;
+  background:var(--hero-scrim); pointer-events:none; }
+.hero-in { position:relative; z-index:1; }
+.hero-top { display:flex; justify-content:space-between; align-items:flex-start;
+  gap:20px; }
+.hi { font-size:13px; font-weight:600; letter-spacing:.05em;
+  text-transform:uppercase; text-shadow:0 1px 2px rgba(21,15,74,.30); }
+.say { margin-top:8px; font-size:18px; line-height:1.45; font-weight:600;
+  max-width:62ch; letter-spacing:-.005em; text-wrap:balance;
+  text-shadow:0 1px 3px rgba(21,15,74,.30); }
+.hero-side { display:flex; align-items:center; gap:12px; flex:none; }
+.stamp { font-size:11.5px; line-height:1.5; color:rgba(255,255,255,.92);
+  text-align:right; text-shadow:0 1px 2px rgba(21,15,74,.35); }
+.themebtn { background:rgba(255,255,255,.16); color:#fff;
+  border:1px solid rgba(255,255,255,.45); border-radius:999px; padding:3px 12px;
+  font:12.5px 'Inter',system-ui,sans-serif; cursor:pointer;
+  transition:background .15s ease; }
+.themebtn:hover { background:rgba(255,255,255,.28); }
+.card .themebtn, .wi-readout .themebtn { background:var(--surface);
+  color:var(--ink-2); border-color:var(--border); }
+.card .themebtn:hover, .wi-readout .themebtn:hover {
+  border-color:var(--border-strong); background:var(--surface); }
 
-/* cards + layout */
-section { margin-top:16px; }
+/* ---- the floating KPI strip ---- */
+.kpis { display:grid; grid-template-columns:repeat(4,1fr); background:var(--surface);
+  border-radius:14px; box-shadow:var(--shadow-float); border:1px solid var(--border);
+  margin-top:-64px; position:relative; z-index:2; padding:18px 0; }
+.kpi { padding:2px 24px; border-left:1px solid var(--grid); min-width:0; }
+.kpi:first-child { border-left:none; }
+.kk { font-size:11.5px; font-weight:600; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.05em; white-space:nowrap; }
+.kv { font-size:31px; font-weight:600; letter-spacing:-.02em; line-height:1.15;
+  margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ks { font-size:12px; color:var(--muted); margin-top:2px; }
+
+/* ---- cards + grids ---- */
+main { padding-bottom:44px; }
+.grid { display:grid; gap:18px; margin-top:18px; align-items:stretch; }
+.g-pace { grid-template-columns:1.5fr 1fr; }
+.g-needs { grid-template-columns:1.5fr 1fr; }
+.g-walk { grid-template-columns:1.4fr 1fr; }
+.g-chesh { grid-template-columns:1.4fr 1fr; }
+.g-solo { grid-template-columns:1fr; }
+.sidecol { display:flex; flex-direction:column; gap:18px; min-width:0;
+  align-self:start; }
 .card { background:var(--surface); border:1px solid var(--border);
-  border-radius:14px; padding:22px 24px; break-inside:avoid; }
-.card h2 { font-size:15px; font-weight:600; letter-spacing:-.005em; }
-.card .sub { color:var(--muted); font-size:12.5px; margin-top:2px; }
+  border-radius:14px; padding:20px 22px; box-shadow:var(--shadow-card);
+  break-inside:avoid; min-width:0; }
+.card.walk { background:var(--walk-grad); border-color:var(--walk-border); }
 .cardhead { display:flex; justify-content:space-between; align-items:baseline;
-  gap:14px; margin-bottom:14px; }
+  gap:14px; margin-bottom:12px; }
+.ck { font-size:11.5px; font-weight:600; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.05em; }
+.card .sub { color:var(--muted); font-size:12.5px; margin-top:3px;
+  text-transform:none; letter-spacing:0; font-weight:400; }
 .window { color:var(--muted); font-size:12px; white-space:nowrap; flex:none; }
-.duo { display:grid; gap:16px; grid-template-columns:1fr 1fr; align-items:stretch;
-  margin-top:16px; }
-@media (max-width:880px) { .duo { grid-template-columns:1fr; }
-  .mast { flex-direction:column; } .stampcol { text-align:left; } }
 
-/* hero figures */
-.heronum { font-size:44px; font-weight:600; letter-spacing:-.02em; line-height:1.05; }
-.heronum.neg { color:var(--neg); }
-.herolab { color:var(--ink-2); font-size:13.5px; margin-top:4px; }
-.heromini { font-size:27px; font-weight:600; letter-spacing:-.015em; line-height:1.1; }
-.heromini .of { color:var(--muted); font-weight:400; font-size:16px; }
+/* hero figures inside cards */
+.phero { font-size:40px; font-weight:600; letter-spacing:-.02em; line-height:1.08; }
+.phero.good { color:var(--pos); } .phero.bad { color:var(--neg); }
+.whero { font-size:32px; font-weight:600; letter-spacing:-.02em; line-height:1.1; }
+.whero .of, .heromini .of { color:var(--muted); font-weight:600; font-size:14px; }
+.heromini { font-size:26px; font-weight:600; letter-spacing:-.015em; line-height:1.15; }
+.herolab { color:var(--ink-2); font-size:13px; margin-top:4px; }
 .chiprow { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
-.chip { display:inline-flex; align-items:baseline; gap:6px; border:1px solid var(--border);
-  border-radius:999px; padding:4px 12px; font-size:12.5px; color:var(--ink-2);
-  background:var(--surface); }
+.chip { display:inline-flex; align-items:baseline; gap:6px; border-radius:999px;
+  padding:4px 12px; font-size:12px; font-weight:400; color:var(--ink-2);
+  background:var(--surface-2); }
 .chip b { font-weight:600; font-variant-numeric:tabular-nums; }
-.chip.good b { color:var(--pos); } .chip.bad b { color:var(--neg); }
+.chip.good { background:var(--pos-soft); color:var(--pos); }
+.chip.good b { color:var(--pos); }
+.chip.bad { background:var(--neg-soft); color:var(--neg); }
+.chip.bad b { color:var(--neg); }
 
 /* chart chrome */
 .chart { width:100%; margin-top:6px; }
-#pace-chart { height:300px; } #nw-chart { height:300px; } #wi-chart { height:240px; }
+#pace-chart { height:280px; } #nw-chart { height:300px; } #wi-chart { height:240px; }
 
-/* the what-if dials — sliders ride the token system via accent-color */
-.dials { display:grid; gap:8px 26px; grid-template-columns:repeat(3,1fr); margin-top:4px; }
-@media (max-width:880px) { .dials { grid-template-columns:1fr; } }
-.dial { display:grid; grid-template-columns:1fr auto; gap:0 10px; align-items:center; }
-.dial label { color:var(--ink-2); font-size:12.5px; }
-.dial .dval { font-size:13px; font-weight:600; text-align:right; }
-.dial input[type=range] { grid-column:1 / -1; width:100%; height:22px; margin:0;
-  accent-color:var(--accent); }
-.wi-readout { display:flex; gap:30px; flex-wrap:wrap; align-items:flex-end;
-  margin-top:14px; padding-top:12px; border-top:1px solid var(--grid); }
-.wr .wv { font-size:20px; font-weight:600; letter-spacing:-.01em; }
-.wr .wl { color:var(--muted); font-size:11.5px; margin-top:1px; }
-#wi-reset { margin:0 0 3px auto; }
-.wi-formula { color:var(--muted); font-size:12px; margin-top:10px; }
-
-/* needs-you list — rows with hairline dividers, never nested cards */
-.needs { list-style:none; padding:0; margin:6px 0 0; }
-.needs li { display:flex; gap:12px; padding:12px 2px; align-items:flex-start;
+/* ---- the machine (lanes) ---- */
+.lanes { list-style:none; padding:0; margin:2px 0 0; }
+.lanes li { display:flex; gap:11px; padding:11px 0; align-items:flex-start;
   border-top:1px solid var(--grid); }
-.needs li:first-child { border-top:none; }
+.lanes li:first-child { border-top:none; padding-top:5px; }
+.lanedot { width:8px; height:8px; border-radius:50%; flex:none; margin-top:6px; }
+.lanedot.ok { background:var(--pos); }
+.lanedot.watch { background:var(--warn-dot); }
+.lanedot.bad { background:var(--neg-dot); }
+.lanedot.mut { background:var(--axis); }
+.lanes .lname { font-size:13.5px; font-weight:600; line-height:1.35; }
+.lanes .ldet { color:var(--ink-2); font-size:12.5px; margin-top:1px; }
+.lanes .ldet.bad { color:var(--neg); }
+.lanetag { margin-left:auto; color:var(--muted); font-size:10px;
+  text-transform:uppercase; letter-spacing:.06em; flex:none; padding-top:4px; }
+.lanesum { color:var(--muted); font-size:12.5px; margin-top:10px;
+  padding-top:10px; border-top:1px solid var(--grid); }
+
+/* ---- needs-you + money that must move ---- */
+.needs { list-style:none; padding:0; margin:2px 0 0; }
+.needs li { display:flex; gap:11px; padding:11px 0; align-items:flex-start;
+  border-top:1px solid var(--grid); }
+.needs li:first-child { border-top:none; padding-top:5px; }
 .sevdot { width:8px; height:8px; border-radius:50%; flex:none; margin-top:7px; }
-.sevdot.alert { background:var(--neg); } .sevdot.watch { background:var(--warn); }
+.sevdot.alert { background:var(--neg-dot); } .sevdot.watch { background:var(--warn-dot); }
 .sevdot.deadline { background:var(--accent); }
-.needs .verb { font-size:14px; font-weight:600; line-height:1.35; }
-.needs .why { color:var(--ink-2); font-size:13px; margin-top:2px; }
-.needs .meta { margin-left:auto; color:var(--muted); font-size:11px;
-  text-transform:uppercase; letter-spacing:.05em; flex:none; padding-top:3px; }
+.needs .verb { font-size:13.5px; font-weight:600; line-height:1.35; }
+.needs .why { color:var(--ink-2); font-size:12.5px; margin-top:2px; }
+.needs .meta { margin-left:auto; color:var(--muted); font-size:10px;
+  text-transform:uppercase; letter-spacing:.06em; flex:none; padding-top:4px; }
 .allclear { display:flex; gap:12px; align-items:center; padding:14px;
   background:var(--pos-soft); border-radius:10px; margin-top:8px; }
 .allclear b { font-size:14px; font-weight:600; }
 .allclear .s { color:var(--ink-2); font-size:12.5px; }
 .morelink { color:var(--muted); font-size:12.5px; margin-top:10px; }
+.moves { list-style:none; padding:0; margin:2px 0 0; }
+.moves li { display:flex; gap:11px; padding:11px 0; align-items:baseline;
+  border-top:1px solid var(--grid); }
+.moves li:first-child { border-top:none; padding-top:5px; }
+.mvdate { flex:none; font-size:12px; font-weight:600; color:var(--ink-2);
+  min-width:52px; }
+.mvdate.near { color:var(--warn); }
+.mvamt { flex:none; font-size:13.5px; font-weight:600; }
+.mvtext { color:var(--ink-2); font-size:12.5px; min-width:0; }
 
 /* progress bars — track is a lighter step of the fill's own ramp */
 .barwrap { position:relative; margin-top:14px; }
-.track { height:8px; border-radius:4px; background:var(--accent-soft); overflow:hidden; }
-.fill { display:block; height:100%; border-radius:4px; background:var(--accent); }
+.track { height:10px; border-radius:999px; background:var(--bar-track); overflow:hidden; }
+.fill { display:block; height:100%; border-radius:999px; background:var(--bar-fill); }
 .fill.over { background:var(--neg); }
-.shadowtick { position:absolute; top:-3px; width:2px; height:14px;
+.fill.gold { background:var(--gold-fill); }
+.track.gold { background:var(--gold-track); }
+.shadowtick { position:absolute; top:-3px; width:2px; height:16px;
   background:var(--muted); border-radius:1px; }
 .barnotes { display:flex; justify-content:space-between; gap:10px; margin-top:7px;
   color:var(--muted); font-size:12px; }
@@ -727,17 +917,55 @@ section { margin-top:16px; }
 .shadownote b { color:var(--ink-2); font-weight:600; font-variant-numeric:tabular-nums; }
 .goalfoot { color:var(--muted); font-size:12px; margin-top:12px;
   padding-top:10px; border-top:1px solid var(--grid); }
+.card.walk .goalfoot, .card.walk .wi-cut { border-top-color:var(--walk-border); }
 .nudge { background:var(--warn-soft); border-radius:10px; padding:10px 14px;
   color:var(--ink-2); font-size:13px; margin-top:12px; }
 
+/* what-if dials (inside the walk card) */
+.wi-cut { margin-top:16px; padding-top:14px; border-top:1px solid var(--grid); }
+.dials { display:grid; gap:8px 26px; grid-template-columns:repeat(3,1fr); margin-top:10px; }
+.dial { display:grid; grid-template-columns:1fr auto; gap:0 10px; align-items:center; }
+.dial label { color:var(--ink-2); font-size:12.5px; }
+.dial .dval { font-size:13px; font-weight:600; text-align:right; }
+.dial input[type=range] { grid-column:1 / -1; width:100%; height:22px; margin:0;
+  accent-color:var(--accent); }
+.wi-readout { display:flex; gap:26px; flex-wrap:wrap; align-items:flex-end;
+  margin-top:14px; }
+.wr .wv { font-size:19px; font-weight:600; letter-spacing:-.01em; }
+.wr .wl { color:var(--muted); font-size:11.5px; margin-top:1px; }
+#wi-reset { margin:0 0 3px auto; }
+.wi-formula { color:var(--muted); font-size:12px; margin-top:10px; }
+
 /* stats (cheshbon) */
-.statrow { display:flex; gap:34px; flex-wrap:wrap; margin-top:12px; }
-.stat .v { font-size:23px; font-weight:600; letter-spacing:-.01em; }
-.stat .l { color:var(--muted); font-size:12px; margin-top:2px; }
-.closedrow { margin-top:14px; padding-top:12px; border-top:1px solid var(--grid);
-  color:var(--ink-2); font-size:13px; }
-.closedrow b { font-variant-numeric:tabular-nums; font-weight:600; color:var(--ink); }
-.closedrow b.pos { color:var(--pos); } .closedrow b.neg { color:var(--neg); }
+.statrow { display:flex; gap:28px; flex-wrap:wrap; margin-top:10px;
+  align-items:flex-end; }
+.stat .v { font-size:22px; font-weight:600; letter-spacing:-.01em; }
+.stat .l { color:var(--muted); font-size:12px; margin-bottom:2px; }
+.stat.closed { margin-left:auto; text-align:right; }
+/* the category ribbon: 2px surface gaps between segments do the separating */
+.ribbon { display:flex; gap:2px; height:12px; border-radius:999px; overflow:hidden;
+  margin-top:8px; }
+.ribbon .seg { min-width:8px; }
+.seg.rib-1 { background:var(--rib-1); } .seg.rib-2 { background:var(--rib-2); }
+.seg.rib-3 { background:var(--rib-3); } .seg.rib-4 { background:var(--rib-4); }
+.riblegend { display:flex; flex-wrap:wrap; gap:6px 16px; margin-top:16px; }
+.riblegend .li { display:inline-flex; align-items:baseline; gap:6px;
+  font-size:12px; color:var(--ink-2); }
+.riblegend .sw { width:9px; height:9px; border-radius:3px; flex:none;
+  align-self:center; }
+.sw.rib-1 { background:var(--rib-1); } .sw.rib-2 { background:var(--rib-2); }
+.sw.rib-3 { background:var(--rib-3); } .sw.rib-4 { background:var(--rib-4); }
+.riblegend b { font-weight:600; font-variant-numeric:tabular-nums; }
+
+/* wins */
+.winhero { font-size:26px; font-weight:600; letter-spacing:-.015em; margin-top:2px; }
+.winhero .of { color:var(--muted); font-weight:600; font-size:13px; }
+.wins-list { margin:10px 0 0; padding:0; list-style:none; }
+.wins-list li { display:flex; justify-content:space-between; gap:12px;
+  padding:7px 0; border-top:1px solid var(--grid); font-size:12.5px;
+  color:var(--ink-2); }
+.wins-list b { font-weight:600; font-variant-numeric:tabular-nums;
+  color:var(--ink); white-space:nowrap; }
 
 /* envelope + per-kid rows */
 .envrow { display:grid; grid-template-columns:minmax(96px,max-content) 1fr auto; gap:14px;
@@ -747,7 +975,7 @@ section { margin-top:16px; }
   text-overflow:ellipsis; white-space:nowrap; }
 .envrow .amt { font-size:12.5px; color:var(--ink-2); font-variant-numeric:tabular-nums;
   white-space:nowrap; }
-.envrow .track { margin:0; }
+.envrow .track { margin:0; height:8px; }
 
 /* table twins + empty states */
 .tv { margin-top:12px; }
@@ -757,18 +985,39 @@ section { margin-top:16px; }
 .tv th { text-align:left; color:var(--ink-2); font-weight:600;
   border-bottom:1px solid var(--axis); padding:4px 10px 4px 0; }
 .tv td { border-bottom:1px solid var(--grid); padding:4px 10px 4px 0; }
-.empty { color:var(--muted); font-size:13.5px; padding:14px 0; }
+.empty { color:var(--muted); font-size:13.5px; padding:12px 0; }
 .empty b { color:var(--ink-2); font-weight:600; }
 
-footer { margin-top:26px; padding-top:14px; border-top:1px solid var(--border);
-  color:var(--muted); font-size:12.5px; }
+footer { margin-top:28px; padding-top:16px; border-top:1px solid var(--border);
+  color:var(--muted); font-size:12.5px; text-align:center; }
 footer p + p { margin-top:4px; }
+footer .tagline { color:var(--ink-2); }
 
+@media (max-width:960px) {
+  .g-pace, .g-needs, .g-walk, .g-chesh { grid-template-columns:1fr; }
+  .kpis { grid-template-columns:1fr 1fr; row-gap:14px; }
+  .kpi:nth-child(3) { border-left:none; }
+  .hero-top { flex-direction:column; }
+  .hero-side { align-self:flex-start; flex-direction:row-reverse; }
+  .stamp { text-align:left; }
+}
+@media (max-width:560px) {
+  .wrap { padding:0 16px; }
+  .hero { padding-top:22px; }
+  .kpis { grid-template-columns:1fr 1fr; padding:12px 0; }
+  .kpi { padding:2px 16px; }
+  .kv { font-size:24px; }
+  .phero { font-size:33px; }
+  .statrow { gap:18px; }
+  .stat.closed { margin-left:0; text-align:left; }
+  .dials { grid-template-columns:1fr; }
+  .wi-readout { gap:18px; }
+}
 @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
 @media print {
   body { background:#fff; }
   .themebtn, .tv { display:none; }
-  .card { border-color:#ddd; }
+  .card, .kpis { border-color:#ddd; box-shadow:none; }
   .wrap { max-width:none; padding:0; }
   * { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
 }
@@ -836,12 +1085,15 @@ JS_TEMPLATE = """
       textStyle: { fontFamily: FONT }
     };
   }
-  function catAxis(labels, interval) {
+  function catAxis(labels, interval, width) {
+    // layout only, never value math: on narrow screens, halve label density
+    // so day labels don't collide
+    var iv = (width && width < 520) ? interval * 2 + 1 : interval;
     return {
       type: 'category', data: labels, boundaryGap: false,
       axisLine: { lineStyle: { color: cssv('--axis') } },
       axisTick: { show: false },
-      axisLabel: { color: cssv('--muted'), fontSize: 11, interval: interval,
+      axisLabel: { color: cssv('--muted'), fontSize: 11, interval: iv,
                    fontFamily: FONT }
     };
   }
@@ -897,9 +1149,11 @@ JS_TEMPLATE = """
     if (el && P) {
       var c = echarts.init(el, null, { renderer: 'svg' });
       var opt = baseOption();
-      opt.grid = { left: 62, right: 16, top: 38, bottom: 28 };
+      // narrow screens wrap the legend onto two lines — give it headroom
+      opt.grid = { left: 62, right: 16, top: el.clientWidth < 520 ? 60 : 38,
+                   bottom: 28 };
       opt.legend = legendBox();
-      opt.xAxis = catAxis(P.days, P.xint);
+      opt.xAxis = catAxis(P.days, P.xint, el.clientWidth);
       opt.yAxis = valAxis(P.y);
       opt.tooltip.formatter = function (ps) {
         return tipHtml(P.tips[ps[0].dataIndex]);
@@ -947,7 +1201,7 @@ JS_TEMPLATE = """
                                   areaStyle: { color: cssv('--accent-soft') } },
         textStyle: { color: cssv('--muted'), fontSize: 10, fontFamily: FONT }
       });
-      o2.xAxis = catAxis(N.labels, N.xint);
+      o2.xAxis = catAxis(N.labels, N.xint, el.clientWidth);
       o2.yAxis = valAxis(N.y);
       o2.tooltip.formatter = function (ps) {
         return tipHtml(N.tips[ps[0].dataIndex]);
@@ -1016,7 +1270,7 @@ JS_TEMPLATE = """
     wiEls.pct.textContent = WI.pct[ri][si];
     var y = WI.years[ri][si][gi];   // Python-computed; null = beyond horizon
     wiEls.years.textContent = y === null ? 'not within ' + WI.maxYears + ' yrs'
-      : (y === 0 ? 'already there' : '\u2248' + y + ' yrs');
+      : (y === 0 ? 'already there' : '≈' + y + ' yrs');
     var ml = {
       symbol: 'none', silent: true,
       label: { fontFamily: FONT, fontSize: 11 },
@@ -1030,7 +1284,7 @@ JS_TEMPLATE = """
     if (y !== null && y > 0) ml.data.push({
       xAxis: y,
       lineStyle: { color: cssv('--accent'), type: 'dotted', width: 1.5 },
-      label: { formatter: '\u2248' + y + ' yrs',
+      label: { formatter: '≈' + y + ' yrs',
                position: 'insideStartTop', color: cssv('--accent') }
     });
     var opt = baseOption();
@@ -1078,8 +1332,8 @@ JS_TEMPLATE = """
 PAGE_TEMPLATE = """\
 {% macro cardhead(title, sub, window='') %}
   <div class="cardhead">
-    <div><h2>{{ title }}</h2>
-    <p class="sub">{{ sub }}</p></div>
+    <div><h2 class="ck">{{ title }}</h2>
+    {% if sub %}<p class="sub">{{ sub }}</p>{% endif %}</div>
     {% if window %}<span class="window num">{{ window }}</span>{% endif %}
   </div>
 {% endmacro %}
@@ -1090,9 +1344,9 @@ PAGE_TEMPLATE = """\
   <tbody>{% for r in rows %}<tr>{% for c in r %}<td>{{ c }}</td>{% endfor %}</tr>
   {% endfor %}</tbody></table></details>
 {% endmacro %}
-{% macro meterrow(name, width, amt, over=false) %}
+{% macro meterrow(name, width, amt, over=false, gold=false) %}
   <div class="envrow"><span class="name">{{ name }}</span>
-  <div class="track"><span class="fill{{ ' over' if over }}" style="width:{{ width }}%"></span></div>
+  <div class="track{{ ' gold' if gold }}"><span class="fill{{ ' over' if over }}{{ ' gold' if gold }}" style="width:{{ width }}%"></span></div>
   <span class="amt">{{ amt }}</span></div>
 {% endmacro %}
 <!DOCTYPE html>
@@ -1111,25 +1365,37 @@ try { var t = localStorage.getItem('sara-home-theme');
   if (t === 'light' || t === 'dark')
     document.documentElement.setAttribute('data-theme', t); } catch (e) {}
 </script>
-<div class="wrap">
-<header class="mast">
-  <div>
-    <h1 class="greet">{{ greet }}</h1>
-    <p class="saraline">{{ sara }}</p>
+<div class="hero">
+  <div class="wrap hero-in">
+    <div class="hero-top">
+      <h1 class="hi">{{ greet }}</h1>
+      <div class="hero-side">
+        <p class="stamp">{{ stamp }}<br>{{ ledger_stamp }}{{ checks_stamp }}</p>
+        <button id="themebtn" class="themebtn" type="button">◑ auto</button>
+      </div>
+    </div>
+    <p class="say">{{ sara }}</p>
   </div>
-  <div class="stampcol">
-    <button id="themebtn" class="themebtn" type="button">◑ auto</button>
-    <p class="stamp">{{ stamp }}<br>{{ ledger_stamp }}{{ checks_stamp }}</p>
+</div>
+<main class="wrap">
+<div class="kpis" role="group" aria-label="Today's headline numbers">
+  {% for t in kpis %}
+  <div class="kpi">
+    <div class="kk">{{ t.k }}</div>
+    <div class="kv num{{ ' ' + t.cls if t.cls }}">{{ t.v }}</div>
+    <div class="ks">{{ t.sub }}</div>
   </div>
-</header>
+  {% endfor %}
+</div>
 
+<div class="grid g-pace">
 <section class="card">
-  {{ cardhead('This month', p.sub, p.window) }}
+  {{ cardhead('This month — is it unusual?', p.sub, p.window) }}
   {% if p.empty %}
   <div class="empty"><b>Nothing to pace yet.</b> Import a few months of
   statements and regenerate — the morning line starts there.</div>
   {% else %}
-  <p class="heronum{{ ' neg' if p.hero_neg }}">{{ p.hero }}</p>
+  <p class="phero{{ ' ' + p.hero_cls if p.hero_cls }}">{{ p.hero }}</p>
   <p class="herolab">{{ p.herolab }}</p>
   <div class="chiprow">
     {% for c in p.chips %}<span class="chip{{ ' ' + c.cls if c.cls }}">{{ c.body }}</span>{% endfor %}
@@ -1140,7 +1406,27 @@ try { var t = localStorage.getItem('sara-home-theme');
   {% if p.table_rows %}{{ tablewin(p.table_caption, ['Day', 'Spent so far', 'Typical path'], p.table_rows) }}{% endif %}
   {% endif %}
 </section>
+<section class="card">
+  {{ cardhead('The machine', mach.sub, mach.window) }}
+  {% if mach.rows %}
+  <ul class="lanes">
+    {% for r in mach.rows %}
+    <li><span class="lanedot {{ r.dot }}" aria-hidden="true"></span>
+    <div><div class="lname">{{ r.name }}</div>
+    <div class="ldet{{ ' bad' if r.dot == 'bad' }}">{{ r.detail }}</div></div>
+    <span class="lanetag">{{ r.tag }}</span></li>
+    {% endfor %}
+  </ul>
+  {% if mach.summary %}<p class="lanesum">{{ mach.summary }}</p>{% endif %}
+  {% else %}
+  <div class="empty"><b>No lanes declared yet.</b> Teach Sara the household's
+  standing orders — paychecks, auto-invests, balance floors — with
+  <code>[[lanes]]</code> in rules.toml, and their health lives here.</div>
+  {% endif %}
+</section>
+</div>
 
+<div class="grid {{ 'g-needs' if moves else 'g-solo' }}">
 <section class="card">
   {{ cardhead('Needs you', 'From the checks and dated facts — verbs first, drama never.') }}
   {% if needs.state == 'none' %}
@@ -1164,15 +1450,28 @@ try { var t = localStorage.getItem('sara-home-theme');
   {% endif %}
   {% endif %}
 </section>
-
-<section class="duo">
+{% if moves %}
 <section class="card">
+  {{ cardhead('Money that must move', 'Dated obligations with real dollars — from facts/, never invented.', 'next ' ~ mustmove_days ~ ' days') }}
+  <ul class="moves">
+    {% for mv in moves %}
+    <li><span class="mvdate num{{ ' near' if mv.near }}">{{ mv.day_lbl }}</span>
+    <span class="mvamt num">{{ mv.amt }}</span>
+    <span class="mvtext">{{ mv.text }} · {{ mv.when }}</span></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+</div>
+
+<div class="grid g-walk">
+<section class="card walk">
   {{ cardhead('The walk-away number', 'The pot where work becomes optional. Liquid dollars only, per the thesis.') }}
   {% if not wa %}
   <div class="empty"><b>No baseline yet.</b> After {{ min_months }} full months
   of spending history the walk-away math turns on by itself.</div>
   {% else %}
-  <p class="heromini">{{ wa.hero }}</p>
+  <p class="whero">{{ wa.hero }} <span class="of">· {{ wa.pct }} of the way</span></p>
   <p class="herolab">{{ wa.srcline }}</p>
   <div class="barwrap">
     <div class="track"><span class="fill" style="width:{{ wa.fill }}%"></span></div>
@@ -1180,34 +1479,13 @@ try { var t = localStorage.getItem('sara-home-theme');
   </div>
   <div class="barnotes num">
     <span>liquid today: <b>{{ wa.liquid }}</b> · {{ wa.asof }}</span>
-    <span>{{ wa.pct }} of the way</span>
+    {% if wa.shadow_left is not none %}<span>tick = if the paper converts</span>{% endif %}
   </div>
   {% if wa.shadow_note %}<p class="shadownote">{{ wa.shadow_note }}</p>{% endif %}
   {% if wa.foot %}<p class="goalfoot">{{ wa.foot }}</p>{% endif %}
-  {% endif %}
-</section>
-<section class="card">
-  {{ cardhead(edu.title, edu.sub) }}
-  {% if edu.empty %}
-  <div class="empty">{{ edu.empty }}</div>
-  {% else %}
-  <p class="heromini">{{ edu.value }} <span class="of">{{ edu.of }}</span></p>
-  {% if edu.fill is not none %}
-  <div class="barwrap"><div class="track"><span class="fill" style="width:{{ edu.fill }}%"></span></div></div>
-  <div class="barnotes num"><span>{{ edu.val_lbl }}</span><span>{{ edu.pct }} of the target</span></div>
-  {% else %}
-  <div class="barnotes num" style="margin-top:8px"><span>{{ edu.val_lbl }}</span></div>
-  {% endif %}
-  {% for k in edu.perkid %}{{ meterrow(k.name, k.width, k.amt) }}{% endfor %}
-  {% if edu.nudge %}<div class="nudge">{{ edu.nudge }}</div>{% endif %}
-  {% if edu.foot %}<p class="goalfoot">{{ edu.foot }}</p>{% endif %}
-  {% endif %}
-</section>
-</section>
-
-{% if wi %}
-<section class="card">
-  {{ cardhead('Play with it — the walk-away dials', wi.sub, 'what-if · not advice') }}
+  {% if wi %}
+  <div class="wi-cut">
+  <h3 class="ck">Play with it · what-if, not advice</h3>
   <div class="dials">
     <div class="dial"><label for="wi-rate">withdrawal rate</label>
       <span class="dval num" id="wi-rate-v"></span>
@@ -1229,12 +1507,46 @@ try { var t = localStorage.getItem('sara-home-theme');
   <div id="wi-chart" class="chart" role="img"
        aria-label="Hypothetical projection of liquid net worth toward the dialed target"></div>
   <p class="wi-formula">{{ wi.formula }}</p>
+  </div>
+  {% endif %}
+  {% endif %}
+</section>
+<div class="sidecol">
+<section class="card">
+  {{ cardhead(edu.title, edu.sub) }}
+  {% if edu.empty %}
+  <div class="empty">{{ edu.empty }}</div>
+  {% else %}
+  <p class="heromini num">{{ edu.value }} <span class="of">{{ edu.of }}</span></p>
+  {% if edu.fill is not none %}
+  <div class="barwrap"><div class="track gold"><span class="fill gold" style="width:{{ edu.fill }}%"></span></div></div>
+  <div class="barnotes num"><span>{{ edu.val_lbl }}</span><span>{{ edu.pct }} of the target</span></div>
+  {% else %}
+  <div class="barnotes num" style="margin-top:8px"><span>{{ edu.val_lbl }}</span></div>
+  {% endif %}
+  {% for k in edu.perkid %}{{ meterrow(k.name, k.width, k.amt, gold=true) }}{% endfor %}
+  {% if edu.nudge %}<div class="nudge">{{ edu.nudge }}</div>{% endif %}
+  {% if edu.foot %}<p class="goalfoot">{{ edu.foot }}</p>{% endif %}
+  {% endif %}
+</section>
+{% if wins %}
+<section class="card">
+  {{ cardhead("Sara's wins", 'Realized only — every dollar here is money already found or saved.', wins.year) }}
+  <p class="winhero num">{{ wins.total }} <span class="of">found this year</span></p>
+  <details class="tv"><summary>{{ wins.count_lbl }}</summary>
+  <ul class="wins-list">
+    {% for it in wins.rows %}
+    <li><span>{{ it.label }}</span><b>{{ it.amt }}</b></li>
+    {% endfor %}
+  </ul></details>
 </section>
 {% endif %}
+</div>
+</div>
 
-<section class="card">
+<section class="card" style="margin-top:18px">
   {{ cardhead('Net worth — the long line', nw.sub, nw.window) }}
-  <p class="heromini">{{ nw.liquid }}</p>
+  <p class="heromini num">{{ nw.liquid }}</p>
   <p class="herolab">liquid net worth — {{ nw.asof }}</p>
   {% if nw.delta %}<div class="chiprow"><span class="chip{{ ' ' + nw.delta.cls if nw.delta.cls }}">{{ nw.delta.body }}</span></div>{% endif %}
   {% if nw.has_chart %}
@@ -1247,23 +1559,44 @@ try { var t = localStorage.getItem('sara-home-theme');
   {% endif %}
 </section>
 
+<div class="grid {{ 'g-chesh' if env_rows else 'g-solo' }}">
+<section class="card">
+  {{ cardhead(ch.title, 'Money in vs money out — the monthly review closes the book.', ch.window) }}
+  <div class="statrow num">
+    <div class="stat"><div class="l">in</div><div class="v">{{ ch.inc }}</div></div>
+    <div class="stat"><div class="l">out</div><div class="v">{{ ch.exp }}</div></div>
+    <div class="stat"><div class="l">net</div><div class="v {{ ch.net_cls }}">{{ ch.net }}</div></div>
+    {% if ch.closed %}
+    <div class="stat closed"><div class="l">{{ ch.closed.month }}, closed</div>
+    <div class="v {{ ch.closed.cls }}">{{ ch.closed.net }}</div></div>
+    {% endif %}
+  </div>
+  {% if ch.ribbon %}
+  <div class="ribbon" role="img" aria-label="{{ ch.ribbon_aria }}">
+    {% for s in ch.ribbon %}<div class="seg rib-{{ loop.index }}" style="width:{{ s.width }}%"></div>{% endfor %}
+  </div>
+  <div class="riblegend">
+    {% for s in ch.ribbon %}
+    <span class="li"><span class="sw rib-{{ loop.index }}" aria-hidden="true"></span>{{ s.name }} <b>{{ s.amt }}</b></span>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if ch.closed %}<p class="goalfoot">{{ ch.closed.month }}, closed: in {{ ch.closed.inc }} · out {{ ch.closed.exp }} · net {{ ch.closed.net }}.</p>{% endif %}
+  {% if ch.table_rows %}{{ tablewin(ch.table_caption, ['Category', 'Spent'], ch.table_rows) }}{% endif %}
+</section>
 {% if env_rows %}
-<section class="duo">
-{{ cheshbon_card }}
-<div class="card">
+<section class="card">
   {{ cardhead('Projects', projects_sub) }}
   {% for e in env_rows %}{{ meterrow('#' + e.tag, e.width, e.amt, e.over) }}{% endfor %}
-</div>
-</section>
-{% else %}
-<section>
-{{ cheshbon_card }}
 </section>
 {% endif %}
+</div>
 
 <footer>
+  <p class="tagline">Decision support, not licensed advice · every figure
+  names its window and is verified against the ledger · Sara keeps the books</p>
   {% if paper %}
-  <p>Illiquid paper (not counted anywhere above): <b>{{ paper }}</b> — it
+  <p>Illiquid paper (not counted anywhere above): <b class="num">{{ paper }}</b> — it
   enters the plan only when it converts, per THESIS.md.</p>
   {% endif %}
   {% if unpriced %}
@@ -1271,13 +1604,12 @@ try { var t = localStorage.getItem('sara-home-theme');
   no USD price on file:
   {% for a in unpriced %}<code>{{ a }}</code>{{ ', ' if not loop.last }}{% endfor %}{{ '…' if unpriced_more }}</p>
   {% endif %}
-  <p>Every figure names its window; ≈ marks estimates and projections. Decision
-  support, not tax, investment, or legal advice.</p>
-  <p>Generated by tools/home.py — regenerate with <code>tools/run home.py</code>.
-  The dense brief: <a href="dashboard.html">dashboard.html</a> · the microscope:
+  <p>≈ marks estimates and projections. Generated by tools/home.py —
+  regenerate with <code>tools/run home.py</code>. The dense brief:
+  <a href="dashboard.html">dashboard.html</a> · the microscope:
   <code>scripts/dashboard.sh</code> (fava).</p>
 </footer>
-</div>
+</main>
 <script id="sara-data" type="application/json">{{ island }}</script>
 <script>{{ echarts }}</script>
 <script>{{ js }}</script>
@@ -1285,28 +1617,11 @@ try { var t = localStorage.getItem('sara-home-theme');
 </html>
 """
 
-CHESHBON_TEMPLATE = """\
-<div class="card">
-  <div class="cardhead">
-    <div><h2>The month’s cheshbon</h2>
-    <p class="sub">Money in vs money out — the monthly review closes the book.</p></div>
-    <span class="window num">{{ window }}</span>
-  </div>
-  <div class="statrow num">
-    <div class="stat"><div class="v">{{ inc }}</div><div class="l">in so far</div></div>
-    <div class="stat"><div class="v">{{ exp }}</div><div class="l">out so far</div></div>
-    <div class="stat"><div class="v {{ net_cls }}">{{ net }}</div><div class="l">net so far</div></div>
-  </div>
-  {% if closed %}
-  <p class="closedrow">{{ closed.month }}, closed: in <b>{{ closed.inc }}</b> ·
-  out <b>{{ closed.exp }}</b> · net <b class="{{ closed.cls }}">{{ closed.net }}</b></p>
-  {% endif %}
-</div>
-"""
-
 
 # ------------------------------------------------------- context builders
 def _pace_ctx(pace: Pace) -> dict:
+    """The spend-pace card, framed as "is this month unusual?" — the hero is
+    the delta vs the typical PATH, never a budget allowance."""
     cur_lbl = month_label(*pace.cur)
     month_name = MONTH_ABBR[pace.cur[1]]
     month_full = MONTH_FULL[pace.cur[1]]
@@ -1318,57 +1633,151 @@ def _pace_ctx(pace: Pace) -> dict:
         return {"empty": True, "window": cur_lbl,
                 "sub": "Spending vs a typical month."}
 
+    chips = []
     if pace.typical is not None and pace.left is not None:
         sub = (f"typical = the median path of your last "
                f"{len(pace.typical_window)} full months "
                f"({window_label(pace.typical_window)}).")
         if pace.fallback:
-            direction = "under" if pace.left >= 0 else "over"
-            hero, hero_neg = m0(abs(pace.left)), pace.left < 0
-            herolab = (f"{direction} a typical month — {month_full} came in at "
+            d = round(pace.spent - pace.typical)
+            hero = delta0(pace.spent - pace.typical) if d else "on pace"
+            hero_cls = "good" if d < 0 else ("bad" if d > 0 else "")
+            herolab = (f"vs a typical month — {month_full} closed at "
                        f"{m0(pace.spent)} against a typical {m0(pace.typical)}")
-        elif pace.left >= 0:
-            hero, hero_neg = m0(pace.left), False
-            herolab = (f"left before this becomes an unusual {month_full} — "
-                       f"a typical month runs {m0(pace.typical)}")
+        elif pace.pace_delta is not None:
+            d = round(pace.pace_delta)
+            hero = delta0(pace.pace_delta) if d else "on pace"
+            hero_cls = "good" if d < 0 else ("bad" if d > 0 else "")
+            herolab = (f"{'under' if d <= 0 else 'over'} the typical path "
+                       f"through {month_name} {pace.through_day} — a typical "
+                       f"{month_full} runs {m0(pace.typical)}")
+        else:  # a month with a baseline but no postings yet
+            hero, hero_cls = m0(pace.left), ""
+            herolab = (f"left of a typical {month_full} ({m0(pace.typical)}) — "
+                       f"nothing spent on record yet")
+        if pace.left >= 0:
+            chips.append(chip(Markup("<b>{}</b> left before this becomes an "
+                                     "unusual {}").format(m0(pace.left), month_full)))
         else:
-            hero, hero_neg = m0(-pace.left), True
-            herolab = (f"over a typical month's total of {m0(pace.typical)} — "
-                       f"worth a look, not a lecture")
+            chips.append(chip(Markup("<b>{}</b> past a typical {}'s total")
+                              .format(m0(-pace.left), month_full), "bad"))
+        if pace.through_day and pace.typical_by_now is not None:
+            chips.append(chip(Markup("spent <b>{}</b> · typical by now ≈<b>{}</b>")
+                              .format(m0(pace.spent), m0(pace.typical_by_now))))
     else:
         sub = "no typical-month baseline yet."
-        hero, hero_neg = m0(pace.spent), False
+        hero, hero_cls = m0(pace.spent), ""
         herolab = (f"spent so far — {MIN_FULL_MONTHS}+ full months unlock the "
                    f"typical-month line")
-
-    chips = []
-    if pace.pace_delta is not None and pace.through_day:
-        day_lbl = f"{month_name} {pace.through_day}"
-        d = round(pace.pace_delta)
-        cls = "good" if d < 0 else ("bad" if d > 0 else "")
-        body = (Markup("<b>on pace</b> through {}").format(day_lbl) if d == 0 else
-                Markup("<b>{}</b> vs typical through {}")
-                .format(delta0(pace.pace_delta), day_lbl))
-        chips.append(chip(body, cls))
-        chips.append(chip(Markup("spent <b>{}</b> · typical by now ≈<b>{}</b>")
-                          .format(m0(pace.spent), m0(pace.typical_by_now or 0))))
-    elif pace.through_day:
-        chips.append(chip(Markup("spent <b>{}</b> so far").format(m0(pace.spent))))
+        if pace.through_day:
+            chips.append(chip(Markup("spent <b>{}</b> so far").format(m0(pace.spent))))
 
     return {
         "empty": False, "window": window, "sub": sub,
-        "hero": hero, "hero_neg": hero_neg, "herolab": herolab, "chips": chips,
+        "hero": hero, "hero_cls": hero_cls, "herolab": herolab, "chips": chips,
         "lag_note": ("" if pace.daily_cum else
                      f"No {month_name} activity imported yet — the solid line "
                      f"starts with the next import."),
-        "legend": bool(pace.daily_cum or pace.ideal),
-        "show_actual": bool(pace.daily_cum), "show_typical": bool(pace.ideal),
         "table_caption": (f"Cumulative spend, {cur_lbl} ({through_lbl}), vs the "
                           f"median path of the window months."),
         "table_rows": [(f"{month_name} {i}", m0(v),
                         "≈" + m0(pace.ideal[i - 1]) if pace.ideal else "—")
                        for i, v in enumerate(pace.daily_cum, 1)],
     }
+
+
+def _kpi_ctx(liquid: float, asof: date | None, pace: Pace,
+             net_mtd: float, wa: Walkaway | None) -> list[dict]:
+    """The hero strip: the four numbers the household always sees first,
+    each with its tiny window label. '—' + a reason, never a fake zero."""
+    ledger_lbl = f"ledger through {mon_d(asof)}" if asof else "ledger empty"
+    month_name = MONTH_ABBR[pace.cur[1]]
+    tiles = [{"k": "Liquid net worth", "v": m0(liquid), "sub": ledger_lbl,
+              "cls": ""}]
+    if pace.left is not None:
+        left_sub = (f"{month_name} vs typical · latest imported"
+                    if pace.fallback else
+                    f"a typical {month_name} runs {m0(pace.typical or 0)}")
+        tiles.append({"k": "Left this month", "v": m0(pace.left),
+                      "sub": left_sub, "cls": "neg" if pace.left < 0 else ""})
+    else:
+        tiles.append({"k": "Left this month", "v": "—",
+                      "sub": f"needs {MIN_FULL_MONTHS} full months", "cls": ""})
+    net_sub = (f"{month_name} 1–{pace.through_day} · in − out"
+               if pace.through_day else f"{month_name} · nothing imported yet")
+    tiles.append({"k": "Net this month", "v": delta0(net_mtd), "sub": net_sub,
+                  "cls": "pos" if round(net_mtd) > 0
+                  else ("neg" if round(net_mtd) < 0 else "")})
+    if wa:
+        approx = "" if wa.src == "set" else "≈"
+        tiles.append({"k": "Walk-away", "v": pct_display(wa.pct),
+                      "sub": f"of {approx}{m0(wa.target)} · liquid only",
+                      "cls": ""})
+    else:
+        tiles.append({"k": "Walk-away", "v": "—",
+                      "sub": "needs a spend baseline", "cls": ""})
+    return tiles
+
+
+def ordinal(n: int) -> str:
+    if 10 <= n % 100 <= 20:
+        return f"{n}th"
+    return f"{n}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th') }"
+
+
+LANE_TAG = {"deposit": "deposit", "invest": "auto-invest", "floor": "floor"}
+LANE_DOT = {"ok": "ok", "intact": "ok", "pending": "watch",
+            "overdue": "bad", "below": "bad", "invalid": "mut"}
+
+
+def _machine_ctx(rows: list[dict]) -> dict:
+    """The machine panel, rendered from checks.lane_status() — the same
+    detector the findings use, so panel and findings can never disagree."""
+    out = []
+    running = watching = broken = 0
+    for r in rows:
+        status = r["status"]
+        cad = r["cadence"] + (f" on the {ordinal(int(r['day']))}"
+                              if r.get("day") and r["cadence"] == "monthly"
+                              else "")
+        if status == "ok":
+            running += 1
+            verb = "landed" if r["kind"] == "deposit" else "ran"
+            detail = f"{verb} {mon_d(r['last'])} · {m0(r['last_amount'])} · {cad}"
+        elif status == "intact":
+            running += 1
+            detail = f"{m0(r['balance'])} today · floor {m0(r['floor'])}"
+        elif status == "pending":
+            watching += 1
+            detail = (f"watching for the first arrival · expected "
+                      f"~{mon_d(r['expected'])}" if r["expected"] else
+                      "watching for the first arrival")
+        elif status == "overdue":
+            broken += 1
+            since = (f"nothing since {mon_d(r['last'])}" if r["last"]
+                     else "never seen in the ledger")
+            exp = f" · expected ~{mon_d(r['expected'])}" if r["expected"] else ""
+            detail = f"{since}{exp}"
+        elif status == "below":
+            broken += 1
+            detail = f"{m0(r['balance'])} today — under the {m0(r['floor'])} floor"
+        else:
+            broken += 1
+            detail = r["note"] or "misdeclared lane"
+        out.append({"name": r["name"], "detail": detail,
+                    "dot": LANE_DOT.get(status, "mut"),
+                    "tag": LANE_TAG.get(r["kind"], r["kind"])})
+    n = len(rows)
+    bits = [f"{running} of {n} running"]
+    if watching:
+        bits.append(f"{watching} watching for a first arrival")
+    if broken:
+        bits.append(f"{broken} need{'s' if broken == 1 else ''} a look")
+    return {"rows": out,
+            "sub": ("Standing orders — paychecks, auto-invests, floors — "
+                    "checked against the ledger."),
+            "window": "last 2 cycles",
+            "summary": " · ".join(bits) if n else ""}
 
 
 def _walkaway_ctx(wa: Walkaway | None, liquid: float,
@@ -1404,15 +1813,12 @@ def _walkaway_ctx(wa: Walkaway | None, liquid: float,
                 "◦ If the paper converts: <b>{}</b> ({}% of the way). "
                 "Not counted until it's real.").format(combined,
                                                       f"{wa.paper_pct:.0f}")
-    # never claim 100% early: 99.5–99.99 displays as 99%, not a rounded 100%
-    pct_lbl = f"{wa.pct:.0f}%" if wa.pct < 99.5 or wa.pct >= 100 else "99%"
     return {
         "hero": hero, "srcline": srcline, "fill": f"{max(0.0, min(100.0, wa.pct)):.1f}",
         "liquid": m0(liquid),
-        "asof": (f"ledger through {asof.strftime('%b %-d')}" if asof
-                 else "ledger empty"),
-        "pct": pct_lbl, "shadow_left": shadow_left, "shadow_note": shadow_note,
-        "foot": " ".join(foot_bits),
+        "asof": (f"ledger through {mon_d(asof)}" if asof else "ledger empty"),
+        "pct": pct_display(wa.pct), "shadow_left": shadow_left,
+        "shadow_note": shadow_note, "foot": " ".join(foot_bits),
     }
 
 
@@ -1444,7 +1850,7 @@ def _education_ctx(accounts: list[EduAccount], pace: float | None,
     if target:
         pct = 100.0 * total / target
         ctx.update(of=f"of {m0(target)}",
-                   fill=f"{max(0.0, min(100.0, pct)):.1f}", pct=f"{pct:.0f}%")
+                   fill=f"{max(0.0, min(100.0, pct)):.1f}", pct=pct_display(pct))
         if pace and total < target:
             eta = add_months(today, int((target - total) / pace + 0.999))
             ctx["foot"] = Markup(
@@ -1469,6 +1875,20 @@ def _education_ctx(accounts: list[EduAccount], pace: float | None,
              "amt": m0(a.value) + (" · at cost" if a.at_cost else "")}
             for a in accounts]
     return ctx
+
+
+def _wins_ctx(wins: dict | None, today: date) -> dict | None:
+    if not wins:
+        return None
+    n = len(wins["items"])
+    return {
+        "total": m0(wins["total"]), "year": str(today.year),
+        "count_lbl": f"{n} win{'s' if n != 1 else ''} — the receipts",
+        # "rows", not "items": in jinja, wins.items would resolve dict.items()
+        "rows": [{"label": it["label"],
+                  "amt": m0(it["amt"]) + ("/yr" if it["peryr"] else "")}
+                 for it in wins["items"]],
+    }
 
 
 def _networth_ctx(series: list[dict], baseline_cut: int, liquid: float,
@@ -1503,17 +1923,18 @@ def _networth_ctx(series: list[dict], baseline_cut: int, liquid: float,
         "sub": " ".join(notes),
         "window": f"{len(series)} month-ends" if len(series) >= 2 else "",
         "liquid": m0(liquid),
-        "asof": (f"ledger through {asof.strftime('%b %-d')}" if asof
-                 else "no ledger yet"),
-        "delta": delta, "has_chart": len(series) >= 2, "show_atcost": est_any,
+        "asof": (f"ledger through {mon_d(asof)}" if asof else "no ledger yet"),
+        "delta": delta, "has_chart": len(series) >= 2,
         "table_rows": [(mon_yr((p["d"].year, p["d"].month)), m0(p["v"]),
                         basis(i, p)) for i, p in enumerate(series)],
     }
 
 
-def _cheshbon_html(pace: Pace) -> Markup:
-    """This month's money in vs out, plus how last month closed. Follows the
-    paced month so a stale ledger shows its latest real month, not zeros."""
+def _cheshbon_ctx(pace: Pace) -> dict:
+    """This month's money in vs out, how last month closed, and the category
+    ribbon (top spenders + Other, 2px surface gaps, legend carries the
+    names and dollars). Follows the paced month so a stale ledger shows its
+    latest real month, not zeros."""
     ym = pace.cur
     inc, exp = month_in_out(ym)
     net = inc - exp
@@ -1527,11 +1948,32 @@ def _cheshbon_html(pace: Pace) -> Markup:
         closed = {"month": mon_yr(prev), "inc": m0(pinc), "exp": m0(pexp),
                   "net": delta0(pnet),
                   "cls": "pos" if round(pnet) > 0 else ("neg" if round(pnet) < 0 else "")}
-    return Markup(_ENV.from_string(CHESHBON_TEMPLATE).render(
-        window=f"{mon_yr(ym)} · {through_lbl}",
-        inc=m0(inc), exp=m0(exp), net=delta0(net),
-        net_cls="pos" if round(net) > 0 else ("neg" if round(net) < 0 else ""),
-        closed=closed))
+    cats = month_categories(ym)
+    ribbon, table_rows = [], []
+    if len(cats) >= 2:
+        total = sum(v for _, v in cats)
+        segs = cats[:RIBBON_SLOTS]
+        other = sum(v for _, v in cats[RIBBON_SLOTS:])
+        rows = [(c.replace("Expenses:", "") or "Other", v) for c, v in segs]
+        if other > 0.005:
+            rows.append(("Other", other))
+        ribbon = [{"name": name, "amt": m0(v),
+                   "width": f"{max(1.0, 100.0 * v / total):.1f}"}
+                  for name, v in rows]
+        table_rows = [(c.replace("Expenses:", "") or "Other", m0(v))
+                      for c, v in cats]
+    return {
+        "title": f"{MONTH_FULL[ym[1]]} cheshbon",
+        "window": f"{mon_yr(ym)} · {through_lbl}",
+        "net_raw": net,   # the KPI strip reuses this — one query, one truth
+        "inc": m0(inc), "exp": m0(exp), "net": delta0(net),
+        "net_cls": "pos" if round(net) > 0 else ("neg" if round(net) < 0 else ""),
+        "closed": closed, "ribbon": ribbon,
+        "ribbon_aria": ("Where the month went: "
+                        + ", ".join(f"{s['name']} {s['amt']}" for s in ribbon)),
+        "table_caption": f"Where {MONTH_ABBR[ym[1]]} went, by category ({through_lbl}).",
+        "table_rows": table_rows,
+    }
 
 
 def _envelope_rows(envelopes: list[Envelope]) -> list[dict]:
@@ -1599,7 +2041,7 @@ def _nw_chart_data(series: list[dict], asof: date | None) -> dict | None:
         atcost.append(p["v"] if near_est else None)
         t = mon_yr((d.year, d.month))
         if i == n - 1 and asof:
-            t += f" · through {MONTH_ABBR[asof.month]} {asof.day}"
+            t += f" · through {mon_d(asof)}"
         elif p["est"]:
             t += " · at cost"
         tips.append({"t": t, "rows": [[m0(p["v"]), "liquid net worth"]]})
@@ -1655,21 +2097,20 @@ def build_page(now: datetime | None = None) -> str:
             "def_ri": wig["def"]["ri"], "def_si": wig["def"]["si"],
             "def_gi": wig["def"]["gi"],
             "liquid": m0(liquid),
-            "sub": ("Three dials, live math, nothing saved — hypothetical "
-                    "scenarios only; the goal above stays the goal."),
             "formula": (f"How it works: target = a year of spending ÷ the "
                         f"withdrawal rate. The curve compounds today's liquid "
                         f"({m0(liquid)}) monthly at the chosen real growth and "
                         f"adds your median net savings, ≈{m0(save)}/mo (median "
                         f"of {len(b.months)} full months, "
-                        f"{window_label(b.months)}). Taxes, raises, and market "
-                        f"reality not included — the thesis, not this toy, "
-                        f"sets policy."),
+                        f"{window_label(b.months)}). Hypothetical only — "
+                        f"taxes, raises, and market reality not included; the "
+                        f"thesis, not this toy, sets policy."),
         }
     edu_accounts = education_accounts()
     edu_pace = education_pace(edu_accounts) if edu_accounts else None
     series, baseline_cut = networth_series(liquid, asof)
     cards, more, needs_state = needs_you(today)
+    ch = _cheshbon_ctx(pace)
 
     names = household("names")
     hour = now.hour
@@ -1689,21 +2130,26 @@ def build_page(now: datetime | None = None) -> str:
            .replace("__INTER_S__", _b64(_asset("Inter-SemiBold.woff2", "Inter SemiBold"))))
 
     return _ENV.from_string(PAGE_TEMPLATE).render(
-        greet=f"Good {daypart}, {names}." if names else f"Good {daypart}.",
+        greet=f"Good {daypart}, {names}" if names else f"Good {daypart}",
         sara=sara_line(pace, needs_state, cards, more),
         stamp=(f"Generated {today.strftime('%a %b %-d')}, "
                f"{now.strftime('%-I:%M %p').lower()}"),
-        ledger_stamp=(f"Ledger through {asof.strftime('%b %-d')}" if asof
+        ledger_stamp=(f"Ledger through {mon_d(asof)}" if asof
                       else "Ledger empty"),
         checks_stamp=checks_stamp,
+        kpis=_kpi_ctx(liquid, asof, pace, ch["net_raw"], wa),
         p=_pace_ctx(pace),
+        mach=_machine_ctx(lane_status(today)),
         needs={"state": needs_state, "cards": cards, "more": more},
+        moves=must_move(today),
+        mustmove_days=MUSTMOVE_DAYS,
         wa=_walkaway_ctx(wa, liquid, asof),
         wi=wi_ctx,
         min_months=MIN_FULL_MONTHS,
         edu=_education_ctx(edu_accounts, edu_pace, goals, today),
+        wins=_wins_ctx(saras_wins(today), today),
         nw=_networth_ctx(series, baseline_cut, liquid, asof),
-        cheshbon_card=_cheshbon_html(pace),
+        ch=ch,
         env_rows=_envelope_rows(project_envelopes(goals)),
         projects_sub=Markup("Tagged spending vs its envelope — budgets live in "
                             "facts/goals (<code>project_budget_*</code>). "

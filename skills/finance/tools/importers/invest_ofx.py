@@ -376,7 +376,7 @@ def reconcile(account, stated, asof, kept_units, first_activity):
             print(f";     {account}   {_fmt_units(gap)} {ticker} {{COST USD}}  "
                   f"; basis from broker records — needed before {ticker} sells can book",
                   file=sys.stderr)
-        print(f";     Equity:Opening-Balances", file=sys.stderr)
+        print(";     Equity:Opening-Balances", file=sys.stderr)
     if excess:
         print(f";   ledger EXCEEDS the statement by "
               f"{', '.join(f'{_fmt_units(-g)} {t}' for t, g in excess)} — that is "

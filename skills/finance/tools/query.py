@@ -39,15 +39,15 @@ def cmd_networth(_):
     rows = query(f"SELECT root(account,1) AS r, sum(convert(position,'USD')) AS v "
                  f"WHERE {where} GROUP BY r")
     vals = {r["r"]: amount(r["v"]) for r in rows}
-    a, l = vals.get("Assets", 0.0), vals.get("Liabilities", 0.0)
-    print(f"Liquid net worth: {money(a + l)}   (assets {money(a)} · liabilities {money(l)})")
+    a, liab = vals.get("Assets", 0.0), vals.get("Liabilities", 0.0)
+    print(f"Liquid net worth: {money(a + liab)}   (assets {money(a)} · liabilities {money(liab)})")
     if excl:
         p = query(f"SELECT sum(convert(position,'{bql_str(shadow_currency())}')) AS v "
                   f"WHERE account ~ '^Assets' AND currency ~ '{excl}'")
         # the cell is valued in the shadow currency — name it, or amount()
         # rightly refuses to read the units as dollars
         pv = amount(p[0]["v"], shadow_currency()) if p and p[0].get("v") else 0.0
-        print(f"Illiquid paper (not counted): {money(pv)}   combined {money(a + l + pv)}")
+        print(f"Illiquid paper (not counted): {money(pv)}   combined {money(a + liab + pv)}")
 
 
 def cmd_balances(_):

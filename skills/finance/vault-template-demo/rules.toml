@@ -147,3 +147,33 @@ note = "furniture & house stuff"
 [anomaly]
 ignore_payee_regex = "^(ATM |WITHDRAWAL|ZELLE|VENMO|CHECK )"
 ignore_account_regex = "Childcare|Cash|Uncategorized|Investment-Loss|Taxes|Insurance"
+
+# ---------------------------------------------------------------------------
+# The machine — standing money movements (home page "The machine" panel +
+# the `lanes` check). See the plain template's rules.toml for field docs.
+# ---------------------------------------------------------------------------
+[[lanes]]
+name = "Alex's paycheck → Chase checking"
+kind = "deposit"
+account = "Assets:US:Chase:Checking4321"
+amount = 3950.00
+cadence = "semimonthly"
+source = "BrightPath"
+
+[[lanes]]
+name = "Jordan's paycheck → Chase checking"
+kind = "deposit"
+account = "Assets:US:Chase:Checking4321"
+amount = 3400.00
+cadence = "monthly"
+day = 5
+source = "Cedar Grove"
+
+[[lanes]]
+name = "Riley's 529 — $300/mo autopilot"
+kind = "invest"
+account = "Assets:US:CollegeSave:529Riley"
+amount = 300
+cadence = "monthly"
+day = 15
+commodity = "AGGRX"

@@ -59,7 +59,8 @@ def _flush(block, target, out, changes):
         new = categorize(payee, ofx_type, -residual, primary_acct)
         if new != target:
             changes.append((payee, new))
-            indent = POSTING.match(body[target_at]).group(1)
+            pm = POSTING.match(body[target_at])
+            indent = pm.group(1) if pm else "  "
             body[target_at] = f"{indent}{new}\n"
     out.extend(body)
 
@@ -100,7 +101,7 @@ def main():
         i = args.index("--target")
         value = args[i + 1] if i + 1 < len(args) else ""
         if not value or value.startswith("--"):
-            sys.exit("--target needs an account name\n\n" + __doc__)
+            sys.exit("--target needs an account name\n\n" + (__doc__ or ""))
         target = value
     total, staged = 0, []
     for f in sorted((VAULT / "ledger").glob("*.beancount")):
