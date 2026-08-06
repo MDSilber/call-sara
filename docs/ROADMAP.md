@@ -24,10 +24,17 @@ the design; if yours doesn't fit, open an issue and describe its shape.
 
 ## Next — designed, queued
 
-- **K-1 / partnership module:** distributions tracked continuously as
-  cash; annual K-1s filed from the inbox into per-partnership basis
-  facts; a reconciliation check that compares the tax story to the cash
-  story and flags drift. (Driven by a real 20-K-1 household.)
+- **K-1 / partnership / alternatives module:** distributions tracked
+  continuously as cash; annual K-1s filed from the inbox into
+  per-partnership basis facts; a reconciliation check that compares the
+  tax story to the cash story and flags drift; and the per-deal
+  scorecard — invested, distributions to date, yield, vs last year —
+  generated instead of hand-curated. (Driven by a real 20-K-1 household
+  that has maintained this exact spreadsheet by hand for years.)
+- **The income lens:** for households whose goal is passive income per
+  year rather than a pot — every asset scored by what it pays you,
+  summed against your income goal, with allocation-over-time snapshots
+  as a free byproduct. Same books, different physics.
 - **Multi-entity books:** an LLC/business ledger beside the household
   one, same skill and tooling driving both, work-vs-personal splits that
   survive an accountant's questions.
