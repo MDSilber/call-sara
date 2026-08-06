@@ -135,7 +135,12 @@ def account_owners():
     return _owners_cache
 
 
+OWNER_TRANSIT = "transit"
+
+
 def owner_label(owner):
+    if owner == OWNER_TRANSIT:
+        return "in transit (between your own accounts)"
     """Display form of an owner name: 'danny' -> 'Danny' (None passes through)."""
     return owner[:1].upper() + owner[1:] if owner else None
 
