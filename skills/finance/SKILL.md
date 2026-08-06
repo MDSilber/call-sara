@@ -25,7 +25,9 @@ accounts, or numbers into this skill — those belong in the vault (and its
 
 ## Always do first (every invocation, existing vault)
 Onboarding mid-flight? If `$VAULT/ONBOARDING.md` exists, resume at its
-first unchecked item — never restart a phase marked `[x]`.
+first unchecked item — never restart a phase marked `[x]`. That includes
+the optional-layer blocks (app, inbox, letter, live sync, automation,
+phone) — a half-built layer resumes exactly like a core phase.
 
 Read, in order:
 1. `$VAULT/CLAUDE.md` — layout, filing rules, formats. The data contract.
@@ -116,7 +118,11 @@ the method and tells the user which playbook is running.
 **Onboard** ("set up my finances", "build my vault", or no vault exists) →
 `references/onboarding.md`: scaffold via `scripts/init_vault.sh`, run the
 founding interview, inventory every institution, guide the first data pull,
-write the initial thesis. Ends with a first assessment.
+write the initial thesis. Ends with a first assessment, then the
+optional-layers menu (the app, document inbox, weekly letter, Plaid
+live sync, daily automation, phone Sara) — each skippable with "later"
+and resumable anytime: "set up the app / the feeds / phone Sara"
+reopens `references/onboarding.md` § Optional layers directly.
 
 **Review** ("monthly", "how are we doing", "anything I should know") →
 `scripts/update_prices.sh` (holdings at market, not last-snapshot), then

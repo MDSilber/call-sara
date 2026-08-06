@@ -43,6 +43,21 @@ nobody was tracking. Honestly a bit embarrassing. I'm still not over it.
 3. Say **"set up my finances."** That's it! She takes it from there
    (~90 min, she's thorough).
 
+That sentence is the whole interface, by the way. She builds the vault
+first, then offers everything else herself, arrow-key menus all the way
+down, and "later" is an answer she actually respects:
+
+- **Day one** — the vault: she interviews you, files your first
+  statements, writes down who you are, hands you a real assessment.
+- **Level two** — the books sync themselves: your own free Plaid keys,
+  a verification report you'll actually read, then a daily pull while
+  you sleep.
+- **Level three** — Sara everywhere: the little local app, her weekly
+  letter, her voice on your phone with your real numbers.
+
+You never set any of it up from docs. She walks you there, and
+`doctor.sh` always knows how far you got.
+
 Not ready to hand over real data? Same, at first:
 ```bash
 cd ~/code/call-sara

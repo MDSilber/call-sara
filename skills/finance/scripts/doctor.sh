@@ -27,6 +27,7 @@ elif [ -n "${1:-}" ]; then
 fi
 
 FAILS=0
+CORE_OK=0
 pass() { printf 'PASS  %s\n' "$1"; }
 warn() { printf 'WARN  %s\n      %s\n' "$1" "$2"; }
 fail() { printf 'FAIL  %s\n      fix: %s\n' "$1" "$2"; FAILS=$((FAILS + 1)); }
@@ -113,6 +114,7 @@ if [ -f "$VAULT/ledger/main.beancount" ] && [ -f "$VAULT/CLAUDE.md" ] && [ -f "$
     fi
     if OUT="$(cd "$VAULT" && ./.venv/bin/bean-check ledger/main.beancount 2>&1)"; then
       pass "bean-check: ledger validates"
+      CORE_OK=1
     else
       fail "bean-check reports errors in the ledger" \
            "run  $VAULT/.venv/bin/bean-check $VAULT/ledger/main.beancount  and fix the lines it names"
@@ -190,6 +192,63 @@ else
   fail "no vault at $VAULT (need CLAUDE.md, THESIS.md, ledger/main.beancount)" \
        "run  $HERE/init_vault.sh $VAULT  — or point me at it:  doctor.sh --vault <dir>"
   echo "      (skipped: venv, bean-check, git hooks — no vault to check)"
+fi
+
+# --- layers — how far this install goes ----------------------------------
+# One compact map of the optional layers (onboarding.md § Optional layers),
+# so anyone can see exactly where they stopped. Informational, never a FAIL.
+if [ -f "$VAULT/ledger/main.beancount" ]; then
+  echo
+  echo "layers — how far this install goes:"
+  lay() { printf '  %-7s %s\n' "$1" "$2"; }
+
+  if [ "$CORE_OK" = 1 ]; then
+    lay core "✓ vault + ledger validate"
+  else
+    lay core "incomplete — fixes above"
+  fi
+
+  N_ITEMS="$(grep -c '^\[sources\.plaid\.items\.' "$VAULT/rules.toml" 2>/dev/null || true)"
+  if [ "${N_ITEMS:-0}" -gt 0 ] 2>/dev/null; then
+    S=s; [ "$N_ITEMS" = 1 ] && S=""
+    if [ -n "${STALE_D:-}" ] && [ "$STALE_D" -lt 9999 ] 2>/dev/null; then
+      lay plaid "$N_ITEMS item$S linked · last sync ${STALE_D}d ago"
+    else
+      lay plaid "$N_ITEMS item$S linked · never synced — tools/run ingest.py, then --write"
+    fi
+  else
+    lay plaid "not set up — references/fetching.md § The Plaid lane"
+  fi
+
+  if [ -x "${VENV_PY:-}" ] && "$VENV_PY" -c 'import fastapi, uvicorn, sara.server' >/dev/null 2>&1; then
+    lay app "installed — scripts/dashboard.sh --app"
+  else
+    lay app "not installed — first scripts/dashboard.sh --app installs it"
+  fi
+
+  if [ -f "$VAULT/reports/digest.html" ]; then
+    lay digest "generating (last: $(date -r "$VAULT/reports/digest.html" +%Y-%m-%d 2>/dev/null || echo '?'))"
+  else
+    lay digest "never generated — scripts/dashboard.sh --digest"
+  fi
+
+  if [ -d "$VAULT/inbox" ]; then
+    W="$(find "$VAULT/inbox" -maxdepth 1 -type f ! -name '.*' 2>/dev/null | wc -l | tr -d ' ')"
+    lay inbox "present · ${W:-0} waiting"
+  else
+    lay inbox "missing — mkdir $VAULT/inbox"
+  fi
+
+  if [ -f "$VAULT/reports/summary.json" ]; then
+    lay worker "n/a locally (phone layer) — summary.json present to serve"
+  else
+    lay worker "n/a locally (phone layer) — tools/run reports.py writes summary.json"
+  fi
+
+  if [ -f "$VAULT/ONBOARDING.md" ]; then
+    echo "  (ONBOARDING.md present — onboarding or a layer is mid-flight;"
+    echo "   Sara resumes at its first unchecked box)"
+  fi
 fi
 
 echo

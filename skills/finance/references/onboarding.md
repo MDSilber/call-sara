@@ -3,8 +3,9 @@
 Run this when there's no vault, or the user says "set me up." The goal
 of session one is NOT completeness — it's a working skeleton with real
 data flowing in, so every later session compounds. Budget ~90 minutes
-of working time — usually 2–3 sittings — and say so up front. Narrate
-progress; long silences read as stalls.
+of working time for the core — usually 2–3 sittings — and say so up
+front; the optional layers at the end each carry their own small
+estimate. Narrate progress; long silences read as stalls.
 
 **The whole flow runs on the arrow-key picker.** Every decision point —
 location, hosting, institutions, interview answers, what to pull first,
@@ -32,6 +33,7 @@ Legend: [ ] todo · [→] in progress · [x] done · [~] deferred
       prior tools / equity portals)
 - [ ] 4  live pulls — pull queue below
 - [ ] 5  first assessment published · committed · next step named
+- [ ] 6  optional layers offered — picked blocks appended below
 
 ## Pull queue (ordered by value × ease)
 | Institution | What it holds | Status | Notes |
@@ -43,7 +45,9 @@ Legend: [ ] todo · [→] in progress · [x] done · [~] deferred
 Check items off AS THEY COMPLETE, not in a batch at the end — a dead
 session costs nothing if this file is current, and the whole 90 minutes
 if it isn't. If the file already exists, onboarding is mid-flight:
-resume at the first unchecked item. On completion, move it to
+resume at the first unchecked item — optional-layer blocks included; a
+half-built layer resumes exactly like a core phase. On completion (no
+`[ ]` left anywhere, `[~]` counts as settled), move it to
 `notes/YYYY-MM-DD.onboarding-log.md` — the file's absence is what says
 onboarding is done. Tell the user up front: "usually 2–3 sittings; stop
 anytime, we resume exactly where we left off."
@@ -238,15 +242,254 @@ and the ONE thing to do next session. Commit the vault; push. The system
 now compounds: every future session starts by reading the thesis and the
 facts instead of starting cold.
 
-## What "done" means for onboarding
-End with the victory lap: launch `scripts/dashboard.sh` and let them SEE
+Then the victory lap: launch `scripts/dashboard.sh` and let them SEE
 their whole financial life as a page — the moment the vault stops being
 homework and starts being theirs.
 
+## 6. Optional layers — how far she goes
+
+Core onboarding built the house; these are the utilities. Offer the
+menu right after the victory lap, while the dashboard is still open
+and the mood is good. Nothing here is required, every layer skips
+with "later", and later genuinely works: "set up the app / the feeds /
+phone Sara / the letter" reopens this section directly, even months
+after `ONBOARDING.md` retired — recreate the file with just that
+layer's block, work it, retire it again.
+
+Run the menu as ONE AskUserQuestion batch: two multiSelect questions,
+ordered by value-per-effort, a minutes estimate and the honest
+tradeoff in every description. An empty pick means "not today" and
+gets a cheerful "the vault works great as-is" — never a second ask.
+
+**"Around the house?"** (multiSelect)
+- **The app** (~2 min) — your money as a live local web page, the
+  daily driver. Near-zero setup; the vault already has everything.
+- **Document inbox** (~1 min) — a drop folder any device can feed;
+  statements start filing themselves.
+- **Weekly letter** (~2 min) — Sara's 20-second Saturday note for
+  both partners. Generated on your disk; never sent anywhere.
+
+**"The plumbing?"** (multiSelect)
+- **Live sync** (~20 min, one-time) — your own free Plaid keys, and
+  the everyday accounts flow in with a to-the-cent verification
+  report. The biggest upgrade on the menu; the cost is a signup with
+  an identity check.
+- **Daily automation** (~5 min, needs live sync) — the sync runs
+  itself every morning; two independent watchdogs notice if it dies.
+- **Phone Sara** (~25 min) — a tiny Cloudflare Worker serves your
+  numbers read-only, so Claude on your phone answers "how are we
+  doing?" while the laptop sleeps. The most setup, the most magic.
+
+For each layer picked, append its block (below) to `ONBOARDING.md`
+and work it like any phase: check items AS THEY PROVE, resume
+mid-block next session if this one dies. The last box of every layer
+is a verification — a layer is never done because its commands ran,
+only because the proof came back. Bailing on a layer mid-walk is
+fine — mark it `[~] later` and respect it without relitigating;
+afterward `doctor.sh` keeps a
+gentle map of what's lit (its layers panel), and a Review may offer
+ONE unlit layer when the month's events would have used it — never
+more, never twice in a row.
+
+### The app (~2 min)
+
+Launch it: `scripts/dashboard.sh --app` — first launch installs its
+server into the vault's venv by itself, then the page opens on
+127.0.0.1. Tour it like a house, one line per room: the **glance**
+(verdict tiles — spending pace, net worth, autopilot, goals — and ONE
+"next" line; the ten-second check), **Spending** (pace + category
+bars, click any bar for what's behind it), **Activity** (the feed,
+with the uncategorized queue), **Money map** (every account and
+what's in it), **Investments** (positions, allocation), **Goals**
+(targets with progress), **Autopilot** (the machine — each standing
+lane green or not).
+
+Then engineer the aha: find an uncategorized transaction in Activity,
+click it, and teach the rule right there — she applies it to the
+whole history on the spot, same gated tools a session uses,
+bean-check and all. "I taught her and she fixed the past" is the
+moment this stops being a dashboard and becomes Sara. No
+uncategorized transaction yet? Set a goal target instead — same
+lesson, the page writes to the vault.
+
+```markdown
+### Layer: the app
+- [ ] launched — dashboard.sh --app serving on 127.0.0.1
+- [ ] toured — the glance and the rooms, out loud
+- [ ] taught — one rule (or one goal) through the page
+- [ ] verified — the write landed in the vault (rules.toml or the goal fact)
+```
+
+### Document inbox (~1 min)
+
+`inbox/` already exists at the vault root (gitignored, like
+`documents/`). Explain it in one breath: anything financial, from any
+device — an AirDropped statement, a save-as from mail, a tax PDF —
+goes in the folder, and `tools/run inbox.py` identifies and files it;
+the checks nag while anything sits there, so nothing rots. One
+picker: keep the folder local-only, or put it in iCloud
+Drive/Syncthing so phones can feed it (tradeoff: the sync service
+sees those files). Prove it live: drop any PDF in, run `tools/run
+inbox.py`, watch it get named; `tools/run run_checks.py` now carries
+an `inbox` finding — that's the nag working. Then file or remove the
+test file. Want filing automatic on arrival?
+`scripts/inbox-watch.plist.example` is the documented recipe — three
+edits, read it before loading, never auto-installed.
+
+```markdown
+### Layer: document inbox
+- [ ] explained · local-vs-synced picked
+- [ ] proved — test file dropped, inbox.py named it, the inbox check fired
+- [ ] watcher installed and loaded (optional — [~] is fine)
+```
+
+### Weekly letter (~2 min)
+
+Generate it: `scripts/dashboard.sh --digest` writes
+`reports/digest.html` + `digest.txt` and opens the letter — Sara's
+week in five short beats, sized for a phone. The delivery decision
+belongs to the household and nobody else: the tool only ever WRITES
+the files; nothing is sent, ever, by anything here. Picker: how does
+it reach you two? Open it Saturday mornings · one of you iMessages
+the .txt to the other · mail the .html by hand · print it for the
+fridge. Record the choice on THESIS.md's cadence line so every
+session honors it.
+
+```markdown
+### Layer: weekly letter
+- [ ] generated — digest.html + digest.txt exist
+- [ ] delivery chosen by the household · recorded in THESIS.md
+- [ ] verified — read the letter together; its verdict matches the assessment
+```
+
+### Live sync — Plaid, your own keys (~20 min one-time)
+
+The pitch, honestly: after this, checking accounts and cards flow in
+daily without a browser session, every sync prints a verification
+report that reconciles to the cent, and re-running is always free.
+The cost: a one-time signup with an identity check, and 10
+institution links for life on the free plan — plenty, spent
+carefully. Read `references/fetching.md` § "The Plaid lane" NOW: it
+is the canonical text for everything below, including the exact
+use-case paragraph to paste.
+
+1. **The signup** (dashboard.plaid.com, ~10 min). Walk it together in
+   the browser. Where the form asks what they're building, paste the
+   use-case paragraph from fetching.md verbatim — it describes this
+   product exactly, and honest specifics are what auto-approves.
+   Company name, website (their fork), expected users: fetching.md
+   has the answers. Choose the TRIAL plan; complete the ID check.
+   **No keys by the end of the sitting? Stop the layer here,
+   cleanly:** mark the block `[→] waiting on Plaid's ID check`, tell
+   them which email to watch for, and move to another layer. Nothing
+   in this lane runs without keys, and that's a pause, not a failure.
+2. **Keys into the vault.** The dashboard's client_id + secret go in
+   `$VAULT/.secrets/plaid.env` (the three-line file fetching.md
+   shows; chmod 600). `.secrets/` is gitignored, and doctor checks
+   both the permissions and the ignore — keys can never reach git.
+3. **First link — simplest institution first** (an Ally-style
+   username/password bank; save OAuth banks for the second link). Say
+   the 10-slot rule OUT LOUD before linking: 10 links for life,
+   removing one does NOT refund it, and a broken connection always
+   repairs free (`python -m sara.link --repair <alias>`), never
+   re-links fresh. Then `python -m sara.link ally`: a local page
+   hands off to Plaid's own window, they approve at the bank, and the
+   exact rules.toml block prints with the discovered accounts — paste
+   it, name each `ledger_account`, done.
+4. **OAuth banks** (Chase, Vanguard…) need a redirect URI registered
+   once at dashboard.plaid.com plus `PLAID_REDIRECT_URI` in
+   plaid.env — `http://localhost:8484/` is the standard answer. An
+   institution that insists on HTTPS is exactly why the phone layer's
+   Worker ships a `/plaid-oauth` route: register
+   `https://<your-worker>.workers.dev/plaid-oauth` instead — it only
+   bounces the browser back to the local link page. (No Worker yet?
+   A fine reason to do Phone Sara first.)
+5. **The trust ramp** — short by design. `tools/run ingest.py` is
+   report-only: read the report TOGETHER — every count reconciles
+   exactly, every skipped row is named, and the bank's reported
+   balance is compared against the ledger to the cent. When it reads
+   clean, `tools/run ingest.py --write` — same sync, applied,
+   committed.
+
+```markdown
+### Layer: live sync (plaid)
+- [ ] signup done · keys in .secrets/plaid.env (0600)
+- [ ] 10-slot rule said out loud · first institution linked · accounts routed
+- [ ] report-only run read together
+- [ ] --write run — balances MATCH (or the delta seeded and explained)
+- [ ] verified — doctor.sh shows the plaid rows green
+```
+
+### Daily automation (~5 min — only after live sync has earned it)
+
+The framing matters more than the plist: nothing in this system
+installs a daemon for you, because a schedule is trust, and the
+by-hand runs they just did are how it was earned. When they're ready:
+`scripts/ingestd.plist.example` is the documented launchd recipe —
+copy it to `~/Library/LaunchAgents/com.callsara.ingestd.plist`, edit
+the three UPPERCASE placeholders (paths), READ the result together
+(it runs as them), then `launchctl load` it. Prove it now rather than
+tomorrow: `launchctl start com.callsara.ingestd`, then read the
+verification report land in `/tmp/sara-ingestd.log`. And say what
+watches the watcher: a feed more than 3 days quiet raises a
+`plaid_freshness` finding and a doctor warning on its own — a dead
+daemon cannot go silent.
+
+```markdown
+### Layer: daily automation
+- [ ] plist copied · placeholders edited · reviewed by the user
+- [ ] loaded — launchctl list shows com.callsara.ingestd
+- [ ] verified — started one run now; its report is in /tmp/sara-ingestd.log
+```
+
+### Phone Sara (~25 min)
+
+What it is, plainly: a tiny read-only server of their own on
+Cloudflare's free tier, serving the vault's already-committed
+`reports/summary.json` — so Claude on their phone answers with their
+real numbers, laptop asleep. No new copy of the data anywhere; it
+reads the private GitHub repo the vault already pushes to.
+
+Prereqs first (this is the one layer with real ones): a private
+GitHub remote (hosting deferred in phase 1? do that first),
+`reports/summary.json` committed and pushed (`tools/run reports.py`
+writes it), Node 20+, and a free Cloudflare account.
+
+Then `integrations/cloudflare-mcp/README.md` § "Deploy it" IS the
+walkthrough — drive it top to bottom together: the fine-grained
+GitHub token (Contents: Read-only, ONE repo — the README is precise
+about every toggle), the wrangler.toml vars, `wrangler login` on
+their PERSONAL account, the KV namespace, the two secrets, `npm run
+deploy`. Sara runs the commands; the user does the browser moments
+(token creation, the Cloudflare login) with the page navigated and
+waiting. Smoke-test with the README's curls: bare request → 401; with
+the token → the tool list.
+
+Connect the phone: Claude app → Settings → Connectors → add
+`https://<worker>.workers.dev/mcp`, OAuth fields empty, paste the
+owner token once on the consent page. Last, upload **Sara Lite**
+(`skills/sara-lite/` in the repo) at claude.ai → Settings →
+Capabilities → Skills, so phone chats answer in her voice with every
+number pulled from the connector.
+
+The real verification is the fun one: have them ask their phone "how
+are we doing?" and watch her answer with their numbers and the
+snapshot date.
+
+```markdown
+### Layer: phone sara
+- [ ] prereqs — private remote · summary.json pushed · node 20+ · cloudflare
+- [ ] worker deployed · curl smoke test passed (401 bare, tools with token)
+- [ ] phone connected · sara-lite uploaded
+- [ ] verified — asked the phone "how are we doing?", she answered with the date
+```
+
+## What "done" means for onboarding
 Vault scaffolded and private-repo hosted (or explicitly deferred);
 institution map complete; THESIS.md written and confirmed by the user;
 household profile + people files; at least the top 2–3 accounts pulled
 with facts filed; the tax return ingested if available; a first
-assessment published; everything committed, `ONBOARDING.md` retired to
-`notes/`. Later sessions handle the long tail of accounts, automation,
-and refinement.
+assessment published; the optional-layers menu offered, every picked
+layer proven (or marked `[~] later`); everything committed,
+`ONBOARDING.md` retired to `notes/`. Later sessions handle the long
+tail of accounts, deferred layers, and refinement.
