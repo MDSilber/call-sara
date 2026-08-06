@@ -3,11 +3,13 @@
  * in-isolate cache — ETag revalidation past a 60s TTL, so a burst of tool
  * calls costs one GitHub round-trip and a quiet hour costs a few 304s.
  *
- * With no GITHUB_TOKEN configured (local `wrangler dev`), the bundled demo
- * fixture stands in for reports/summary.json so the whole MCP surface can be
- * exercised end-to-end without credentials.
+ * With no GITHUB_TOKEN configured (local `wrangler dev`), bundled demo
+ * fixtures stand in for reports/summary.json and the resource documents
+ * (THESIS.md, facts/, reports/) so the whole MCP surface — tools and
+ * resources — can be exercised end-to-end without credentials.
  */
 import fixtureSummary from "../dev/fixture-summary.json";
+import fixtureVault from "../dev/fixture-vault.json";
 import type { Env } from "./types";
 
 export const SUMMARY_PATH = "reports/summary.json";
@@ -44,13 +46,17 @@ function repoCoords(env: Env): { owner: string; repo: string; branch: string } {
 /** Fetch one vault file as text. `path` must already be allowlist-validated. */
 export async function fetchVaultFile(env: Env, path: string): Promise<string> {
   if (!env.GITHUB_TOKEN) {
-    if (path === SUMMARY_PATH) {
+    const body =
+      path === SUMMARY_PATH
+        ? JSON.stringify(fixtureSummary)
+        : (fixtureVault as Record<string, string>)[path];
+    if (body !== undefined) {
       log("fixture_serve", { path });
-      return JSON.stringify(fixtureSummary);
+      return body;
     }
     throw new VaultFetchError(
-      `Dev fixture mode (GITHUB_TOKEN unset) only serves ${SUMMARY_PATH}; ` +
-        `set the secret to read ${path} from the vault repo.`
+      `Dev fixture mode (GITHUB_TOKEN unset) has no fixture for ${path}; ` +
+        `set the secret to read it from the vault repo.`
     );
   }
 

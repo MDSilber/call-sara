@@ -5,7 +5,11 @@
  *   1. write src/domains/<name>.ts exporting register<Name>Domain(server, env)
  *   2. import it here
  *   3. add it to DOMAINS
- * Tool names carry their domain as a prefix (finance_networth, ...).
+ * A domain contributes tools + resources under its prefix: tool names carry
+ * it directly (finance_networth, ...), resource URIs namespace it as a
+ * scheme (finance://thesis, finance://facts/{+path}). Computed answers are
+ * tools, owner documents are resources, method rides in the domain's ask
+ * tool.
  */
 import { McpServer } from "@modelcontextprotocol/server";
 import { registerFinanceDomain } from "./domains/finance";

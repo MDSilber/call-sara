@@ -13,8 +13,9 @@ the GitHub Contents API with a small ETag cache. No database, no sync
 pipeline, nothing to drift.
 
 It's also a **template**: the server is a generic "personal MCP" with
-domains as modules. Finance is the first domain (14 `finance_*` tools);
-add your own next to it (see "Adding a domain").
+domains as modules. Finance is the first domain (13 `finance_*` tools
+plus the `finance://` resources); add your own next to it (see "Adding
+a domain").
 
 ```
 Claude (iOS / claude.ai / Claude Code)
@@ -28,17 +29,45 @@ github.com/you/your-vault-repo (PRIVATE)   reports/summary.json · facts/ · rep
 
 ## Tools (finance domain, all read-only)
 
-`finance_networth` · `finance_balances` · `finance_positions` ·
-`finance_spend(period)` · `finance_cashflow` · `finance_findings` ·
-`finance_forecast` · `finance_autopilot` · `finance_goals_529` ·
-`finance_calendar` · `finance_thesis_rules` · `finance_home_summary` ·
-`finance_freshness` · `finance_read_fact(path)`
+The design rule: **computed answers are tools, owner documents are
+resources, method rides in the domain's ask tool.**
+
+Thirteen tools. Two front doors — `finance_overview` (the whole picture
+in one call, for vague/basic questions) and `finance_ask_sara(question)`
+(advice mode: returns an advisory *briefing* — voice rules, the written
+thesis, and the numbers relevant to the question — so the calling
+assistant answers as the household's advisor without inventing figures).
+Then the specifics: `finance_networth` · `finance_balances` ·
+`finance_positions` · `finance_spend(period)` · `finance_cashflow` ·
+`finance_findings` · `finance_forecast` · `finance_autopilot` ·
+`finance_goals_529` · `finance_calendar` · `finance_freshness`.
 
 Every answer leads with a human-readable block (window labels and the
 snapshot stamp always included, a loud warning when the snapshot is over
-7 days old) and ends with compact JSON. `finance_read_fact` is
-allowlisted to `facts/` and `reports/` paths — it cannot read the ledger
-or anything else.
+7 days old) and ends with compact JSON.
+
+## Resources (the owner's documents, verbatim)
+
+- `finance://thesis` — THESIS.md, the written investment policy
+- `finance://reports/findings` — the full findings report
+- `finance://reports/summary` — the raw summary.json the tools compute from
+- `finance://facts/{+path}` — resource template over the vault's `facts/`
+  tree (e.g. `finance://facts/household/profile.md`), allowlisted to
+  simple `facts/` paths — it cannot read the ledger or anything else.
+  `resources/list` enumerates a curated set (thesis, findings, summary,
+  household profile, household calendar); any allowlisted facts path
+  reads through the template.
+
+Documents are served as `text/markdown` (summary as `application/json`),
+size-capped, fetched from GitHub exactly like the tools.
+
+## Sara Lite (the method, on chat surfaces)
+
+`skills/sara-lite/` in this repo is a claude.ai-uploadable custom skill
+that pairs with this connector: Sara's voice, the numbers-only-from-tools
+rule, and the tool/resource routing above. Upload it at claude.ai →
+Settings → Capabilities → Skills and phone chats answer money questions
+in Sara's voice with every figure pulled from the connector.
 
 ## Deploy it
 
@@ -120,7 +149,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST "$URL" \
   -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 
-# with token → the 14 tools
+# with token → the 13 tools
 curl -s -X POST "$URL" \
   -H "authorization: Bearer $TOKEN" \
   -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
@@ -189,9 +218,16 @@ Three steps, no framework:
 
 1. Write `src/domains/<name>.ts` exporting
    `register<Name>Domain(server: McpServer, env: Env)` — register tools
-   named `<name>_*` (see `src/domains/finance.ts` for the shape).
+   named `<name>_*` AND resources under the `<name>://` URI scheme (see
+   `src/domains/finance.ts` for both shapes: `server.registerTool`,
+   `server.registerResource` with a fixed URI or a `ResourceTemplate`,
+   plus a curated `list` callback so clients can browse).
 2. Import it in `src/server.ts`.
 3. Add it to the `DOMAINS` array there.
+
+A domain contributes tools + resources under its prefix, split by one
+rule: **computed answers are tools, owner documents are resources,
+method rides in the domain's ask tool.**
 
 That's the whole pattern. Smart-home next? `home_lights_status` awaits.
 
@@ -205,6 +241,8 @@ That's the whole pattern. Smart-home next? `home_lights_status` awaits.
 - `src/github.ts` — GitHub Contents fetcher, ETag + 60s TTL cache,
   dev-fixture fallback
 - `src/server.ts` — the domain registry
-- `src/domains/finance.ts` — the 14 finance tools
+- `src/domains/finance.ts` — the 13 finance tools + the `finance://` resources
 - `src/types.ts` — `Env` + the `summary.json` schema
 - `dev/fixture-summary.json` — the demo household's snapshot (synthetic)
+- `dev/fixture-vault.json` — demo thesis/facts/report documents for the
+  resources in fixture mode (synthetic)
