@@ -68,10 +68,12 @@ from sara.ledger.writer import (
     AccountDedupe,
     Entry,
     append_to_ledger,
+    claim_transfer_pair,
     emit,
     existing_ids,
     find_entries_by_source_id,
     replace_by_source_id,
+    transfer_leg_pool,
 )
 from sara.plaid_api import (
     PlaidCreds,
@@ -80,7 +82,7 @@ from sara.plaid_api import (
     make_client,
     sync_transactions,
 )
-from sara.rules import categorize
+from sara.rules import TRANSFER_ACCOUNT, categorize
 from sara.sources.model import CanonInvestTxn, CanonTxn
 from sara.sources.plaid_src import PlaidAccount, map_investments, map_sync_response
 from sara.typed import as_dict, as_dicts, as_list
@@ -362,6 +364,7 @@ def run_item(alias: str, cfg: dict[str, Any], env: dict[str, str],
             run.integrity_ok = False
         for u in inv.unmapped:
             run.add(f"    UNMAPPED (never silent): {u.raw_ref} — {u.reason}")
+        transfers = transfer_leg_pool()  # consumed across this item's accounts
         inv_routed: dict[str, list[CanonInvestTxn]] = {}
         for a in inv.actions:
             acct = account_map.get(a.account_key)
@@ -378,6 +381,7 @@ def run_item(alias: str, cfg: dict[str, Any], env: dict[str, str],
             kept_n, first_activity = 0, None
             skipped_n = 0
             cash_only: list[str] = []
+            transfer_paired: list[str] = []
             for a in sorted(inv_routed[account], key=lambda x: x.date):
                 payee = payee_for(a)
                 amt = cash_amount(a)
@@ -390,7 +394,15 @@ def run_item(alias: str, cfg: dict[str, Any], env: dict[str, str],
                     run.add(f"      deduped ({why}) {a.date} {amt:.2f} {payee}")
                     continue
                 deduper.record(h, a.source_id)
-                entry, deltas, _used, is_cash_only = build(a, account, payee, h)
+                # a surviving external receive whose sending side is already
+                # parked on the transfers account books AGAINST that leg —
+                # never as fresh income
+                override = None
+                if a.kind == "INVBANKTRAN" and claim_transfer_pair(transfers, a.date, amt):
+                    override = TRANSFER_ACCOUNT
+                    transfer_paired.append(f"{a.date} {amt:.2f} {payee}")
+                entry, deltas, _used, is_cash_only = build(a, account, payee, h,
+                                                           override_counter=override)
                 # Plaid provenance belongs in plaid-* metadata, not the OFX keys
                 entry = entry.replace('  fitid: "', '  plaid-id: "') \
                              .replace('  ofx-type: "', '  plaid-type: "')
@@ -408,6 +420,11 @@ def run_item(alias: str, cfg: dict[str, Any], env: dict[str, str],
                 run.add(f"      cash-only invest rows (zero units): {len(cash_only)} — "
                         f"booked as settlement cash, no position posting")
                 for line in cash_only:
+                    run.add(f"        {line}")
+            if transfer_paired:
+                run.add(f"      transfer-paired {len(transfer_paired)} -> {TRANSFER_ACCOUNT} "
+                        f"(matches an open transfers leg; not income)")
+                for line in transfer_paired:
                     run.add(f"        {line}")
             positions = [p for pid, plist in inv.positions.items()
                          if account_map.get(pid) == account for p in plist]

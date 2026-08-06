@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from sara.ledger.queries import CENT, ZERO, account_rows, ledger_balance_asof
+from sara.rules import TRANSFER_ACCOUNT
 from sara.sources.model import escape
 from sara.vault import BEAN_CHECK, VAULT
 
@@ -206,6 +207,7 @@ INVEST_TOTAL_TOLERANCE = Decimal("0.01")
 FAMILY_OFX, FAMILY_PLAID = "ofx", "plaid"
 INVEST_TIER_LABEL = f"units±{INVEST_WINDOW_DAYS}d"
 INVEST_INCOME_TIER_LABEL = f"reinvest-income±{INVEST_WINDOW_DAYS}d"
+CASH_MIRROR_TIER_LABEL = f"cash-mirror±{INVEST_WINDOW_DAYS}d"
 # The invest tier applies only to these kinds: INCOME rows match the
 # income FACET of a reinvest, position kinds match its units facet, and
 # plain cash (INVBANKTRAN) never touches the invest index at all.
@@ -221,6 +223,18 @@ class InvestLedgerRow(NamedTuple):
 
 
 InvestIndex = dict[str, list[InvestLedgerRow]]
+
+
+class CashLegRow(NamedTuple):
+    """One ledger entry's net USD movement on the account — the thing a
+    brokerage settlement fund's cash-shadow rows mirror."""
+
+    when: date
+    amount: Decimal  # |net USD movement|
+    family: str
+
+
+CashIndex = list[CashLegRow]
 
 _DOUBLE_COST = re.compile(r"\{\{([\d,.]+)\s+USD\}\}")
 _SINGLE_COST = re.compile(r"\{([\d,.]+)\s+USD")
@@ -250,15 +264,23 @@ def _dec_or_none(text: str) -> Decimal | None:
     return d if d.is_finite() else None
 
 
-def invest_index(account: str) -> InvestIndex:
-    """{ticker: rows} for every ledger entry holding a units posting on
-    `account` — parsed straight from ledger/*.beancount (like existing_ids,
-    it works before the vault venv exists). A row's total is the entry's
-    |USD movement| on the account, else the units leg's cost braces
-    (per-unit x units, or the {{total}} form); an entry whose cash can't be
-    established (an opening snapshot) yields total=None and is never allowed
-    to corroborate a candidate."""
+def scan_invest_ledger(account: str) -> tuple[InvestIndex, CashIndex]:
+    """One pass over ledger/*.beancount for an account -> the invest facet
+    index PLUS the cash-leg index (every entry's net USD movement).
+
+    Invest rows: {ticker: rows} for every entry holding a units posting.
+    A row's total is the entry's |USD movement| on the account, else the
+    units leg's cost braces (per-unit x units, or the {{total}} form); an
+    entry whose cash can't be established (an opening snapshot) yields
+    total=None and is never allowed to corroborate a candidate.
+
+    Cash rows: (date, |net USD|, family) for every entry that moves cash on
+    the account — fused buys/sells, income, maturities, hand corrections —
+    the corpus a settlement fund's shadow rows are checked against.
+    Parsed from the files (like existing_ids): works before the venv exists.
+    """
     idx: InvestIndex = {}
+    cash: CashIndex = []
     posting = _posting_re(account)
     for f in sorted((VAULT / "ledger").glob("*.beancount")):
         try:
@@ -298,7 +320,14 @@ def invest_index(account: str) -> InvestIndex:
                     total = None
                 idx.setdefault(ticker, []).append(
                     InvestLedgerRow(when, units, total, family, income_facet))
-    return idx
+            if usd_sum != 0:
+                cash.append(CashLegRow(when, abs(usd_sum), family))
+    return idx, cash
+
+
+def invest_index(account: str) -> InvestIndex:
+    """The invest facet index alone (see scan_invest_ledger)."""
+    return scan_invest_ledger(account)[0]
 
 
 def claim_invest_duplicate(idx: InvestIndex, when: date, ticker: str,
@@ -334,6 +363,51 @@ def claim_invest_duplicate(idx: InvestIndex, when: date, ticker: str,
     return False
 
 
+def claim_cash_mirror(pool: CashIndex, when: date, amount: Decimal, family: str,
+                      window: int = INVEST_WINDOW_DAYS) -> bool:
+    """True when a cross-family SAME-ACCOUNT entry's net USD movement
+    corroborates this plain cash row — and CONSUME it. This is the third
+    facet: a brokerage settlement fund shadows every movement with its own
+    cash row ("Sweep in/out", "Corp Action", the coupon's "INTEREST"), and
+    the fused/maturity/income entry the ledger already holds is the proof.
+    Scoped by the caller to investment items only — bank cash never sees it."""
+    for i, row in enumerate(pool):
+        if row.family and row.family == family:
+            continue
+        if abs((row.when - when).days) > window:
+            continue
+        if abs(row.amount - abs(amount)) > INVEST_TOTAL_TOLERANCE:
+            continue
+        del pool[i]
+        return True
+    return False
+
+
+TransferPool = list[tuple[date, Decimal]]
+
+
+def transfer_leg_pool() -> TransferPool:
+    """Every posting on the transfers parking account, for pairing a
+    brokerage's "Funds Received" against the sending side already booked
+    from the bank. Empty when the ledger can't be queried (no venv) —
+    pairing then simply doesn't happen and survivors stay in review."""
+    return [(when, amount) for when, amount, _payee in account_rows(TRANSFER_ACCOUNT)]
+
+
+def claim_transfer_pair(pool: TransferPool, when: date, amount: Decimal,
+                        window: int = INVEST_WINDOW_DAYS) -> bool:
+    """True when an open transfers leg matches |amount| within $0.01 and
+    ±window days — and CONSUME it (one leg vouches for one receive)."""
+    for i, (leg_when, leg_amount) in enumerate(pool):
+        if abs((leg_when - when).days) > window:
+            continue
+        if abs(abs(leg_amount) - abs(amount)) > INVEST_TOTAL_TOLERANCE:
+            continue
+        del pool[i]
+        return True
+    return False
+
+
 class AccountDedupe:
     """The three dedupe stages for one account, in order, batch-aware.
 
@@ -356,6 +430,7 @@ class AccountDedupe:
         self.new_sids: set[str] = set()
         self._invest_idx: InvestIndex | None = None  # units facet, lazy
         self._invest_income_idx: InvestIndex | None = None  # income facet, lazy
+        self._cash_mirror_idx: CashIndex | None = None  # cash facet, lazy
 
     def hash_for(self, when: date, amount: Decimal, payee: str) -> str:
         return import_hash(when, amount, payee, self.account)
@@ -386,21 +461,27 @@ class AccountDedupe:
         facet of reinvest entries, and plain cash rows never touch either.
         `amount` (the signed cash effect) doubles as the total."""
         why = self.check(when, amount, payee, source_id, h)
-        if why or not self.enabled or not ticker:
+        if why or not self.enabled:
             return why
-        if kind in POSITION_KINDS and claim_invest_duplicate(
-                self._units_pool(), when, ticker,
-                None if units == 0 else units, amount, family):
-            return INVEST_TIER_LABEL
-        if kind == "INCOME" and claim_invest_duplicate(
+        if kind in POSITION_KINDS:
+            if ticker and claim_invest_duplicate(
+                    self._units_pool(), when, ticker,
+                    None if units == 0 else units, amount, family):
+                return INVEST_TIER_LABEL
+            return None
+        if kind == "INCOME" and ticker and claim_invest_duplicate(
                 self._income_pool(), when, ticker, None, amount, family):
             return INVEST_INCOME_TIER_LABEL
+        if kind in ("INCOME", "INVBANKTRAN") and claim_cash_mirror(
+                self._cash_pool(), when, amount, family):
+            return CASH_MIRROR_TIER_LABEL
         return None
 
     def _units_pool(self) -> InvestIndex:
         if self._invest_idx is None:
-            full = invest_index(self.account)
+            full, cash = scan_invest_ledger(self.account)
             self._invest_idx = full
+            self._cash_mirror_idx = cash
             self._invest_income_idx = {
                 ticker: [r for r in rows if r.income_facet]
                 for ticker, rows in full.items()}
@@ -410,6 +491,11 @@ class AccountDedupe:
         self._units_pool()
         assert self._invest_income_idx is not None
         return self._invest_income_idx
+
+    def _cash_pool(self) -> CashIndex:
+        self._units_pool()
+        assert self._cash_mirror_idx is not None
+        return self._cash_mirror_idx
 
     def record(self, h: str, source_id: str) -> None:
         self.new_hashes.setdefault(h, set())

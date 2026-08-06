@@ -110,9 +110,14 @@ def renders_zero_units(units: Decimal) -> bool:
     return Decimal(fmt_units(abs(units))) == 0
 
 
-def build(a: CanonInvestTxn, account: str, payee: str, h: str) -> BuiltEntry:
+def build(a: CanonInvestTxn, account: str, payee: str, h: str,
+          override_counter: str | None = None) -> BuiltEntry:
     """One canonical action -> (entry_text, {ticker: unit_delta},
     accounts_used, cash_only).
+
+    `override_counter` redirects the INVBANKTRAN counter-account — the
+    pipeline passes Assets:US:Transfers when the row paired against an open
+    transfers leg (the receiving side of an already-booked external move).
 
     THE ZERO-UNITS WALL: any position kind whose quantity would PRINT as
     zero (qty-unreported aggregator rows, sub-1e-6 dust) books as a
@@ -142,7 +147,7 @@ def build(a: CanonInvestTxn, account: str, payee: str, h: str) -> BuiltEntry:
         # still wins when one matches.
         counter = categorize(t.payee, t.kind, t.amount, account)
         if counter in ("Income:US:Other", "Expenses:Uncategorized"):
-            counter = invbanktran_default(account) or counter
+            counter = override_counter or invbanktran_default(account) or counter
         entry = _render(when, t.payee, {"ofx-type": t.kind, "import-hash": h,
                                         "fitid": t.source_id},
                         [f"  {account}   {t.amount:.2f} USD", f"  {counter}"])
