@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
 import { useToast } from '../components/toastContext'
-import { Card, CardSkeleton, LoadError } from '../components/ui'
+import { Card, LoadError, Skeleton } from '../components/ui'
 import { watchRegeneration } from '../refresh'
 import type { ActivityFilters, ActivityPage, ActivityRow, Category, FeedEntry, OwnerDef, SweepGroup } from '../types'
 import { invalidate } from '../useFetch'
@@ -139,9 +139,10 @@ export function ActivityRoom(props: { initialQ?: string }) {
   if (feed.error && feed.rows.length === 0) {
     return <LoadError error={feed.error} retry={() => load(null)} />
   }
-  if (feed.loading && feed.rows.length === 0 && !filtersOn) {
-    return <div className="grid g-solo"><CardSkeleton lines={9} /></div>
-  }
+  // first load renders skeleton lines INSIDE the same persistent Card below —
+  // swapping whole cards would replay the room-entrance animation (a visible
+  // double-jump the owner reported)
+  const firstLoad = feed.loading && feed.rows.length === 0 && !filtersOn
 
   const days = groupByDay(feed.rows)
   const uncatHere = feed.uncat?.count ?? 0
@@ -154,7 +155,14 @@ export function ActivityRoom(props: { initialQ?: string }) {
           ? `${uncatHere} row${uncatHere === 1 ? '' : 's'} still need a category (${feed.uncat?.amount ?? ''}) — click a chip, or select a merchant's rows and teach one rule.`
           : 'Every booked transaction, searchable to the first import. Chips are categories; tiny dots say who categorized.'}
       >
-        <div className="searchbar">
+        {firstLoad ? (
+          <div aria-hidden="true">
+            {Array.from({ length: 9 }, (_, i) => (
+              <Skeleton key={i} h={18} w={i % 3 ? '100%' : '72%'} />
+            ))}
+          </div>
+        ) : null}
+        <div className="searchbar" style={firstLoad ? { display: 'none' } : undefined}>
           <label className="searchbox">
             <SearchIcon />
             <input
