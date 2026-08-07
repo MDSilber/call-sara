@@ -154,9 +154,18 @@ class TestPipeline:
         assert "new 1" in r.stdout and CASH_XSRC_TIER_LABEL not in r.stdout
 
 
+CARD_SEED = (
+    '2026-01-01 * "Chase" "Opening balance — Card 3333 (derived 2026-08-05: '
+    'live posted minus YTD-reconciled ledger)"\n'
+    "  Liabilities:US:Demo:Card3333   -500.00 USD  ; was -400.00 — adjusted "
+    "-100.00 when history backfilled (2026-08-06)\n"
+    "  Equity:Opening-Balances\n")
+
+
 class TestAudit:
     def seed_pairs(self, vault: Path) -> None:
         seed(vault,
+             CARD_SEED,
              # the Viand shape: csv + plaid, auto-removable
              card_entry("2026-08-03", "TST*THE VIAND", "-100.11", FAMILY_CSV),
              card_entry("2026-08-04", "The Viand", "-100.11", FAMILY_PLAID, sid="pl-v"),
@@ -191,16 +200,20 @@ class TestAudit:
         assert "TST*THE VIAND" in (fresh_vault / "ledger" / "2026.beancount").read_text()
 
     @needs_venv
-    def test_write_removes_only_the_auto_drop_side(self, fresh_vault: Path) -> None:
+    def test_write_removes_drops_and_compensates_the_seed(self, fresh_vault: Path) -> None:
         self.seed_pairs(fresh_vault)
         r = self.run_audit(fresh_vault, "--write")
         assert r.returncode == 0, r.stdout + r.stderr
-        assert "removed 1 duplicate entry" in r.stdout
+        assert "removed 1 duplicate entry and adjusted 1 derivation seed" in r.stdout
         text = (fresh_vault / "ledger" / "2026.beancount").read_text()
         assert "TST*THE VIAND" not in text          # csv twin gone
         assert 'plaid-id: "pl-v"' in text           # plaid row kept
         assert "SQ *DELI" in text and "SQUARE DELI" in text  # REVIEW untouched
         assert "STREAMFLIX" in text                 # non-pairs untouched
+        # the seed absorbed the removed -100.11 back, comment trail appended
+        assert "-600.11 USD" in text and "-500.00 USD" not in text
+        assert ("(2026-08-06); and -100.11 on " in text
+                and "when cross-source duplicates were removed" in text)
         r2 = self.run_audit(fresh_vault)
         assert "1 pairs" in r2.stdout and "0 auto-removable" in r2.stdout
 
@@ -232,3 +245,71 @@ class TestAuditMatcherParity:
         # the live tier sees the csv row as claimable by a plaid candidate too
         assert d.check(date(2026, 8, 4), D("-100.11"), "The Viand", "pl-other",
                        family=FAMILY_PLAID) == CASH_XSRC_TIER_LABEL
+
+
+class TestSeedCompensation:
+    """The round-5 shape: derivation seeds were trued while the duplicates
+    existed, so deleting drop-sides must give the sums back — inside one
+    atomic gated write — and the live-balance anchors must hold."""
+
+    def anchored_vault(self, vault: Path) -> None:
+        # conftest opening (-1,030.85) + seed (-500.00) + both dup rows
+        # (-100.11 x2) = the ANCHOR the assertion states. bean-check passing
+        # after --write is the proof the anchor survived compensation.
+        seed(vault,
+             CARD_SEED,
+             card_entry("2026-08-03", "TST*THE VIAND", "-100.11", FAMILY_CSV),
+             card_entry("2026-08-04", "The Viand", "-100.11", FAMILY_PLAID, sid="pl-v"),
+             "2026-08-07 balance Liabilities:US:Demo:Card3333   -1731.07 USD\n")
+
+    def run_audit(self, vault: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        env = {**os.environ, "FINANCE_VAULT": str(vault), "PYTHONPATH": str(PKG_ROOT)}
+        return subprocess.run([sys.executable, "-m", "sara.audit", *args],
+                              capture_output=True, text=True, env=env)
+
+    def test_report_shows_the_planned_adjustment(self, fresh_vault: Path) -> None:
+        self.anchored_vault(fresh_vault)
+        r = self.run_audit(fresh_vault)
+        assert "derivation-seed compensation" in r.stdout
+        assert "Liabilities:US:Demo:Card3333: seed -500.00 -> -600.11 (-100.11)" in r.stdout
+        # report only: nothing moved
+        assert "-500.00 USD" in (fresh_vault / "ledger" / "2026.beancount").read_text()
+
+    @needs_venv
+    def test_write_keeps_the_anchor_true(self, fresh_vault: Path) -> None:
+        self.anchored_vault(fresh_vault)
+        r = self.run_audit(fresh_vault, "--write")
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert "bean-check passed" in r.stdout  # the -1731.07 anchor held
+        text = (fresh_vault / "ledger" / "2026.beancount").read_text()
+        assert "-600.11 USD" in text and "TST*THE VIAND" not in text
+        assert "balance Liabilities:US:Demo:Card3333   -1731.07 USD" in text
+
+    def test_no_seed_account_refuses_unless_forced(self, fresh_vault: Path) -> None:
+        # a pair on CHECKING, which has no derivation seed
+        seed(fresh_vault,
+             '2026-08-03 * "PAYROLL CO" ""\n'
+             '  ofx-type: "CREDIT"\n  import-hash: "aaaaaaaaaaaaaa99"\n'
+             '  fitid: "F999"\n'
+             "  Assets:US:Demo:Checking0766   2500.00 USD\n  Income:US:Other\n",
+             '2026-08-04 * "Payroll Co" ""\n'
+             '  plaid-type: "other"\n  import-hash: "bbbbbbbbbbbbbb99"\n'
+             '  plaid-id: "pl-pay"\n'
+             "  Assets:US:Demo:Checking0766   2500.00 USD\n  Income:US:Other\n")
+        r = self.run_audit(fresh_vault, "--write")
+        assert "Assets:US:Demo:Checking0766: NO SEED" in r.stdout
+        assert "EXCLUDED from --write" in r.stdout
+        assert "nothing auto-removable — no writes." in r.stdout
+        text = (fresh_vault / "ledger" / "2026.beancount").read_text()
+        assert "PAYROLL CO" in text and 'plaid-id: "pl-pay"' in text  # both intact
+
+    @needs_venv
+    def test_force_no_seed_deletes_without_compensation(self, fresh_vault: Path) -> None:
+        seed(fresh_vault,
+             card_entry("2026-08-03", "TST*THE VIAND", "-100.11", FAMILY_CSV),
+             card_entry("2026-08-04", "The Viand", "-100.11", FAMILY_PLAID, sid="pl-v"))
+        r = self.run_audit(fresh_vault, "--write", "--force-no-seed")
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert "deleting WITHOUT compensation" in r.stdout
+        assert "removed 1 duplicate entry and adjusted 0 derivation seeds" in r.stdout
+        assert "TST*THE VIAND" not in (fresh_vault / "ledger" / "2026.beancount").read_text()

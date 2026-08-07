@@ -822,32 +822,43 @@ def find_entries_by_source_id(ids: set[str]) -> dict[str, tuple[Path, str]]:
     return out
 
 
-def delete_entries(victims: list[tuple[Path, str]]) -> list[str]:
-    """Remove whole ledger entries, atomically, with bean-check rollback —
-    the audit tool's surgical half. Each (file, entry_text) must address
-    exactly one occurrence or NOTHING is touched; every mutated file rolls
-    back if validation fails. Returns the vault-relative paths rewritten."""
-    by_file: dict[Path, list[str]] = {}
-    for f, entry_text in victims:
-        by_file.setdefault(f, []).append(entry_text)
+def apply_edits(deletions: list[tuple[Path, str]],
+                replacements: list[tuple[Path, str, str]] | None = None) -> list[str]:
+    """One atomic, gated ledger transaction: remove whole entries AND swap
+    entry texts, together. Every target must address exactly one occurrence
+    or NOTHING is touched; all files roll back if bean-check fails. This is
+    what lets the audit delete duplicate rows and compensate their
+    derivation seeds as a single indivisible operation. Returns the
+    vault-relative paths rewritten."""
+    by_file: dict[Path, list[tuple[str, str | None]]] = {}
+    for f, entry_text in deletions:
+        by_file.setdefault(f, []).append((entry_text, None))
+    for f, old_text, new_text in replacements or []:
+        by_file.setdefault(f, []).append((old_text, new_text))
     main = VAULT / "ledger" / "main.beancount"
     backups: dict[Path, str | None] = {}
     try:
-        for f, texts in by_file.items():
+        for f, edits in by_file.items():
             backups[f] = text = f.read_text()
-            for entry_text in texts:
-                if text.count(entry_text) != 1:
-                    raise SystemExit(f"delete_entries: entry not uniquely addressable "
-                                     f"in {f.name} — nothing deleted")
-                text = text.replace(entry_text, "", 1)
+            for old_text, new_text in edits:
+                if text.count(old_text) != 1:
+                    raise SystemExit(f"apply_edits: entry not uniquely addressable "
+                                     f"in {f.name} — nothing changed")
+                text = text.replace(old_text, new_text if new_text is not None else "", 1)
             while "\n\n\n" in text:
                 text = text.replace("\n\n\n", "\n\n")
             atomic_write(f, text)
     except OSError as e:
         _restore(backups)
-        raise SystemExit(f"delete failed, rolled back: {e}") from e
+        raise SystemExit(f"edit failed, rolled back: {e}") from e
     _bean_check_or_rollback(backups, main)
     return [str(p.relative_to(VAULT)) for p in by_file]
+
+
+def delete_entries(victims: list[tuple[Path, str]]) -> list[str]:
+    """Remove whole ledger entries, atomically, with bean-check rollback
+    (see apply_edits — this is its deletion-only face)."""
+    return apply_edits(victims)
 
 
 def replace_by_source_id(replacements: dict[str, str]) -> list[str]:

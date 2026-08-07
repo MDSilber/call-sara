@@ -16,12 +16,22 @@ closest date, each entry consumed at most once, and only pairs at or above
 --min-amount (default $1.00) are considered.
 
 REPORT-ONLY BY DEFAULT: the full pair list prints with a keep/drop verdict
-per pair and dollar impact by month — nothing is modified. The keep rule:
-the plaid-id row survives (it is the ongoing feed's provenance; future
-syncs dedupe against it by id), the csv/ofx twin is dropped. A pair with
-NO plaid side (csv vs ofx) is listed as REVIEW and never auto-deleted.
---write applies the drops through the standard gates: atomic rewrite,
-bean-check, full rollback on any failure.
+per pair, the planned derivation-seed adjustments, and dollar impact by
+month — nothing is modified. The keep rule: the plaid-id row survives (it
+is the ongoing feed's provenance; future syncs dedupe against it by id),
+the csv/ofx twin is dropped. A pair with NO plaid side (csv vs ofx) is
+listed as REVIEW and never auto-deleted.
+
+DERIVATION SEEDS: vaults whose "Opening balance" seed entries were trued
+against live balances WHILE the duplicates existed absorbed the duplicate
+sums — deleting drop-sides alone would break the (correct) balance
+anchors. So --write, in the SAME atomic transaction, adjusts each affected
+account's seed posting by exactly the removed sum (sign-aware) and appends
+the adjustment to the seed's trailing comment. An affected account with NO
+seed entry is listed loudly and its pairs are excluded from --write
+(nothing deleted there) unless --force-no-seed; an account with several
+seed entries is ambiguous and always refuses. Everything lands through the
+standard gates: atomic rewrite, bean-check, full rollback on any failure.
 """
 
 from __future__ import annotations
@@ -39,15 +49,17 @@ from sara.ledger.writer import (
     FAMILY_PLAID,
     FIRST_POSTING,
     TXN_BLOCK,
-    delete_entries,
+    apply_edits,
     entry_family,
 )
 from sara.vault import VAULT, require_vault
 
-FLAGS = frozenset({"--write"})
+FLAGS = frozenset({"--write", "--force-no-seed"})
 DEFAULT_MIN_AMOUNT = Decimal("1.00")
+SEED_NARRATION = "Opening balance"  # the derivation-seed naming convention
 
 _HEADER_PAYEE = re.compile(r'^\d{4}-\d{2}-\d{2}\s+[*!]\s+"([^"]*)"')
+_HEADER_NARRATION = re.compile(r'^\d{4}-\d{2}-\d{2}\s+[*!]\s+"[^"]*"\s+"([^"]*)"')
 _POSTING_LINE = re.compile(
     r"^[ \t]+([A-Z][A-Za-z0-9:_-]*)[ \t]+(-?[\d,.]+)[ \t]+([A-Z][A-Z0-9'._-]*)(?=[ \t;]|$)",
     re.M)
@@ -71,6 +83,85 @@ class Pair(NamedTuple):
     @property
     def dollars(self) -> Decimal:
         return abs(self.drop.amount)
+
+
+class SeedPlan(NamedTuple):
+    """One derivation seed to compensate, ready for the atomic write."""
+
+    account: str
+    file: Path
+    entry_text: str
+    new_entry_text: str
+    old_amount: Decimal
+    delta: Decimal  # the removed sum — what the seed absorbs back
+
+    @property
+    def new_amount(self) -> Decimal:
+        return self.old_amount + self.delta
+
+
+def _seed_posting_re(account: str) -> re.Pattern[str]:
+    return re.compile(rf"^([ \t]+{re.escape(account)}[ \t]+)(-?[\d,.]+)( USD)(.*)$", re.M)
+
+
+def find_seed_entries(account: str) -> list[tuple[Path, str]]:
+    """Every "Opening balance" derivation-seed entry posting to `account`."""
+    out: list[tuple[Path, str]] = []
+    for f in sorted((VAULT / "ledger").glob("*.beancount")):
+        try:
+            text = f.read_text()
+        except OSError:
+            continue
+        for m in TXN_BLOCK.finditer(text):
+            nm = _HEADER_NARRATION.match(m.group(0))
+            if not nm or SEED_NARRATION not in nm.group(1):
+                continue
+            if _seed_posting_re(account).search(m.group(1)):
+                out.append((f, m.group(0)))
+    return out
+
+
+def plan_seed_adjustment(account: str, delta: Decimal,
+                         today: date) -> SeedPlan | str:
+    """A ready-to-apply seed compensation for one account, or the refusal
+    reason ("no seed" / "ambiguous seeds")."""
+    seeds = find_seed_entries(account)
+    if not seeds:
+        return "no seed"
+    if len(seeds) > 1:
+        return "ambiguous seeds"
+    f, entry_text = seeds[0]
+    pm = _seed_posting_re(account).search(entry_text)
+    assert pm is not None  # find_seed_entries matched on this very regex
+    old_amount = _dec(pm.group(2))
+    if old_amount is None:
+        return "unparseable seed amount"
+    note = f"and {delta:+,.2f} on {today.isoformat()} when cross-source duplicates were removed"
+    tail = pm.group(4).rstrip()
+    new_tail = f"{tail}; {note}" if tail.strip().startswith(";") else f"{tail}  ; {note}"
+    new_line = f"{pm.group(1)}{old_amount + delta:.2f}{pm.group(3)}{new_tail}"
+    new_entry = entry_text.replace(pm.group(0), new_line, 1)
+    return SeedPlan(account, f, entry_text, new_entry, old_amount, delta)
+
+
+def plan_seeds(pairs: list[Pair], today: date) -> tuple[list[SeedPlan], dict[str, str]]:
+    """Per-account compensation plans for every auto pair's account, plus
+    the accounts that refuse ({account: reason})."""
+    removed: dict[str, Decimal] = {}
+    for p in pairs:
+        if p.auto:
+            removed[p.drop.account] = removed.get(p.drop.account, Decimal(0)) + p.drop.amount
+    plans: list[SeedPlan] = []
+    refused: dict[str, str] = {}
+    for account in sorted(removed):
+        if removed[account] == 0:
+            continue  # deletions net to zero — the anchors never noticed
+        plan = plan_seed_adjustment(account, removed[account], today)
+        if isinstance(plan, str):
+            refused[account] = plan
+        else:
+            plans.append(plan)
+    return plans, refused
 
 
 def _dec(text: str) -> Decimal | None:
@@ -157,7 +248,8 @@ def find_pairs(entries: list[CashEntry],
     return sorted(pairs, key=lambda p: (p.keep.account, p.keep.when))
 
 
-def print_report(pairs: list[Pair], write: bool) -> None:
+def print_report(pairs: list[Pair], plans: list[SeedPlan],
+                 refused: dict[str, str], write: bool, force: bool) -> None:
     mode = "WRITE" if write else "REPORT ONLY (re-run with --write to remove the drop side)"
     print(f"== sara cash cross-source audit — {mode} ==")
     if not pairs:
@@ -173,6 +265,21 @@ def print_report(pairs: list[Pair], write: bool) -> None:
               f"{p.keep.payee!r} [{p.keep.family}]")
         print(f"       {'':>10}  {verdict:<4}  {p.drop.when} "
               f"{p.drop.payee!r} [{p.drop.family}]")
+    if plans or refused:
+        print("\nderivation-seed compensation (the seeds were trued while the "
+              "duplicates existed — deleting must give the sums back):")
+        for plan in plans:
+            print(f"  {plan.account}: seed {plan.old_amount:,.2f} -> "
+                  f"{plan.new_amount:,.2f} ({plan.delta:+,.2f}) [{plan.file.name}]")
+        for acct, reason in sorted(refused.items()):
+            if force and reason == "no seed":
+                print(f"  {acct}: {reason} — deleting WITHOUT compensation "
+                      f"(--force-no-seed); expect anchors to move")
+            else:
+                action = ("--force-no-seed deletes anyway"
+                          if reason == "no seed" else "never auto-deleted")
+                print(f"  {acct}: {reason.upper()} — its pairs are EXCLUDED from "
+                      f"--write ({action})")
     print("\nby month (|$| of duplicated rows):")
     by_month: dict[str, tuple[int, Decimal]] = {}
     for p in pairs:
@@ -203,18 +310,27 @@ def main(argv: list[str] | None = None) -> None:
         argv = argv[:i] + argv[i + 2:]
     reject_unknown_flags(argv, FLAGS, usage)
     write = "--write" in argv
+    force = "--force-no-seed" in argv
     require_vault()
     pairs = find_pairs(machine_cash_entries(min_amount))
-    print_report(pairs, write)
+    plans, refused = plan_seeds(pairs, date.today())
+    print_report(pairs, plans, refused, write, force)
     if not write:
         return
-    auto = [p for p in pairs if p.auto]
+    excluded = {acct for acct, reason in refused.items()
+                if not (force and reason == "no seed")}
+    auto = [p for p in pairs if p.auto and p.drop.account not in excluded]
     if not auto:
         print("\nnothing auto-removable — no writes.")
         return
-    paths = delete_entries([(p.drop.file, p.drop.entry_text) for p in auto])
+    paths = apply_edits(
+        deletions=[(p.drop.file, p.drop.entry_text) for p in auto],
+        replacements=[(plan.file, plan.entry_text, plan.new_entry_text)
+                      for plan in plans],
+    )
     print(f"\nremoved {len(auto)} duplicate entr{'y' if len(auto) == 1 else 'ies'} "
-          f"from {', '.join(sorted(set(paths)))} (bean-check passed); "
+          f"and adjusted {len(plans)} derivation seed{'s' if len(plans) != 1 else ''} "
+          f"in {', '.join(sorted(set(paths)))} (bean-check passed); "
           f"kept every plaid-id row. REVIEW pairs were not touched.")
     err("; tip: re-run the audit — it should now find only REVIEW pairs, if any")
 
