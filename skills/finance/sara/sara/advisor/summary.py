@@ -18,7 +18,7 @@ from sara.advisor.crosscheck import ensure_crosschecks
 from sara.vault import (OWNER_JOINT, OWNER_UNASSIGNED, REPORTS, VAULT, account_owners,
                    amount, dated_bullets, query, shadow_currency)
 from sara.advisor.reports import liquid_balances, owner_rollup, paper_value, spend_matrix
-from sara.advisor.webview import _units, latest_ledger_date, networth_series, parse_findings
+from sara.advisor.webview import units_of, latest_ledger_date, networth_series, parse_findings
 from sara.advisor.checks import goals as goals_config
 from sara.advisor.checks import lane_status
 from sara.advisor.forecast import DEFAULT_DAYS, build_forecast
@@ -123,7 +123,7 @@ def _positions():
                    "GROUP BY currency ORDER BY currency"):
         cell = r["usd"] or ""
         out.append({"symbol": r["currency"],
-                    "units": _units(r["units"], r["currency"]),
+                    "units": units_of(r["units"], r["currency"]),
                     "usd": amount(cell) if "USD" in cell else None})
     return out
 

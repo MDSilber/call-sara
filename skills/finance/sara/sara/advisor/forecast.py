@@ -33,12 +33,14 @@ import re
 import sys
 from collections import Counter
 from datetime import date, datetime, timedelta
+from typing import Any, NotRequired, TypedDict, cast
 
 from sara.vault import (amount, dated_bullets, illiquid_currency_regex,
                    money, query, rules)
 from sara.advisor.checks import (FIXED_DRIFT_TOLERANCE, _closed_accounts,
                     _cycle_anchors, _cycle_day, _matches_segments,
                     _normalize_merchant)
+from sara.advisor.types import Money
 
 # ---------------------------------------------------------------- tuning
 DEFAULT_DAYS = 60             # two rent+paycheck cycles: long enough to catch a rent/tax
@@ -101,7 +103,105 @@ ONEOFF_CHORE = re.compile(r"^(verify|check|confirm|review|nudge|remind|ask|email
                           r"|follow.?up)\b", re.I)
 
 
-def _merchant(label):
+# ---------------------------------------------------------------- shapes
+Occurrence = tuple[Money, str, str]
+"""One dated hit of a candidate stream: (amount, label, kind)."""
+
+
+class Post(TypedDict):
+    """One USD cash posting, classified (_cash_postings)."""
+    account: str
+    date: date
+    label: str
+    merchant: str       # "" for pad-generated postings — never forms a stream
+    amt: Money
+    kind: str           # income | expense | transfer
+
+
+class Stream(TypedDict):
+    """A qualified recurring stream (_stream), or a declared card autopay."""
+    account: str
+    merchant: str
+    label: str
+    kind: str
+    cadence: str        # a CADENCE_WINDOWS name | semimonthly | declared
+    step: int | None    # median in-window gap; None for month-stepped cadences
+    amount: Money
+    dates: list[date]
+    last: date
+    n: int
+    anchor_day: NotRequired[int]  # declared card cycles only: the bill_day
+
+
+class Flow(TypedDict):
+    """One projected occurrence of a stream on its account."""
+    date: date
+    amount: Money
+    label: str
+    kind: str
+    cadence: str
+    overdue: bool
+    running: NotRequired[Money]  # balance after this flow, set by build_forecast
+
+
+class AccountForecast(TypedDict):
+    account: str
+    start: Money
+    asof: date | None
+    flows: list[Flow]
+    min: Money
+    min_date: date
+    end_balance: Money
+    floor: Money | None
+    mmf: Money
+
+
+class Warn(TypedDict):
+    account: str
+    kind: str           # below_zero | below_floor
+    min: Money
+    date: date
+    floor: Money | None
+    drivers: str
+
+
+class DatedNote(TypedDict):
+    """A dated facts/ bullet inside the horizon."""
+    date: date
+    text: str
+    source: str
+
+
+class Oneoff(DatedNote):
+    amount: Money       # signed: + arrives, − leaves
+
+
+class Household(TypedDict):
+    start: Money
+    income: Money
+    expense: Money
+    transfer_net: Money
+    oneoffs: list[Oneoff]
+    oneoff_total: Money
+    ambiguous: list[Oneoff]
+    unquantified: list[DatedNote]
+    surplus: Money
+    warns: list[Warn]
+
+
+class Forecast(TypedDict):
+    today: date
+    end: date
+    accounts: list[AccountForecast]
+    household: Household
+
+
+# functional form: "from" is a keyword
+DeclaredCard = TypedDict("DeclaredCard", {"bill": int, "close": int,
+                                          "from": "str | None", "label": str})
+
+
+def _merchant(label: str) -> str:
     """The subscription radar's normalizer, plus: strip SHORT digit runs (2-4).
 
     Payroll payees carry a rotating run number ("ACME-OSV PAYROLL240" →
@@ -114,7 +214,7 @@ def _merchant(label):
 
 
 # ---------------------------------------------------------------- ledger
-def _cash_postings():
+def _cash_postings() -> list[Post]:
     """Every USD posting on an Assets/Liabilities account, classified.
 
     kind is the transaction's shape, joined via the query id: any Income leg
@@ -123,12 +223,12 @@ def _cash_postings():
     401k/529/brokerage buy looks like a transfer out of the cash universe,
     which is exactly how a forecast should treat it).
     """
-    kind = {}
+    kind: dict[str, str] = {}
     for r in query("SELECT id, account WHERE account ~ '^(Income|Expenses)'"):
         k = "income" if (r["account"] or "").startswith("Income") else "expense"
         if kind.get(r["id"]) != "income":  # income outranks expense (gross payroll
             kind[r["id"]] = k              # carries Expenses:Taxes legs too)
-    posts = []
+    posts: list[Post] = []
     for r in query("SELECT id, date, payee, narration, account, number "
                    "WHERE account ~ '^(Assets|Liabilities)' AND currency = 'USD'"):
         try:
@@ -147,7 +247,7 @@ def _cash_postings():
     return posts
 
 
-def _cadence_of(dates):
+def _cadence_of(dates: list[date]) -> tuple[str | None, int | None]:
     """(cadence name, step days) for sorted distinct dates, or (None, None).
 
     A stream conforms when >= STREAM_GAP_CONFORMANCE of its gaps sit inside
@@ -170,13 +270,14 @@ def _cadence_of(dates):
     return None, None
 
 
-def _offcycle_gaps(dates, lo, hi):
+def _offcycle_gaps(dates: list[date], lo: int, hi: int) -> int:
     """How many gaps in the history fall OUTSIDE the cadence window."""
     gaps = [(b - a).days for a, b in zip(dates, dates[1:])]
     return sum(1 for g in gaps if not lo <= g <= hi)
 
 
-def _stream(account, merchant, occurrences, today):
+def _stream(account: str, merchant: str, occurrences: dict[date, Occurrence],
+            today: date | None) -> Stream | None:
     """Qualify one candidate stream. occurrences: {date: (amt, label, kind)}.
 
     Returns the stream dict or None. Conservative by construction: minimum
@@ -210,7 +311,7 @@ def _stream(account, merchant, occurrences, today):
             "dates": dates, "last": dates[-1], "n": len(dates)}
 
 
-def recurring_streams(posts, today=None):
+def recurring_streams(posts: list[Post], today: date | None = None) -> list[Stream]:
     """Generalized recurring streams over all cash postings, two passes.
 
     Pass 1 keys on (account, merchant, exact amount) — the subscription
@@ -221,7 +322,8 @@ def recurring_streams(posts, today=None):
     whose net wobbles. Both passes face the same qualification gates.
     """
     skip = _closed_accounts()
-    by_exact, by_key = {}, {}
+    by_exact: dict[tuple[str, str, Money], dict[date, Occurrence]] = {}
+    by_key: dict[tuple[str, str, bool], dict[date, list[Any]]] = {}  # [amt, label, kind], a mutable triple
     for p in posts:
         if not p["merchant"] or p["account"] in skip:
             continue
@@ -229,7 +331,8 @@ def recurring_streams(posts, today=None):
             continue  # the own-transfer clearing account nets to ~0 by design
         by_exact.setdefault((p["account"], p["merchant"], p["amt"]), {})[p["date"]] = (
             p["amt"], p["label"], p["kind"])
-    streams, claimed = [], set()
+    streams: list[Stream] = []
+    claimed: set[tuple[str, str, Money]] = set()
     for (account, merchant, amt), occ in by_exact.items():
         s = _stream(account, merchant, occ, today)
         if s:

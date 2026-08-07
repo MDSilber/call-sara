@@ -1,3 +1,4 @@
+# pyright: strict
 #!/usr/bin/env python3
 """Query the vault — the fast way to answer money questions without eyeballing the ledger.
 
@@ -18,6 +19,8 @@ Usage:  tools/run query.py <command> [args]
 Arithmetic here; judgment stays with the agent. Prefer reports/*.md for the
 standing answers — reach for this for anything not precomputed.
 """
+from __future__ import annotations
+
 import re
 import sys
 from datetime import date
@@ -25,20 +28,21 @@ from datetime import date
 from sara.vault import (OWNER_JOINT, OWNER_UNASSIGNED, account_owners, amount,
                    illiquid_currency_regex, money, query, shadow_currency)
 from sara.advisor.checks import goals
+from sara.advisor.types import Money
 
 
-def bql_str(s):
+def bql_str(s: str) -> str:
     """Escape a value for interpolation inside a single-quoted BQL string —
     beanquery understands SQL-style doubled quotes, so text can never break
     out of the '...' literal (payee regexes are user/bank-adjacent input)."""
     return str(s).replace("'", "''")
 
 
-def _liquid_by_account():
+def _liquid_by_account() -> list[tuple[str, Money]]:
     """Per-account liquid USD — the same query `balances` prints, as data."""
     excl = bql_str(illiquid_currency_regex() or "") or None
     where = "account ~ '^(Assets|Liabilities)'" + (f" AND NOT currency ~ '{excl}'" if excl else "")
-    out = []
+    out: list[tuple[str, Money]] = []
     for r in query(f"SELECT account, sum(convert(position,'USD')) AS v WHERE {where} "
                    f"GROUP BY account ORDER BY account"):
         cell = r["v"] or ""
@@ -48,7 +52,7 @@ def _liquid_by_account():
     return out
 
 
-def _print_by_owner():
+def _print_by_owner() -> None:
     """The owner lens: liquid net worth split by account `owner:` metadata,
     joint shown as its own slice, plus a 50/50-attributed line (a display
     convention, not an agreement) when the household has exactly two people."""
@@ -57,13 +61,14 @@ def _print_by_owner():
         print("\nNo `owner:` metadata on any account — tag opens in "
               "ledger/accounts.beancount (see references/querying.md).")
         return
-    sums, counts = {}, {}
+    sums: dict[str, Money] = {}
+    counts: dict[str, int] = {}
     for acct, v in _liquid_by_account():
         who = owners.get(acct, OWNER_UNASSIGNED)
         sums[who] = sums.get(who, 0.0) + v
         counts[who] = counts.get(who, 0) + 1
 
-    def rank(who):
+    def rank(who: str) -> tuple[int, str]:
         return (2 if who == OWNER_UNASSIGNED else 1 if who == OWNER_JOINT else 0, who)
 
     print("\nBy owner (account `owner:` metadata; liquid only):")
@@ -77,7 +82,7 @@ def _print_by_owner():
         print(f"50/50-attributed (joint split evenly — convention, not law): {attributed}")
 
 
-def cmd_networth(args):
+def cmd_networth(args: list[str]) -> None:
     excl = bql_str(illiquid_currency_regex() or "") or None
     where = "account ~ '^(Assets|Liabilities)'" + (f" AND NOT currency ~ '{excl}'" if excl else "")
     rows = query(f"SELECT root(account,1) AS r, sum(convert(position,'USD')) AS v "
@@ -96,7 +101,7 @@ def cmd_networth(args):
         _print_by_owner()
 
 
-def cmd_balances(_):
+def cmd_balances(_: list[str]) -> None:
     excl = bql_str(illiquid_currency_regex() or "") or None
     where = "account ~ '^(Assets|Liabilities)'" + (f" AND NOT currency ~ '{excl}'" if excl else "")
     owners = account_owners()  # empty on a pre-owner ledger: column stays off
@@ -115,7 +120,7 @@ def cmd_balances(_):
             print(f"{money(v):>14}  {acct}{who}")
 
 
-def cmd_positions(_):
+def cmd_positions(_: list[str]) -> None:
     for r in query("SELECT currency, sum(position) AS units, sum(convert(position,'USD')) AS usd "
                    "WHERE account ~ '^Assets' AND currency != 'USD' GROUP BY currency "
                    "ORDER BY currency"):
@@ -124,7 +129,7 @@ def cmd_positions(_):
         print(f"{val:>16}  {r['currency']:<12} {units}")
 
 
-def cmd_spend(args):
+def cmd_spend(args: list[str]) -> None:
     period = args[0] if args else str(date.today().year)
     if not re.fullmatch(r"\d{4}(-\d{2})?", period):
         sys.exit(f"usage: spend [YYYY|YYYY-MM]   (got {period!r})")
@@ -144,12 +149,12 @@ def cmd_spend(args):
     print(f"{money(total):>12}  TOTAL ({period})")
 
 
-def cmd_cashflow(args):
+def cmd_cashflow(args: list[str]) -> None:
     year = int(args[0]) if args else date.today().year
     rows = query(f"SELECT month, root(account,1) AS r, sum(convert(position,'USD')) AS v "
                  f"WHERE year = {year} AND account ~ '^(Income|Expenses)' GROUP BY month, r "
                  f"ORDER BY month")
-    by_month = {}
+    by_month: dict[int, dict[str, Money]] = {}
     for r in rows:
         by_month.setdefault(int(r["month"]), {})[r["r"]] = amount(r["v"])
     print(f"{'month':<8}{'income':>14}{'expenses':>14}{'net':>14}")
@@ -159,7 +164,7 @@ def cmd_cashflow(args):
         print(f"{year}-{m:02d}{money(inc):>14}{money(exp):>14}{money(inc - exp):>14}")
 
 
-def cmd_payee(args):
+def cmd_payee(args: list[str]) -> None:
     if not args:
         sys.exit("usage: payee <regex>")
     for r in query(f"SELECT date, payee, account, number WHERE payee ~ '{bql_str(args[0])}' "
@@ -167,7 +172,7 @@ def cmd_payee(args):
         print(f"{r['date']}  {money(amount(r['number'])):>12}  {r['account']:<40} {r['payee']}")
 
 
-def cmd_uncategorized(args):
+def cmd_uncategorized(args: list[str]) -> None:
     limit = int(args[0]) if args else 25
     rows = query("SELECT payee, count(*) AS n, sum(convert(position,'USD')) AS v "
                  "WHERE account = 'Expenses:Uncategorized' GROUP BY payee")
@@ -178,13 +183,13 @@ def cmd_uncategorized(args):
         print(f"{money(amount(r['v'])):>12}  x{int(float(r['n'])):<4} {r['payee']}")
 
 
-def cmd_accounts(_):
+def cmd_accounts(_: list[str]) -> None:
     for r in query("SELECT account, open_date(account) AS opened GROUP BY account, opened "
                    "ORDER BY account"):
         print(f"{r['account']}")
 
 
-def cmd_project(args):
+def cmd_project(args: list[str]) -> None:
     """Project envelope: everything tagged #<slug>, category breakdown, and
     budget-vs-actual when facts/goals sets project_budget_<slug>."""
     if not args:
@@ -205,7 +210,7 @@ def cmd_project(args):
         print(f"\nbudget {money(float(budget))} — {money(abs(left))} {'left' if left >= 0 else 'OVER'}")
 
 
-def cmd_sql(args):
+def cmd_sql(args: list[str]) -> None:
     if not args:
         sys.exit('usage: sql "<beancount query>"')
     rows = query(args[0])

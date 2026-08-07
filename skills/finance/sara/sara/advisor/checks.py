@@ -20,16 +20,21 @@ THE VOICE GATE — every user-visible string (titles, details, queue fixes):
    (webview.fix_line falls back to it). Terminal output is operator-land —
    commands live there, and only there.
 """
+from __future__ import annotations
+
 import calendar
 import re
 from collections import Counter
+from collections.abc import Callable
 from datetime import date, datetime, timedelta
+from typing import Any, TypedDict, cast
 
+from sara.advisor.types import YM, Finding, Money, Row
 from sara.vault import (VAULT, amount, dated_bullets, illiquid_currency_regex,
                    money, query, rules, shadow_currency)
 
 
-def goals():
+def goals() -> dict[str, Any]:
     """Parse the ```yaml block out of facts/goals/index.md (no yaml dependency)."""
     path = VAULT / "facts" / "goals" / "index.md"
     if not path.exists():
@@ -37,7 +42,7 @@ def goals():
     m = re.search(r"```yaml\n(.*?)```", path.read_text(), re.S)
     if not m:
         return {}
-    out = {}
+    out: dict[str, float | str | None] = {}
     for line in m.group(1).splitlines():
         line = line.split("#", 1)[0].strip()
         if not line or ":" not in line:
@@ -54,11 +59,11 @@ def goals():
     return out
 
 
-def finding(check, severity, title, detail):
+def finding(check: str, severity: str, title: str, detail: str) -> Finding:
     return {"check": check, "severity": severity, "title": title, "detail": detail}
 
 
-def bql_str(s):
+def bql_str(s: object) -> str:
     """Escape a value for interpolation inside a single-quoted BQL string —
     beanquery understands SQL-style doubled quotes, so rules.toml-sourced
     text can never break out of the '...' literal."""
@@ -66,7 +71,7 @@ def bql_str(s):
 
 
 # ------------------------------------------------------------- concentration
-def _thesis_declared_symbols():
+def _thesis_declared_symbols() -> tuple[set[str], str]:
     """Symbols the written plan already covers: tickers named anywhere in
     THESIS.md (a mention means a policy exists — the selling rule, a lane,
     an explicit call) plus rules.toml [allocation_targets] employer_stock.
@@ -79,22 +84,23 @@ def _thesis_declared_symbols():
             text = path.read_text()
         except OSError:
             text = ""
-    stock = rules().get("allocation_targets", {}).get("employer_stock", [])
+    targets: dict[str, Any] = rules().get("allocation_targets", {})
+    stock: list[Any] = targets.get("employer_stock", [])
     named = {str(s).strip().upper() for s in stock if str(s).strip()}
     return named, text
 
 
-def concentration():
+def concentration() -> list[Finding]:
     """Flag a single holding above the ceiling, as % of total (liquid+paper).
 
     Only UNDECLARED LIQUID positions fire. Illiquid paper is the thesis's
     act-at-a-liquidity-event class by construction, and any ticker the
     thesis names already has a policy — both auto-resolve silently."""
-    ceiling = goals().get("concentration_ceiling_pct") or 15
+    ceiling: float = goals().get("concentration_ceiling_pct") or 15
     excl = illiquid_currency_regex()
     rows = query("SELECT currency, sum(convert(position, 'USD')) AS v "
                  "WHERE account ~ '^Assets' AND currency != 'USD' GROUP BY currency")
-    values = {}
+    values: dict[str, Money] = {}
     for r in rows:
         if excl and re.match(excl, r["currency"] or ""):
             continue  # illiquid ones are valued in the shadow currency below
@@ -104,9 +110,10 @@ def concentration():
     cash = query("SELECT sum(convert(position, 'USD')) AS v "
                  "WHERE account ~ '^(Assets|Liabilities)' AND currency = 'USD'")
     liquid_total = sum(values.values()) + (amount(cash[0]["v"]) if cash else 0.0)
-    paper = {}
+    paper: dict[str, Money] = {}
     if excl:
-        prefixes = rules().get("household", {}).get("illiquid_commodity_prefixes", [])
+        house: dict[str, Any] = rules().get("household", {})
+        prefixes: list[str] = house.get("illiquid_commodity_prefixes", [])
         for r in query(f"SELECT currency, sum(convert(position, '{bql_str(shadow_currency())}')) AS v "
                        f"WHERE account ~ '^Assets' AND currency ~ '{bql_str(excl)}' GROUP BY currency"):
             v = amount(r["v"], shadow_currency())
@@ -117,7 +124,7 @@ def concentration():
     if total <= 0:
         return []
     named, thesis_text = _thesis_declared_symbols()
-    out = []
+    out: list[Finding] = []
     for sym, v in values.items():  # liquid only — paper auto-resolves per the thesis
         pct = 100.0 * v / total
         if pct <= ceiling:
@@ -135,11 +142,11 @@ def concentration():
 
 
 # ---------------------------------------------------------------- deadlines
-def deadlines():
+def deadlines() -> list[Finding]:
     horizon = int(goals().get("deadline_horizon_days") or 45)
     today = date.today()
-    out = []
-    seen = set()  # the same event often lives in two facts files (calendar + a note)
+    out: list[Finding] = []
+    seen: set[tuple[date, str]] = set()  # the same event often lives in two facts files (calendar + a note)
     for d, text, relpath in dated_bullets():
         days = (d - today).days
         key = (d, " ".join(text.lower().split())[:80])
@@ -153,7 +160,7 @@ def deadlines():
 
 
 # -------------------------------------------------------------------- inbox
-def inbox():
+def inbox() -> list[Finding]:
     """The drop zone must drain: anything sitting in inbox/ is a document
     waiting to be identified and filed (tools/run inbox.py). A watch, so
     the needs-you queue and the phone surface both nag until it's empty."""
@@ -188,7 +195,7 @@ SPIKE_MIN_ACTIVE_MONTHS = 3  # a category needs 3 spending months of history bef
 SPIKE_TOP_N = 3              # review gates, not an audit — surface the 3 biggest and stop
 
 
-def anomaly():
+def anomaly() -> list[Finding]:
     """Review gates: charges at rarely-seen payees, and categories running hot.
 
     Two independent signals under one check: (a) large charges at payees the
@@ -199,12 +206,12 @@ def anomaly():
     return _rare_payee_charges() + _category_spikes()
 
 
-def _rare_payee_charges():
+def _rare_payee_charges() -> list[Finding]:
     """Large charges at payees you rarely use — the fraud / surprise signal."""
-    floor_amt = goals().get("anomaly_min_amount") or 400
-    tune = rules().get("anomaly", {})
-    ignore_acct = tune.get("ignore_account_regex", "Cash|Uncategorized")
-    ignore_payee = tune.get("ignore_payee_regex", r"^(ATM |WITHDRAWAL|CHECK )")
+    floor_amt: Money = goals().get("anomaly_min_amount") or 400
+    tune: dict[str, Any] = rules().get("anomaly", {})
+    ignore_acct: str = tune.get("ignore_account_regex", "Cash|Uncategorized")
+    ignore_payee: str = tune.get("ignore_payee_regex", r"^(ATM |WITHDRAWAL|CHECK )")
     rows = query("SELECT date, payee, number, account "
                  f"WHERE account ~ '^Expenses' AND NOT account ~ '{bql_str(ignore_acct)}' "
                  "AND currency = 'USD' AND number > 0 ORDER BY date")
@@ -213,7 +220,7 @@ def _rare_payee_charges():
         return []
     freq = Counter((r["payee"] or "").strip().upper() for r in rows)
     last = max(datetime.strptime(r["date"], "%Y-%m-%d").date() for r in rows)
-    out = []
+    out: list[Finding] = []
     for r in rows:
         d = datetime.strptime(r["date"], "%Y-%m-%d").date()
         if (last - d).days > 45:
@@ -230,7 +237,7 @@ def _rare_payee_charges():
     return out[-8:]  # cap noise
 
 
-def _category_spikes():
+def _category_spikes() -> list[Finding]:
     """Any category whose latest data month is >2x its trailing 6-month median.
 
     "Latest data month", not the calendar month — a feed that ends July 27
@@ -247,12 +254,14 @@ def _category_spikes():
     A spike explained by an annual renewal (a yearly-cadence subscription
     stream billing into that category this month) is suppressed outright.
     """
-    floor_amt = goals().get("anomaly_min_amount") or 400
-    lumpy = rules().get("anomaly", {}).get("ignore_account_regex", "Cash|Uncategorized")
+    floor_amt: Money = goals().get("anomaly_min_amount") or 400
+    tune: dict[str, Any] = rules().get("anomaly", {})
+    lumpy: str = tune.get("ignore_account_regex", "Cash|Uncategorized")
     rows = query("SELECT year, month, root(account, 2) AS cat, "
                  "sum(convert(position,'USD')) AS v "
                  "WHERE account ~ '^Expenses' GROUP BY year, month, cat")
-    by_cat, months = {}, set()
+    by_cat: dict[str, dict[YM, Money]] = {}
+    months: set[YM] = set()
     for r in rows:
         ym = (int(r["year"]), int(r["month"]))
         v = amount(r["v"])
@@ -262,14 +271,14 @@ def _category_spikes():
     if not months:
         return []
     cur = max(months)
-    trailing = []
+    trailing: list[YM] = []
     y, m = cur
     for _ in range(SPIKE_TRAILING_MONTHS):
         m -= 1
         if m < 1:
             y, m = y - 1, 12
         trailing.append((y, m))
-    scored = []
+    scored: list[tuple[Money, Finding]] = []
     renewed = _annual_renewal_categories(cur)
     for cat, series in by_cat.items():
         if lumpy and re.search(lumpy, cat):
@@ -294,7 +303,7 @@ def _category_spikes():
     return [f for _, f in scored[:SPIKE_TOP_N]]
 
 
-def _annual_renewal_categories(cur):
+def _annual_renewal_categories(cur: YM) -> set[str]:
     """Expense categories where a yearly-cadence subscription stream billed in
     month `cur` — a doubled month explained by a known annual renewal. Matched
     by normalized merchant against that month's postings."""
@@ -305,7 +314,7 @@ def _annual_renewal_categories(cur):
         return set()
     start = date(cur[0], cur[1], 1)
     end = date(cur[0], cur[1], calendar.monthrange(*cur)[1])
-    out = set()
+    out: set[str] = set()
     for r in query(f"SELECT payee, root(account, 2) AS cat WHERE account ~ '^Expenses' "
                    f"AND date >= {start.isoformat()} AND date <= {end.isoformat()}"):
         if _normalize_merchant(r["payee"]) in annual:
@@ -319,7 +328,7 @@ REVIEW_SHARE_PCT = 5  # the finding fires only past this share of the current mo
                       # meter and stragglers never page anyone
 
 
-def review_queue():
+def review_queue() -> list[Finding]:
     """The month can't be reviewed honestly yet — the categorization gate.
 
     Counts Expenses:Uncategorized (this vault's convention) and Expenses:FIXME
@@ -331,7 +340,8 @@ def review_queue():
     rows = query("SELECT year, month, account, count(*) AS n, "
                  "sum(convert(position,'USD')) AS v "
                  "WHERE account ~ '^Expenses' GROUP BY year, month, account")
-    per, cur_total, cur_uncat = {}, 0, 0
+    per: dict[str, list[float]] = {}
+    cur_total, cur_uncat = 0, 0
     cur = max(((int(r["year"]), int(r["month"])) for r in rows), default=None)
     if cur is None:
         return []
@@ -360,7 +370,7 @@ def review_queue():
 
 
 # -------------------------------------------------------------------- goals
-def goals_status():
+def goals_status() -> list[Finding]:
     """Retired as a findings source — the Goals room owns its own empty
     state, so unset targets never page anyone. Kept for compatibility."""
     return []
@@ -386,12 +396,12 @@ SUB_CYCLES_PER_YEAR = {"monthly": 12, "yearly": 1}
 SUB_IGNORE_ACCOUNT_DEFAULT = "Housing|Rent|Mortgage|Childcare|Insurance|Taxes|Loan|Tuition|Interest"
 
 
-def _cents(x):
+def _cents(x: Money) -> str:
     """money() rounds to whole dollars; subscription prices live in cents."""
     return f"${x:,.2f}"
 
 
-def _normalize_merchant(payee):
+def _normalize_merchant(payee: str | None) -> str:
     """Collapse statement noise so 'NETFLIX.COM 866-579-7172 #8842' and
     'Netflix' group together: lowercase, strip date-ish tokens, #refs, long
     (5+) digit ids, punctuation; cap at SUB_MERCHANT_MAX_LEN."""
@@ -403,7 +413,20 @@ def _normalize_merchant(payee):
     return " ".join(s.split())[:SUB_MERCHANT_MAX_LEN].strip()
 
 
-def _subscription_streams():
+class SubscriptionStream(TypedDict):
+    """One recurring stream as _subscription_streams() detects it."""
+    merchant: str
+    amount: Money
+    funding: str
+    cadence: str
+    first: date
+    last: date
+    n: int
+    active: bool
+    monthly: Money
+
+
+def _subscription_streams() -> list[SubscriptionStream]:
     """Expense postings grouped into recurring streams.
 
     A stream is (normalized merchant, |amount|, funding account) — the
@@ -414,13 +437,13 @@ def _subscription_streams():
     into one stream and go unseen. Same-day duplicates within a stream
     collapse (a literal double-charge is a dispute, not a subscription).
     """
-    ignore = rules().get("subscriptions", {}).get(
-        "ignore_account_regex", SUB_IGNORE_ACCOUNT_DEFAULT)
-    funding = {}
+    tune: dict[str, Any] = rules().get("subscriptions", {})
+    ignore: str = tune.get("ignore_account_regex", SUB_IGNORE_ACCOUNT_DEFAULT)
+    funding: dict[str, str] = {}
     for r in query("SELECT id, account WHERE account ~ '^(Assets|Liabilities)' "
                    "AND number < 0"):
         funding.setdefault(r["id"], r["account"])
-    groups = {}
+    groups: dict[tuple[str, Money, str], set[date]] = {}
     for r in query("SELECT id, date, payee, account, number "
                    "WHERE account ~ '^Expenses' AND number > 0 AND currency = 'USD'"):
         if ignore and re.search(ignore, r["account"] or ""):
@@ -434,7 +457,7 @@ def _subscription_streams():
             continue
         amt = round(amount(r["number"]), 2)
         groups.setdefault((merchant, amt, funding.get(r["id"], "")), set()).add(d)
-    streams = []
+    streams: list[SubscriptionStream] = []
     for (merchant, amt, fund), dateset in groups.items():
         dates = sorted(dateset)
         if len(dates) < SUB_MIN_OCCURRENCES:
@@ -454,13 +477,13 @@ def _subscription_streams():
     return streams
 
 
-def subscriptions():
+def subscriptions() -> list[Finding]:
     """Recurring-charge radar: twin billing, price creep, total burden."""
     streams = _subscription_streams()
     if not streams:
         return []
-    out = []
-    by_merchant = {}
+    out: list[Finding] = []
+    by_merchant: dict[str, list[SubscriptionStream]] = {}
     for s in streams:
         by_merchant.setdefault(s["merchant"], []).append(s)
     for merchant, ss in sorted(by_merchant.items()):
@@ -523,18 +546,18 @@ RECON_SKIP_SEGMENTS = ("401k", "403b", "457", "529", "ira", "roth", "hsa", "brok
                        "invest", "pension", "retire", "treasury", "transfer")
 
 
-def _matches_segments(account, tokens):
+def _matches_segments(account: str, tokens: tuple[str, ...]) -> bool:
     segs = [s.lower() for s in account.split(":")]
     return any(s == t or s.startswith(t) or s.endswith(t) for s in segs for t in tokens)
 
 
-def _posting_dates(currency=None):
+def _posting_dates(currency: str | None = None) -> dict[str, list[date]]:
     """{account: sorted DISTINCT posting dates} for every Assets/Liabilities
     account. Distinct, because rhythm is about days with activity — an
     opening balance with five legs is one day of history, not five.
     With currency="USD", only cash postings count — that limits the map to
     bank/card-style accounts (a shares-only holding account never posts USD)."""
-    out = {}
+    out: dict[str, list[date]] = {}
     cur = f" AND currency = '{currency}'" if currency else ""
     for r in query("SELECT account, date WHERE account ~ '^(Assets|Liabilities)'"
                    f"{cur} ORDER BY account, date"):
@@ -551,14 +574,14 @@ def _posting_dates(currency=None):
 BALANCE_DIRECTIVE = re.compile(r"^(\d{4}-\d{2}-\d{2})\s+balance\s+([A-Za-z][\w:-]*)", re.M)
 
 
-def _newest_assertions():
+def _newest_assertions() -> dict[str, date]:
     """{account: date of its newest `balance` assertion} across ledger/*.beancount.
 
     Read from the files, not bean-query (assertions are directives, not
     postings). Anchored at line start, so the importers' commented-out
     unverified suggestions don't count as anchors.
     """
-    newest = {}
+    newest: dict[str, date] = {}
     for f in sorted((VAULT / "ledger").glob("*.beancount")):
         try:
             txt = f.read_text()
@@ -576,16 +599,16 @@ def _newest_assertions():
 
 
 
-def _closed_accounts():
+def _closed_accounts() -> set[str]:
     """Accounts with a `close` directive — reconciliation/coverage skip them."""
     import re as _re
-    out = set()
+    out: set[str] = set()
     for f in (VAULT / "ledger").glob("*.beancount"):
         out.update(_re.findall(r"^\d{4}-\d{2}-\d{2}\s+close\s+(\S+)", f.read_text(), _re.M))
     return out
 
 
-def reconciliation():
+def reconciliation() -> list[Finding]:
     """Balance-assertion staleness — is the ledger still anchored to reality?
 
     Per active bank/card account: no assertion in ~two statement cycles →
@@ -596,7 +619,7 @@ def reconciliation():
     today = date.today()
     anchors = _newest_assertions()
     closed = _closed_accounts()
-    out = []
+    out: list[Finding] = []
     for account, dates in sorted(_posting_dates(currency="USD").items()):
         if _matches_segments(account, RECON_SKIP_SEGMENTS):
             continue
@@ -636,24 +659,24 @@ COV_CADENCE_DAYS = {"fast": 35, "monthly": 45, "quarterly": 100}
 CYCLE_LAST_DAY = 31  # "last" parses to 31; _cycle_anchors clamps to each month's real end
 
 
-def _cycle_day(value):
+def _cycle_day(value: object) -> int | None:
     """Parse a declared bill_day / statement_close value: 1-31 or "last" ->
     anchor day, None when absent or malformed. A typo'd hint must never crash
     a read-only tool — the account just falls back to pure inference."""
     if isinstance(value, str) and value.strip().lower() == "last":
         return CYCLE_LAST_DAY
     try:
-        day = int(value)
+        day = int(cast(int, value))
     except (TypeError, ValueError):
         return None
     return day if 1 <= day <= 31 else None
 
 
-def _cycle_anchors(day, start, end):
+def _cycle_anchors(day: int, start: date, end: date) -> list[date]:
     """Every declared cycle-day date in (start, end] — the statement closes /
     autopay days the calendar says belong to that window. Clamped to short
     months, so day 31 (and "last") lands on Feb 28/29, Apr 30, ..."""
-    out = []
+    out: list[date] = []
     y, m = start.year, start.month
     while (y, m) <= (end.year, end.month):
         a = date(y, m, min(day, calendar.monthrange(y, m)[1]))
@@ -663,7 +686,7 @@ def _cycle_anchors(day, start, end):
     return out
 
 
-def coverage():
+def coverage() -> list[Finding]:
     """Stale feeds and month-sized holes — where the ledger stopped seeing.
 
     An account's typical rhythm is the median gap between its postings
@@ -680,9 +703,10 @@ def coverage():
     COV_MAX_FINDINGS, most-active accounts first.
     """
     today = date.today()
-    cfg = {a.get("ledger_account"): a for a in rules().get("accounts", [])
+    accounts_cfg: list[dict[str, Any]] = rules().get("accounts", [])
+    cfg = {a.get("ledger_account"): a for a in accounts_cfg
            if a.get("ledger_account")}
-    candidates = []  # (activity, finding)
+    candidates: list[tuple[int, Finding]] = []  # (activity, finding)
     for account, dates in _posting_dates().items():
         if _matches_segments(account, ("transfer",)):
             continue
@@ -763,7 +787,7 @@ def coverage():
 
 
 # --------------------------------------------------------------- milestones
-def _liquid_net_worth():
+def _liquid_net_worth() -> Money:
     """Assets+Liabilities in USD, illiquid paper excluded — query.py's networth."""
     excl = illiquid_currency_regex()
     where = ("account ~ '^(Assets|Liabilities)'"
@@ -772,24 +796,24 @@ def _liquid_net_worth():
     return amount(rows[0]["v"]) if rows and rows[0].get("v") else 0.0
 
 
-def _yaml_number_list(v):
+def _yaml_number_list(v: object) -> list[Money]:
     """Numbers out of an inline yaml list rendered as a string ('[1, 2.5]')."""
     return [float(x) for x in re.findall(r"-?\d+(?:\.\d+)?", str(v or ""))]
 
 
-FIXED_DRIFT_TOLERANCE = 2000  # a fixed-balance account may breathe this much
+FIXED_DRIFT_TOLERANCE: Money = 2000  # a fixed-balance account may breathe this much
                               # before a sweep/top-up is worth anyone's time
 
 
-def fixed_balances():
+def fixed_balances() -> list[Finding]:
     """Accounts the household holds at a FIXED dollar amount (rules.toml
     [fixed_balances]: account -> amount). Above tolerance -> sweep the excess
     to its destination; below -> top it up. The thesis decides the numbers;
     this check just notices drift."""
-    conf = rules().get("fixed_balances", {})
+    conf: dict[str, Any] = rules().get("fixed_balances", {})
     if not conf:
         return []
-    out = []
+    out: list[Finding] = []
     for account, target in conf.items():
         acct = str(account).replace("'", "")  # account names never contain quotes; strip so rules.toml text can't break out of the BQL string
         rows = query(f"SELECT sum(number) as v WHERE account = '{acct}' AND currency = 'USD'")
@@ -838,7 +862,7 @@ LANE_AMOUNT_TOL = 0.35    # deposits: |posting − amount| within 35% counts
 LANE_REINVEST = re.compile(r"REINVEST|DIVIDEND|\bDIV\b", re.I)
 
 
-def _lane_date(value):
+def _lane_date(value: object) -> date | None:
     """tomllib gives a datetime.date for a bare TOML date; accept a string too."""
     if isinstance(value, date):
         return value
@@ -848,18 +872,19 @@ def _lane_date(value):
         return None
 
 
-def _lane_amount(value):
+def _lane_amount(value: object) -> Money | None:
     try:
-        return float(value) if value is not None else None
+        return float(cast(float, value)) if value is not None else None
     except (TypeError, ValueError):
         return None
 
 
-def _lane_deposit_events(account, source, amt):
+def _lane_deposit_events(account: str, source: str | None,
+                         amt: Money | None) -> list[tuple[date, Money]]:
     """(date, amount) of USD arrivals that count for this lane, oldest first."""
     rows = query(f"SELECT date, payee, number WHERE account = '{bql_str(account)}' "
                  f"AND currency = 'USD' AND number > 0 ORDER BY date")
-    out = []
+    out: list[tuple[date, Money]] = []
     for r in rows:
         try:
             d = datetime.strptime(r["date"], "%Y-%m-%d").date()
@@ -875,13 +900,14 @@ def _lane_deposit_events(account, source, amt):
     return out
 
 
-def _lane_invest_events(account, source, commodity):
+def _lane_invest_events(account: str, source: str | None,
+                        commodity: str | None) -> list[tuple[date, Money]]:
     """(date, usd_total) of purchase days — non-USD units bought, valued at
     cost, reinvested dividends excluded (override with an explicit source)."""
     rows = query(f"SELECT date, payee, number, currency, cost(position) AS c "
                  f"WHERE account = '{bql_str(account)}' AND currency != 'USD' "
                  f"AND number > 0 ORDER BY date")
-    by_day = {}
+    by_day: dict[date, Money] = {}
     for r in rows:
         try:
             d = datetime.strptime(r["date"], "%Y-%m-%d").date()
@@ -899,7 +925,7 @@ def _lane_invest_events(account, source, commodity):
     return sorted(by_day.items())
 
 
-def lane_status(today=None):
+def lane_status(today: date | None = None) -> list[dict[str, Any]]:
     """One row per [[lanes]] entry, in declared order.
 
     Row: {name, kind, account, cadence, day, amount, status, last,
@@ -907,15 +933,16 @@ def lane_status(today=None):
     ok | pending | overdue (deposit/invest), intact | below (floor),
     invalid (misdeclared lane; note says what's wrong)."""
     today = today or date.today()
-    fixed = rules().get("fixed_balances", {})
-    out = []
-    for lane in rules().get("lanes", []):
+    fixed: dict[str, Any] = rules().get("fixed_balances", {})
+    out: list[dict[str, Any]] = []
+    lanes_cfg: list[dict[str, Any]] = rules().get("lanes", [])
+    for lane in lanes_cfg:
         name = str(lane.get("name") or lane.get("account") or "unnamed lane")
         kind = str(lane.get("kind") or "")
         account_name = str(lane.get("account") or "")
         cadence = str(lane.get("cadence") or "monthly")
         amt = _lane_amount(lane.get("amount"))
-        row = {"name": name, "kind": kind, "account": account_name,
+        row: dict[str, Any] = {"name": name, "kind": kind, "account": account_name,
                "cadence": cadence, "day": lane.get("day"), "amount": amt,
                "status": "invalid", "last": None, "last_amount": None,
                "expected": None, "balance": None, "floor": None, "note": ""}
@@ -939,11 +966,12 @@ def lane_status(today=None):
         if period is None:
             row["note"] = f"unknown cadence `{cadence}`"
             continue
-        source = lane.get("source")
+        source: str | None = lane.get("source")
         if kind == "deposit":
             events = _lane_deposit_events(account_name, source, amt)
         else:
-            events = _lane_invest_events(account_name, source, lane.get("commodity"))
+            commodity: str | None = lane.get("commodity")
+            events = _lane_invest_events(account_name, source, commodity)
         window_start = today - timedelta(days=LANE_WINDOW_PERIODS * period)
         recent = [e for e in events if e[0] >= window_start]
         starts = _lane_date(lane.get("starts"))
@@ -960,12 +988,12 @@ def lane_status(today=None):
     return out
 
 
-def lanes():
+def lanes() -> list[Finding]:
     """Findings for broken lanes: a standing order that didn't run is an
     alert (money is not where the household believes it is), a breached
     floor is an alert, a misdeclared lane is a watch. Amber
     watching-for-first-arrival lanes are page-only, not findings."""
-    out = []
+    out: list[Finding] = []
     for row in lane_status():
         if row["status"] == "overdue":
             exp = (f" — expected ~{row['expected'].isoformat()}"
@@ -997,7 +1025,7 @@ def lanes():
 
 
 # --------------------------------------------------------- projected shortfall
-def projected_shortfall():
+def projected_shortfall() -> list[Finding]:
     """Any account whose projected minimum (forecast.py's default horizon)
     crosses below $0 (alert) or below its rules.toml [fixed_balances] floor
     (watch), with the crunch date and the flows that cause it.
@@ -1012,10 +1040,12 @@ def projected_shortfall():
     """
     from sara.advisor.forecast import DEFAULT_DAYS, build_forecast  # deferred: forecast
     # imports this module's helpers, so a top-level import would be circular
-    warns = build_forecast()["household"]["warns"]
-    lane_funded = {str(lane.get("account")) for lane in rules().get("lanes", [])
+    forecast: dict[str, Any] = build_forecast()
+    warns: list[dict[str, Any]] = forecast["household"]["warns"]
+    lanes_cfg: list[dict[str, Any]] = rules().get("lanes", [])
+    lane_funded = {str(lane.get("account")) for lane in lanes_cfg
                    if lane.get("kind") == "invest" and lane.get("account")}
-    out = []
+    out: list[Finding] = []
     for w in warns:
         if w["account"] in lane_funded:
             continue  # the declared program owns this outflow and its funding
@@ -1040,19 +1070,19 @@ def projected_shortfall():
 
 
 # ---------------------------------------------------------------- cash drag
-CASH_DRAG_MIN_BALANCE = 10_000  # under this, moving the money earns lunch, not a finding
+CASH_DRAG_MIN_BALANCE: Money = 10_000  # under this, moving the money earns lunch, not a finding
 CASH_DRAG_MIN_GAP_PTS = 1.0     # a declared APY a full point under the hurdle is drag;
                                 # closer than that is rate noise, not a decision
 
 
-def _apy(value):
+def _apy(value: object) -> float | None:
     try:
-        return float(value) if value is not None else None
+        return float(cast(float, value)) if value is not None else None
     except (TypeError, ValueError):
         return None  # a typo'd rate must never crash a read-only tool
 
 
-def cash_drag():
+def cash_drag() -> list[Finding]:
     """Idle-cash drag: declared APYs vs the household's hurdle rate.
 
     Wholly opt-in and silent until the vault declares rates: rules.toml
@@ -1063,7 +1093,7 @@ def cash_drag():
     the drag is balance x gap, in $/yr. When the money moves, a dated note's
     `- [x] ... realized $N/yr` line turns the fix into a counted win.
     """
-    conf = rules().get("cash_apy", {})
+    conf: dict[str, Any] = rules().get("cash_apy", {})
     declared = {str(k): _apy(v) for k, v in conf.items()
                 if k != "cash_hurdle_apy"}
     hurdle = _apy(goals().get("cash_hurdle_apy"))
@@ -1071,7 +1101,7 @@ def cash_drag():
         hurdle = _apy(conf.get("cash_hurdle_apy"))
     if hurdle is None or not declared:
         return []
-    out = []
+    out: list[Finding] = []
     for account, apy in sorted(declared.items()):
         if apy is None:
             continue
@@ -1096,7 +1126,7 @@ def cash_drag():
     return out
 
 
-def milestones():
+def milestones() -> list[Finding]:
     """Fire once when liquid net worth first crosses a configured milestone.
 
     Config lives in the facts/goals/index.md yaml block as FLAT keys (the
@@ -1128,7 +1158,7 @@ def milestones():
         for t in newly]
 
 
-def _record_crossed(key, values):
+def _record_crossed(key: str, values: list[Money]) -> None:
     """Rewrite the `<key>: [...]` inline list inside the goals yaml block,
     creating the line under milestone_net_worth_above if it doesn't exist.
     Touches nothing else in the file."""
@@ -1156,7 +1186,7 @@ PLAID_WATCH_DAYS = 3
 PLAID_ALERT_DAYS = 7
 
 
-def plaid_freshness():
+def plaid_freshness() -> list[Finding]:
     """A configured Plaid item whose sync has gone quiet — the daemon died,
     the token broke, or the laptop never woke. Cursor timestamps live in
     $VAULT/.secrets/plaid-cursors.json, written only on successful --write,
@@ -1165,20 +1195,24 @@ def plaid_freshness():
     NEVER synced is its own watch (the trust ramp stalled)."""
     import json
     sources = rules().get("sources", {})
-    items = (sources.get("plaid", {}) or {}).get("items", {}) if isinstance(sources, dict) else {}
+    items: object = {}
+    if isinstance(sources, dict):
+        plaid: dict[str, Any] = cast(dict[str, Any], sources).get("plaid", {}) or {}
+        items = plaid.get("items", {})
     if not isinstance(items, dict) or not items:
         return []
     cursor_file = VAULT / ".secrets" / "plaid-cursors.json"
-    stamps = {}
+    stamps: dict[str, Any] = {}
     if cursor_file.is_file():
         try:
             stamps = json.loads(cursor_file.read_text()).get("items", {})
         except (ValueError, AttributeError):
             stamps = {}
-    out = []
+    out: list[Finding] = []
     today = date.today()
-    for alias in sorted(items):
-        synced_raw = (stamps.get(alias) or {}).get("last_synced", "")
+    for alias in sorted(cast(dict[str, Any], items)):
+        stamp: dict[str, Any] = stamps.get(alias) or {}
+        synced_raw = stamp.get("last_synced", "")
         if not synced_raw:
             out.append(finding(
                 "plaid_freshness", "watch",
@@ -1204,7 +1238,7 @@ def plaid_freshness():
     return out
 
 
-def catch_all_lumps(rows=None):
+def catch_all_lumps(rows: list[Row] | None = None) -> list[Finding]:
     """Tripwire: no single row over $10K may sit in a catch-all account.
 
     Self-transfers and principal returns hiding in Income:US:Other or
@@ -1215,23 +1249,23 @@ def catch_all_lumps(rows=None):
     is already telling a complete story and never fires.
     """
     from sara.vault import amount, query
-    LIMIT = 10_000
+    LIMIT: Money = 10_000
     q = ("SELECT date, account, payee, number AS amt "
          "WHERE account ~ 'Income:US:Other|Expenses:Uncategorized'")
-    big = []
+    big: list[tuple[Row, Money]] = []
     for r in query(q):
         amt = amount(r.get("amt", "") or "")
         if abs(amt) >= LIMIT:
             big.append((r, amt))
     tally = Counter((r.get("account"), amt) for r, amt in big)
-    netted = Counter()  # (account, amt) -> how many rows cancel against a twin
+    netted: Counter[tuple[str | None, Money]] = Counter()  # (account, amt) -> how many rows cancel against a twin
     for (acct, amt), n in tally.items():
         if amt > 0:
             k = min(n, tally.get((acct, -amt), 0))
             if k:
                 netted[(acct, amt)] = k
                 netted[(acct, -amt)] = k
-    out = []
+    out: list[Finding] = []
     for r, amt in big:
         key = (r.get("account"), amt)
         if netted.get(key, 0) > 0:
@@ -1247,11 +1281,11 @@ def catch_all_lumps(rows=None):
     return out
 
 
-TRANSFERS_DRIFT_TOLERANCE = 1000  # in-flight money may wobble this much
+TRANSFERS_DRIFT_TOLERANCE: Money = 1000  # in-flight money may wobble this much
                                   # between the send and the landing
 
 
-def transfers_drift():
+def transfers_drift() -> list[Finding]:
     """The in-flight account must hold exactly what's DECLARED to be mid-air.
 
     Assets:US:Transfers is where money waits between our own accounts — and
@@ -1259,7 +1293,7 @@ def transfers_drift():
     0) declares today's legitimate in-transit total; when the parked balance
     strays more than $1,000 from it, something landed under the wrong name.
     """
-    conf = rules().get("transfers", {})
+    conf: dict[str, Any] = rules().get("transfers", {})
     try:
         declared = float(conf.get("in_flight", 0) or 0)
     except (TypeError, ValueError):
@@ -1282,7 +1316,8 @@ def transfers_drift():
         f"the declared amount and keep this tripwire honest.")]
 
 
-ALL = [concentration, deadlines, inbox, anomaly, subscriptions, reconciliation,
+ALL: list[Callable[[], list[Finding]]] = [
+       concentration, deadlines, inbox, anomaly, subscriptions, reconciliation,
        coverage, review_queue, milestones, fixed_balances, lanes,
        projected_shortfall, cash_drag, plaid_freshness,
        catch_all_lumps, transfers_drift]
@@ -1290,8 +1325,9 @@ ALL = [concentration, deadlines, inbox, anomaly, subscriptions, reconciliation,
 
 
 
-def run_all():
-    findings, errors = [], []
+def run_all() -> tuple[list[Finding], list[str]]:
+    findings: list[Finding] = []
+    errors: list[str] = []
     for fn in ALL:
         try:
             findings.extend(fn())

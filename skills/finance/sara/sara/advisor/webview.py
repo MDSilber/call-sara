@@ -1,3 +1,4 @@
+# pyright: strict
 #!/usr/bin/env python3
 """Shared read-side builders: findings, the needs-you queue, price history,
 and the net-worth series every page trusts.
@@ -19,6 +20,8 @@ balances are dropped (they'd misstate the household), months leaning on
 cost basis for lack of a dated price are flagged est, and the final point
 IS the headline number so hero and curve always agree.
 """
+from __future__ import annotations
+
 import re
 from calendar import monthrange
 from datetime import date, datetime
@@ -27,6 +30,7 @@ from sara.vault import (REPORTS, VAULT, amount, dated_bullets,
                    illiquid_currency_regex, query)
 from sara.advisor.dismissals import filter_findings
 from sara.advisor.checks import goals as goals_config
+from sara.advisor.types import YM, Finding, Money, Payload
 
 MAX_CURVE_POINTS = 24      # two years of month-ends is a curve; more is wallpaper
 PRICE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\s+price\s+(\S+)\s+([\d.,]+)\s+USD\b", re.M)
@@ -34,18 +38,18 @@ MONTH_ABBR = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
-def month_label(y, m):
+def month_label(y: int, m: int) -> str:
     return f"{MONTH_ABBR[m]} {y}"
 
 
-def nice_ticks(lo, hi, n=4):
+def nice_ticks(lo: float, hi: float, n: int = 4) -> list[float]:
     """~n clean tick values covering [lo, hi]."""
     span = (hi - lo) or 1.0
     raw = span / max(n, 1)
     mag = 10 ** len(str(int(abs(raw)))) / 10 if raw >= 1 else 1.0
     step = next((m * mag for m in (1, 2, 2.5, 5, 10) if m * mag >= raw), 10 * mag)
     first = step * (lo // step)
-    ticks = []
+    ticks: list[float] = []
     t = first
     while t <= hi + step:
         if t >= lo - 1e-9:
@@ -58,7 +62,7 @@ def nice_ticks(lo, hi, n=4):
 
 
 # ------------------------------------------------------------------- data
-def latest_ledger_date():
+def latest_ledger_date() -> date | None:
     rows = query("SELECT max(date) AS d WHERE account ~ '^(Assets|Liabilities)'")
     try:
         return datetime.strptime(rows[0]["d"], "%Y-%m-%d").date()
@@ -78,11 +82,11 @@ _COST_PRICE = re.compile(r"\s(-?[\d,]+(?:\.\d+)?)\s+([A-Z][A-Z0-9._-]*)\s+"
                          r"\{\{?\s*([\d,]+(?:\.\d+)?)\s+USD")
 
 
-def _num(s):
+def _num(s: str) -> float:
     return float(s.replace(",", ""))
 
 
-def _implicit_prices(text, prices):
+def _implicit_prices(text: str, prices: dict[str, list[tuple[date, Money]]]) -> None:
     """Append (date, price) marks implied by the file's transactions."""
     when = None
     for line in text.splitlines():
@@ -107,12 +111,13 @@ def _implicit_prices(text, prices):
             prices.setdefault(cost.group(2), []).append((when, _num(cost.group(3))))
 
 
-def price_history():
+def price_history() -> dict[str, list[tuple[date, Money]]]:
     """{symbol: [(date, usd_price)…]} — explicit price directives plus the
     implicit marks transactions carry (costs and @ prices), so a month with
     a buy is valued at market even before the first price directive lands.
     Sorted by date; on a same-date tie the explicit directive wins."""
-    implicit, explicit = {}, {}
+    implicit: dict[str, list[tuple[date, Money]]] = {}
+    explicit: dict[str, list[tuple[date, Money]]] = {}
     ledger_dir = VAULT / "ledger"
     if ledger_dir.is_dir():
         for f in sorted(ledger_dir.rglob("*.beancount")):
@@ -124,14 +129,14 @@ def price_history():
             for m in PRICE_RE.finditer(txt):
                 explicit.setdefault(m.group(2), []).append(
                     (date.fromisoformat(m.group(1)), _num(m.group(3))))
-    out = {}
+    out: dict[str, list[tuple[date, Money]]] = {}
     for sym in implicit.keys() | explicit.keys():
         marks = implicit.get(sym, []) + explicit.get(sym, [])
         out[sym] = sorted(marks, key=lambda t: t[0])  # stable: explicit last
     return out
 
 
-def _units(cell, currency):
+def units_of(cell: str | None, currency: str) -> float:
     """Sum every `<number> <currency>` run in a bean-query inventory cell
     (a cell can hold several lots: '340 AGGRX {29.00 USD}, 10 AGGRX {…}')."""
     total = 0.0
@@ -145,14 +150,14 @@ COST_SHARE_EST = 0.10      # >10% of a month's value on cost fallback = "at cost
 BASELINE_SHARE = 0.95      # curve starts once 95% of opening-balance dollars exist
 
 
-def baseline_complete_date():
+def baseline_complete_date() -> date | None:
     """The date by which ≥95% (dollar-weighted) of opening-balance value had
     been booked, or None if the ledger has no Equity:Opening postings. Before
     this date at least one account is missing its baseline, so a month-end
     total there is missing money — not history."""
     rows = query("SELECT date, sum(convert(position, 'USD')) AS v "
                  "WHERE account ~ '^Equity:Opening' GROUP BY date ORDER BY date")
-    dated = []
+    dated: list[tuple[date, Money]] = []
     for r in rows:
         try:
             dated.append((date.fromisoformat(r["date"]), abs(amount(r["v"]))))
@@ -169,7 +174,7 @@ def baseline_complete_date():
     return dated[-1][0]
 
 
-def networth_series(liquid_now, asof):
+def networth_series(liquid_now: Money, asof: date | None) -> tuple[list[Payload], int]:
     """[{d, v, est}…] month-end liquid net worth. One ledger query: monthly
     deltas per currency in units + cost; valued at the latest dated price on
     or before each month end, else cost basis. est=True marks a month leaning
@@ -183,14 +188,14 @@ def networth_series(liquid_now, asof):
     rows = query(f"SELECT year, month, currency, sum(position) AS units, "
                  f"sum(cost(position)) AS cost WHERE {where} "
                  f"GROUP BY year, month, currency ORDER BY year, month")
-    per_month = {}
+    per_month: dict[YM, dict[str, list[float]]] = {}  # ym -> currency -> [units, cost]
     for r in rows:
         try:
             ym = (int(r["year"]), int(r["month"]))
         except (TypeError, ValueError):
             continue
         cur = r["currency"]
-        d_units = amount(r["units"], "USD") if cur == "USD" else _units(r["units"], cur)
+        d_units = amount(r["units"], "USD") if cur == "USD" else units_of(r["units"], cur)
         d_cost = amount(r["cost"], "USD")
         u, c = per_month.setdefault(ym, {}).setdefault(cur, [0.0, 0.0])
         per_month[ym][cur] = [u + d_units, c + d_cost]
@@ -198,8 +203,8 @@ def networth_series(liquid_now, asof):
     if not months:
         return [], 0
     prices = price_history()
-    cum = {}  # currency -> [units, cost]
-    points = []
+    cum: dict[str, list[float]] = {}  # currency -> [units, cost]
+    points: list[Payload] = []
     for y, m in months:
         flow = 0.0  # the month's booked flow: postings at cost, all currencies
         for cur, (du, dc) in per_month[(y, m)].items():
@@ -233,24 +238,24 @@ def networth_series(liquid_now, asof):
     return points[-MAX_CURVE_POINTS:], cut
 
 
-def parse_findings():
+def parse_findings() -> tuple[list[Finding] | None, str, list[str]]:
     """reports/findings.md -> (findings, counts_line, errors). Text is DATA."""
     path = REPORTS / "findings.md"
     if not path.exists():
         return None, "", []
     text = path.read_text()
     counts = re.search(r"^\*\*(.+?)\*\*$", text, re.M)
-    errors = []
+    errors: list[str] = []
     err = re.search(r"^## Check errors\n(.*)", text, re.M | re.S)
     if err:
         errors = [ln[2:].strip() for ln in err.group(1).splitlines() if ln.startswith("- ")]
         text = text[:err.start()]
-    findings = []
+    findings: list[Finding] = []
     for block in re.split(r"^### ", text, flags=re.M)[1:]:
         lines = block.strip().splitlines()
         title = re.sub(r"^[^\w$~(]+", "", lines[0]).strip()  # drop the icon
         sev, check = "info", ""
-        detail = []
+        detail: list[str] = []
         for line in lines[1:]:
             m = re.match(r"^_(.+?) · (alert|watch|info)_\s*$", line)
             if m:
@@ -325,7 +330,7 @@ _LANE_FEED = {"coverage", "reconciliation", "plaid_freshness"}
 LINK_BY_CHECK = {"review-queue": "activity", "coverage": "connections"}
 
 
-def queue_lane(check):
+def queue_lane(check: str) -> int:
     """0 = money is wrong (leads), 1 = bookkeeping, 2 = feed health (last)."""
     if check in _LANE_MONEY:
         return 0
@@ -335,7 +340,7 @@ def queue_lane(check):
 FIX_FALLBACK_CHARS = 140  # room for one whole civilian sentence with dollars in it
 
 
-def fix_line(f):
+def fix_line(f: Finding) -> str:
     entry = FIX_BY_CHECK.get(f["check"])
     if entry:
         return entry["fix"]
@@ -345,7 +350,7 @@ def fix_line(f):
     return first
 
 
-def action_queue(findings):
+def action_queue(findings: list[Finding] | None) -> list[Finding]:
     """The needs-you queue: at most QUEUE_MAX rows. Open alerts + watches
     (deadlines excluded — they become dated cards in needs_you), dismissed
     and decided findings filtered at the shared chokepoint. Same-check
@@ -359,10 +364,10 @@ def action_queue(findings):
     rows = [f for f in filter_findings(findings)
             if f["severity"] in ("alert", "watch")
             and f["check"] != "deadlines"]
-    groups = {}
+    groups: dict[str, list[Finding]] = {}
     for f in rows:
         groups.setdefault(f["check"], []).append(f)
-    out = []
+    out: list[Finding] = []
     for check, group in groups.items():
         group.sort(key=lambda f: 0 if f["severity"] == "alert" else 1)
         row = {**group[0], "fix": fix_line(group[0]), "count": len(group)}
@@ -377,10 +382,10 @@ def action_queue(findings):
     return out[:QUEUE_MAX]
 
 
-def deadline_items(today, horizon_days):
+def deadline_items(today: date, horizon_days: int) -> list[Payload]:
     """Dated `- YYYY-MM-DD — text` bullets across facts/ falling inside the
     horizon, freshest read (not via findings.md), with days-remaining."""
-    out = []
+    out: list[Payload] = []
     for d, text, relpath in dated_bullets():
         days = (d - today).days
         if 0 <= days <= horizon_days:
@@ -388,7 +393,7 @@ def deadline_items(today, horizon_days):
     return out
 
 
-def milestone_state(liquid):
+def milestone_state(liquid: Money) -> Payload | None:
     """None unless facts/goals configures milestone_net_worth_above; else
     {targets, crossed, next, pct} for a progress meter."""
     g = goals_config()
@@ -405,6 +410,6 @@ def milestone_state(liquid):
 
 
 # ------------------------------------------------------------------ marks
-def code_spans(escaped):
+def code_spans(escaped: str) -> str:
     """`x` -> <code>x</code>, applied strictly AFTER escaping."""
     return re.sub(r"`([^`]{1,80})`", r"<code>\1</code>", escaped)

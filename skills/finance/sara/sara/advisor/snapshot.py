@@ -41,8 +41,8 @@ from sara.advisor.home import (
     moneymap_ctx,
     networth_ctx,
     next_ctx,
-    _nw_chart_data,
-    _pace_chart_data,
+    nw_chart_data,
+    pace_chart_data,
     pace_ctx,
     sparkline,
     spend_tile,
@@ -64,7 +64,7 @@ from sara.advisor.home import (
 from sara.advisor.reports import liquid_balances, paper_value
 from sara.advisor.webview import (
     MONTH_ABBR,
-    _units,
+    units_of,
     action_queue,
     latest_ledger_date,
     milestone_state,
@@ -456,7 +456,7 @@ def spend(now: datetime | None = None) -> dict[str, object]:
               if sp else None)
     return cast(dict[str, object], clean({
         "pace": pace_ctx(pace),
-        "pace_chart": _pace_chart_data(pace),
+        "pace_chart": pace_chart_data(pace),
         "tile": spend_tile(pace, under_streak(totals, pace.cur)),
         "rooms": island,
         "cheshbon": cheshbon_ctx(pace),
@@ -493,7 +493,7 @@ def networth() -> dict[str, object]:
     paper = paper_value()
     return cast(dict[str, object], clean({
         "headline": networth_ctx(series, cut, liquid, asof),
-        "chart": _nw_chart_data(series, asof),
+        "chart": nw_chart_data(series, asof),
         "spark": sparkline(series),
         "attribution": attribution_ctx(series, asof),
         "map": moneymap_ctx(balances, liquid, asof),
@@ -526,7 +526,7 @@ def investments(now: datetime | None = None) -> dict[str, object]:
     for r in rows:
         cell = r["usd"] or ""
         sym = r["currency"]
-        units = _units(r["units"], sym)
+        units = units_of(r["units"], sym)
         if abs(units) < 1e-9:
             continue
         if excl and re.match(excl, sym):

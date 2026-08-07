@@ -1,3 +1,4 @@
+# pyright: strict
 #!/usr/bin/env python3
 """The verified builders behind every Sara surface — data and context, no page.
 
@@ -21,15 +22,17 @@ from calendar import monthrange
 from dataclasses import dataclass
 from datetime import date, timedelta
 from statistics import median
-from typing import NamedTuple
+from collections.abc import Callable
+from typing import Any, NamedTuple
 
 from markupsafe import Markup, escape
 
 from sara.vault import (REPORTS, VAULT, account_owners, amount, dated_bullets,
                    illiquid_currency_regex, owner_label, query)
-from sara.advisor.webview import (MONTH_ABBR, _units, action_queue, code_spans,
+from sara.advisor.webview import (MONTH_ABBR, units_of, action_queue, code_spans,
                      deadline_items, month_label, nice_ticks, parse_findings,
                      price_history, queue_lane)
+from sara.advisor.types import Finding, Payload
 from sara.advisor.checks import LANE_REINVEST, goals as goals_config
 
 MONTH_FULL = ["", "January", "February", "March", "April", "May", "June",
@@ -143,7 +146,7 @@ def monthly_expense_totals() -> list[tuple[YM, float]]:
     rows = query("SELECT year, month, sum(convert(position, 'USD')) AS v "
                  "WHERE account ~ '^Expenses' GROUP BY year, month "
                  "ORDER BY year, month")
-    out = []
+    out: list[tuple[YM, float]] = []
     for r in rows:
         try:
             out.append(((int(r["year"]), int(r["month"])), amount(r["v"])))
@@ -181,7 +184,7 @@ def _spend_asof(today: date) -> date | None:
         if r["id"] in exp_ids}
     if not funders:
         return None
-    last = {}
+    last: dict[str, date] = {}
     for r in query("SELECT account, max(date) AS d "
                    "WHERE account ~ '^(Assets|Liabilities)' GROUP BY account"):
         try:
@@ -220,11 +223,13 @@ def spend_pace(today: date, asof: date | None,
         days = by_month_day.setdefault((d.year, d.month), {})
         days[d.day] = days.get(d.day, 0.0) + amount(r["v"])
 
-    typical, ideal = None, []
+    typical: float | None = None
+    ideal: list[float] = []
     if len(window) >= MIN_FULL_MONTHS:
-        cums = {}
+        cums: dict[YM, list[float]] = {}
         for ym in win_months:
-            run, cs = 0.0, []
+            run = 0.0
+            cs: list[float] = []
             for d in range(1, monthrange(*ym)[1] + 1):
                 run += by_month_day.get(ym, {}).get(d, 0.0)
                 cs.append(run)
@@ -251,7 +256,8 @@ def spend_pace(today: date, asof: date | None,
     elif daily:  # postings exist but max(date) sits elsewhere — trust the postings
         through_day = max(daily)
 
-    cum, run = [], 0.0
+    cum: list[float] = []
+    run = 0.0
     for d in range(1, (through_day or 0) + 1):
         run += daily.get(d, 0.0)
         cum.append(round(run, 2))
@@ -266,10 +272,12 @@ def spend_pace(today: date, asof: date | None,
         fallback=month is not None)
 
 
-def _as_float(value) -> float | None:
+def _as_float(value: object) -> float | None:
+    if value is None:
+        return None
     try:
-        return float(value) if value is not None else None
-    except (TypeError, ValueError):
+        return float(str(value))
+    except ValueError:
         return None
 
 
@@ -338,7 +346,7 @@ def education_accounts() -> list[EduAccount]:
     rows = query("SELECT account, sum(convert(position,'USD')) AS usd, "
                  "sum(cost(position)) AS cost WHERE account ~ '^Assets' "
                  "AND account ~ '529' GROUP BY account ORDER BY account")
-    out = []
+    out: list[EduAccount] = []
     for r in rows:
         usd = amount(r["usd"], "USD")
         cost = amount(r["cost"], "USD")
@@ -389,7 +397,7 @@ def findings_date() -> str | None:
     return m.group(1) if m else None
 
 
-def _queue_card(f: dict) -> Card:
+def _queue_card(f: Finding) -> Card:
     n = f.get("count", 1)
     why = f["title"] if n == 1 else f"{f['title']} · +{n - 1} more like it"
     return Card(f["severity"], f["fix"] or f["title"], why, f["severity"])
@@ -413,7 +421,9 @@ def needs_you(today: date) -> tuple[list[Card], int, str]:
     deadlines = deadline_items(today, horizon)
 
     cards = [_queue_card(f) for f in queue if queue_lane(f["check"]) == 0]
-    for dl in sorted(deadlines, key=lambda d: d["days"]):
+    def by_days(d: Payload) -> int:
+        return int(d["days"])
+    for dl in sorted(deadlines, key=by_days):
         if dl["days"] <= DEADLINE_CARD_DAYS:
             when = "today" if dl["days"] == 0 else (
                 "tomorrow" if dl["days"] == 1 else f"in {dl['days']} days")
@@ -441,14 +451,15 @@ PLUMBING_RE = re.compile(
     r"|replenish|move (?:cash|funds) (?:to|into)", re.I)
 
 
-def must_move(today: date) -> list[dict]:
+def must_move(today: date) -> list[Payload]:
     """Dated facts bullets inside MUSTMOVE_DAYS that carry a real dollar
     figure — the obligations calendar. Nothing is invented: no date + amount
     in the vault, no chip. The first $ figure in the bullet is the chip's
     number; `~`, `≈`, or a K/M suffix keeps its ≈. Each row is tagged
     plumbing=True when it reads like an own-account shuffle (PLUMBING_RE);
     the Autopilot room folds those, the human ones stay up front."""
-    seen, out = set(), []
+    seen: set[tuple[date, str]] = set()
+    out: list[Payload] = []
     for d, text, _relpath in dated_bullets():
         days = (d - today).days
         if not (0 <= days <= MUSTMOVE_DAYS):
@@ -468,7 +479,9 @@ def must_move(today: date) -> list[dict]:
                     "day_lbl": mon_d(d), "near": days <= DEADLINE_CARD_DAYS,
                     "amt": ("≈" if approx else "") + m0(val), "text": text,
                     "plumbing": bool(PLUMBING_RE.search(text))})
-    out.sort(key=lambda r: r["date"])
+    def by_date(r: Payload) -> date:
+        return r["date"]
+    out.sort(key=by_date)
     human = [r for r in out if not r["plumbing"]][:MUSTMOVE_MAX]
     return human + [r for r in out if r["plumbing"]]
 
@@ -480,7 +493,7 @@ WIN_REALIZED = re.compile(
     re.I)
 
 
-def saras_wins(today: date) -> dict | None:
+def saras_wins(today: date) -> Payload | None:
     """Realized savings/found money, parsed CONSERVATIVELY from this year's
     dated notes: only `[x]` checklist lines that say `realized $N` count
     (the savings-hunt log convention — estimates and captures never blend).
@@ -489,7 +502,7 @@ def saras_wins(today: date) -> dict | None:
     notes = VAULT / "notes"
     if not notes.is_dir():
         return None
-    items = []
+    items: list[Payload] = []
     for f in sorted(notes.glob("*.md")):
         m = re.match(r"(\d{4})-\d{2}-\d{2}", f.name)
         if not m or int(m.group(1)) != today.year:
@@ -517,7 +530,7 @@ def saras_wins(today: date) -> dict | None:
 def _last_months(cur: YM, n: int) -> list[YM]:
     """The n calendar months ending AT cur, oldest first."""
     y, m = cur
-    out = []
+    out: list[YM] = []
     for back in range(n - 1, -1, -1):
         yy, mm = y, m - back
         while mm < 1:
@@ -530,7 +543,7 @@ def _cat_label(cat: str) -> str:
     return (cat or "Expenses").replace("Expenses:", "") or "Other"
 
 
-def spending_data(pace: Pace) -> dict | None:
+def spending_data(pace: Pace) -> Payload | None:
     """The Spending room's island: per-period category rollups with their
     top merchants, plus a per-category monthly trend — every dollar string
     preformatted here. Periods are the paced month, the month before, and
@@ -565,20 +578,28 @@ def spending_data(pace: Pace) -> dict | None:
         return None
 
     cat_names = sorted(by_cat, key=lambda c: -sum(by_cat[c].values()))
+    def in_cur(ym: YM) -> bool:
+        return ym == cur
+
+    def in_prev(ym: YM) -> bool:
+        return ym == prev
+
+    def in_six(ym: YM) -> bool:
+        return True
+    windows: tuple[tuple[str, Callable[[YM], bool]], ...] = (
+        ("cur", in_cur), ("prev", in_prev), ("six", in_six))
     per_totals = {p: {c: sum(v for ym, v in by_cat[c].items() if keep(ym))
                       for c in cat_names}
-                  for p, keep in (("cur", lambda ym: ym == cur),
-                                  ("prev", lambda ym: ym == prev),
-                                  ("six", lambda ym: True))}
+                  for p, keep in windows}
     partial = (pace.through_day is not None
                and pace.through_day < pace.ndays)
     through = (f"{MONTH_ABBR[cur[1]]} 1–{pace.through_day}"
                if pace.through_day else "nothing imported yet")
 
-    cats = []
-    for ci, c in enumerate(cat_names):
+    cats: list[Payload] = []
+    for c in cat_names:
         series = [round(by_cat[c].get(ym, 0.0), 2) for ym in months]
-        tips = []
+        tips: list[Payload] = []
         for mi, ym in enumerate(months):
             t = mon_yr(ym)
             if ym == cur and partial:
@@ -605,7 +626,7 @@ def spending_data(pace: Pace) -> dict | None:
         cats.append({"name": c, "series": series, "tips": tips,
                      "y": yaxis_payload(0, max(max(series), 1.0)), "per": per})
 
-    order = {p: [ci for ci, c in sorted(
+    order = {p: [ci for ci, _c in sorted(
         ((ci, c) for ci, c in enumerate(cat_names)
          if per_totals[p][c] > 0.005),
         key=lambda ic: -per_totals[p][ic[1]])] for p in ("cur", "prev", "six")}
@@ -663,7 +684,7 @@ def _disp(seg: str) -> str:
 
 
 def moneymap_data(balances: list[tuple[str, float]],
-                  liquid: float) -> dict | None:
+                  liquid: float) -> Payload | None:
     """The treemap's island: every liquid asset dollar by institution →
     account → holding, built from the SAME liquid_balances() rows as the
     headline so the tree and the headline can never disagree. Liabilities
@@ -695,11 +716,12 @@ def moneymap_data(balances: list[tuple[str, float]],
 
     owners = account_owners()   # empty pre-owner ledger: no chips anywhere
 
-    def _own(who: set) -> str | None:
+    def _own(who: set[str | None]) -> str | None:
         """One unambiguous owner label for a node, or nothing at all."""
-        return owner_label(next(iter(who))) if len(who) == 1 and None not in who else None
+        only = next(iter(who)) if len(who) == 1 else None
+        return owner_label(only) if only is not None else None
 
-    groups: dict[str, dict] = {}
+    groups: dict[str, Payload] = {}
     for acct, v in assets:
         inst, leaf = _acct_parts(acct)
         g = groups.setdefault(inst, {"name": _disp(inst), "value": 0.0,
@@ -717,7 +739,7 @@ def moneymap_data(balances: list[tuple[str, float]],
     tree = []
     ordered = sorted(groups.values(), key=lambda g: -g["value"])
     for gi, g in enumerate(ordered):
-        kids = []
+        kids: list[Payload] = []
         for node in sorted(g["kids"].values(), key=lambda n: -n["value"]):
             children = None
             hold = sorted(node["hold"], key=lambda cv: -cv[1])
@@ -754,7 +776,7 @@ def moneymap_data(balances: list[tuple[str, float]],
 
 # ------------------------------------------------------- the goals room
 def edu_grid(total: float, target: float | None, pace: float | None,
-             today: date, college_year: int | None) -> dict | None:
+             today: date, college_year: int | None) -> Payload | None:
     """The 529 what-if slider's precomputed grid: for each $50 step of
     monthly contribution, the straight-line arrival (same glide-path math
     as the card's own footer — today's dollars, market growth ignored) and,
@@ -767,7 +789,8 @@ def edu_grid(total: float, target: float | None, pace: float | None,
     months_to = None
     if college_year and college_year > today.year:
         months_to = max(0, (college_year - today.year) * 12 - today.month + 8)
-    arrive, cover = [], []
+    arrive: list[str] = []
+    cover: list[str] = []
     for c in steps:
         if total >= target:
             arrive.append("already past the target")
@@ -816,7 +839,7 @@ def under_streak(totals: list[tuple[YM, float]], cur: YM) -> int:
     return n
 
 
-def sparkline(series: list[dict]) -> dict | None:
+def sparkline(series: list[Payload]) -> Payload | None:
     """The net-worth tile's little line: up to SPARK_MONTHS month-ends,
     normalized into a 100×30 viewBox in Python (JS never touches it)."""
     vals = [p["v"] for p in series][-SPARK_MONTHS:]
@@ -825,7 +848,7 @@ def sparkline(series: list[dict]) -> dict | None:
     lo, hi = min(vals), max(vals)
     span = (hi - lo) or 1.0
     w, h, pad = 100.0, 30.0, 2.5
-    pts = []
+    pts: list[str] = []
     for i, v in enumerate(vals):
         x = pad + (w - 2 * pad) * i / (len(vals) - 1)
         y = pad + (h - 2 * pad) * (1.0 - (v - lo) / span)
@@ -882,7 +905,7 @@ def _codespans(text: str) -> Markup:
 
 
 # ------------------------------------------------------- context builders
-def pace_ctx(pace: Pace) -> dict:
+def pace_ctx(pace: Pace) -> Payload:
     """The spend-pace card, framed as "is this month unusual?" — the hero is
     the delta vs the typical PATH, never a budget allowance."""
     cur_lbl = month_label(*pace.cur)
@@ -944,7 +967,7 @@ def pace_ctx(pace: Pace) -> dict:
     }
 
 
-def spend_tile(pace: Pace, streak: int) -> dict:
+def spend_tile(pace: Pace, streak: int) -> Payload:
     """Verdict first, number second: Under pace / On pace / Running hot,
     judged against the typical path with a ±PACE_BAND band. The streak chip
     appears only when ≥ 2 closed months ran under their own typical."""
@@ -984,7 +1007,7 @@ def spend_tile(pace: Pace, streak: int) -> dict:
     return tile
 
 
-def auto_tile(mach: dict) -> dict:
+def auto_tile(mach: Payload) -> Payload:
     """The machine, as one verdict + one dot per lane."""
     rows = mach["rows"]
     n = len(rows)
@@ -1010,7 +1033,7 @@ def auto_tile(mach: dict) -> dict:
 
 
 def next_ctx(needs_state: str, cards: list[Card], more: int,
-              moves_human: list[dict]) -> dict:
+              moves_human: list[Payload]) -> Payload:
     """THE one next action under the tiles: the top alert, else the nearest
     dated obligation (deadline card or money that must move), else honest
     quiet. Everything else waits inside the rooms."""
@@ -1059,10 +1082,10 @@ LANE_DOT = {"ok": "ok", "intact": "ok", "pending": "watch",
             "overdue": "bad", "below": "bad", "invalid": "mut"}
 
 
-def machine_ctx(rows: list[dict]) -> dict:
+def machine_ctx(rows: list[Payload]) -> Payload:
     """The machine panel, rendered from checks.lane_status() — the same
     detector the findings use, so panel and findings can never disagree."""
-    out = []
+    out: list[Payload] = []
     running = watching = broken = 0
     for r in rows:
         status = r["status"]
@@ -1110,7 +1133,7 @@ def machine_ctx(rows: list[dict]) -> dict:
 
 
 def education_ctx(accounts: list[EduAccount], pace: float | None,
-                   goals: dict, today: date) -> dict:
+                   goals: dict[str, Any], today: date) -> Payload:
     """The 529 card (Goals room) AND its glance tile, one source of truth.
     `tile` = {label, verdict, cls, fig, sub}; `grid` = the what-if slider's
     precomputed table when a target exists."""
@@ -1135,9 +1158,9 @@ def education_ctx(accounts: list[EduAccount], pace: float | None,
     college_year, _src = _college_year(today, accounts)
     title = f"{kids}’s 529" if len(accounts) == 1 else "The 529s"
     grid = edu_grid(total, target, pace, today, college_year)
-    tile = {"label": title, "verdict": "", "cls": "",
-            "fig": f"{m0(total)} saved", "sub": ""}
-    ctx = {
+    tile: Payload = {"label": title, "verdict": "", "cls": "",
+                     "fig": f"{m0(total)} saved", "sub": ""}
+    ctx: Payload = {
         "title": title,
         "sub": "Education savings — the long game with a date on it.",
         "empty": "", "value": m0(total),
@@ -1189,7 +1212,7 @@ def education_ctx(accounts: list[EduAccount], pace: float | None,
     return ctx
 
 
-def wins_ctx(wins: dict | None, today: date) -> dict | None:
+def wins_ctx(wins: Payload | None, today: date) -> Payload | None:
     if not wins:
         return None
     n = len(wins["items"])
@@ -1203,8 +1226,8 @@ def wins_ctx(wins: dict | None, today: date) -> dict | None:
     }
 
 
-def networth_ctx(series: list[dict], baseline_cut: int, liquid: float,
-                  asof: date | None) -> dict:
+def networth_ctx(series: list[Payload], baseline_cut: int, liquid: float,
+                  asof: date | None) -> Payload:
     delta = None
     if len(series) >= 2:
         prev = series[-2]
@@ -1227,7 +1250,7 @@ def networth_ctx(series: list[dict], baseline_cut: int, liquid: float,
                         f"{mon_yr((first_mkt['d'].year, first_mkt['d'].month))}"
                         if first_mkt else "") + ".")
 
-    def basis(i: int, p: dict) -> str:
+    def basis(i: int, p: Payload) -> str:
         if i == len(series) - 1 and asof:
             return f"market · through {asof.isoformat()}"
         return "at cost" if p["est"] else "market"
@@ -1257,12 +1280,12 @@ def _held_priced() -> list[tuple[str, float]]:
     excl = illiquid_currency_regex()
     rows = query("SELECT currency, sum(units(position)) AS u "
                  "WHERE account ~ '^(Assets|Liabilities)' GROUP BY currency")
-    out = []
+    out: list[tuple[str, float]] = []
     for r in rows:
         cur = r["currency"] or ""
         if cur == "USD" or (excl and re.match(excl, cur)):
             continue
-        units = _units(r["u"], cur)
+        units = units_of(r["u"], cur)
         if abs(units) < 1e-6:
             continue
         pts = ph.get(cur)
@@ -1273,7 +1296,7 @@ def _held_priced() -> list[tuple[str, float]]:
 
 
 def _boundary_staleness(boundary: date, held: list[tuple[str, float]],
-                        ph: dict, liquid: float) -> tuple[float, int, date | None]:
+                        ph: dict[str, Any], liquid: float) -> tuple[float, int, date | None]:
     """Price staleness at a valuation boundary, dollar-weighted: what share
     of liquid value rides a price older than PRICE_FRESH_DAYS, and how old
     is the freshest boundary-wide mark (worst age among still-fresh-enough
@@ -1295,7 +1318,7 @@ def _boundary_staleness(boundary: date, held: list[tuple[str, float]],
     return share, worst, oldest
 
 
-def attribution_ctx(series: list[dict], asof: date | None) -> dict | None:
+def attribution_ctx(series: list[Payload], asof: date | None) -> Payload | None:
     """"Why it moved": this month and the last closed month, each split into
     markets vs saved vs spent. Saved/spent come from the ledger's booked
     postings; the market effect is the residual of the valuation change
@@ -1310,7 +1333,7 @@ def attribution_ctx(series: list[dict], asof: date | None) -> dict | None:
     by_ym = {(pt["d"].year, pt["d"].month): i for i, pt in enumerate(series)}
     cur_ym = (series[-1]["d"].year, series[-1]["d"].month)
     prev_ym = (cur_ym[0] - 1, 12) if cur_ym[1] == 1 else (cur_ym[0], cur_ym[1] - 1)
-    rows = []
+    rows: list[Payload] = []
     for ym, closed in ((cur_ym, False), (prev_ym, True)):
         i = by_ym.get(ym)
         if not i:                       # absent, or no prior point to diff from
@@ -1368,7 +1391,7 @@ def attribution_ctx(series: list[dict], asof: date | None) -> dict | None:
 
 
 # ---------------------------------------------------------- vs the thesis
-def thesis_ctx(view, asof: date | None) -> dict:
+def thesis_ctx(view: Any, asof: date | None) -> Payload:
     """The drift strip: declared target mix vs the live portfolio, loud only
     when a class sits outside its band, plus the concentration line."""
     if view is None:
@@ -1382,7 +1405,7 @@ def thesis_ctx(view, asof: date | None) -> dict:
                 "yet — import an investment statement and the drift strip "
                 "wakes up."}
     scale = max(max(r.share_pct, r.target_pct) for r in view.rows) or 1.0
-    rows = []
+    rows: list[Payload] = []
     for r in view.rows:
         state = "over" if (r.out_of_band and r.drift_pts > 0) else (
             "under" if r.out_of_band else "")
@@ -1399,7 +1422,7 @@ def thesis_ctx(view, asof: date | None) -> dict:
             "trow": (r.label, m0(r.value), f"{r.share_pct:.0f}%",
                      f"{r.target_pct:g}% ±{r.band_pts:g}"),
         })
-    notes = []
+    notes: list[str] = []
     if view.reserve_short > 0.5:
         notes.append(f"The {m0(view.reserve_usd)} cash reserve is short by "
                      f"{m0(view.reserve_short)}.")
@@ -1414,7 +1437,7 @@ def thesis_ctx(view, asof: date | None) -> dict:
         syms = ", ".join(s for s, _ in view.unclassified[:3])
         notes.append(f"Unclassed holdings ({syms}) sit outside the strip — "
                      f"map them in rules.toml [allocation_targets.map].")
-    conc = []
+    conc: list[str] = []
     if view.top:
         sym, val, pct = view.top
         conc.append(f"Biggest single position: {sym} — {pct:.0f}% of liquid "
@@ -1434,7 +1457,7 @@ def thesis_ctx(view, asof: date | None) -> dict:
     }
 
 
-def cheshbon_ctx(pace: Pace) -> dict:
+def cheshbon_ctx(pace: Pace) -> Payload:
     """This month's money in vs out and how last month closed. Categories
     live next door in the clickable rail, so this card stays three numbers.
     Follows the paced month so a stale ledger shows its latest real month,
@@ -1475,7 +1498,7 @@ def cheshbon_ctx(pace: Pace) -> dict:
 
 
 def moneymap_ctx(balances: list[tuple[str, float]], liquid: float,
-                  asof: date | None) -> dict | None:
+                  asof: date | None) -> Payload | None:
     """The Money-map card: treemap payload + its window + the no-JS table
     (every liquid account, liabilities included; an Owner column joins it
     once the ledger carries `owner:` metadata)."""
@@ -1492,7 +1515,7 @@ def moneymap_ctx(balances: list[tuple[str, float]], liquid: float,
 
 
 # ----------------------------------------------------- chart data builders
-def _pace_chart_data(pace: Pace) -> dict | None:
+def pace_chart_data(pace: Pace) -> Payload | None:
     """The pace chart's slice of the data island: category labels, series
     arrays (numbers only), pre-formatted tooltip strings, Python-made y ticks."""
     if not pace.daily_cum and not pace.ideal:
@@ -1500,9 +1523,9 @@ def _pace_chart_data(pace: Pace) -> dict | None:
     month_name = MONTH_ABBR[pace.cur[1]]
     days = [f"{month_name} {d}" for d in range(1, pace.ndays + 1)]
     actual = pace.daily_cum + [None] * (pace.ndays - len(pace.daily_cum))
-    tips = []
+    tips: list[Payload] = []
     for i in range(pace.ndays):
-        rows = []
+        rows: list[list[str]] = []
         if i < len(pace.daily_cum):
             rows.append([m0(pace.daily_cum[i]), "spent so far"])
         if pace.ideal:
@@ -1521,13 +1544,16 @@ def _pace_chart_data(pace: Pace) -> dict | None:
             "xint": max(0, round(pace.ndays / 7) - 1), "now": now}
 
 
-def _nw_chart_data(series: list[dict], asof: date | None) -> dict | None:
+def nw_chart_data(series: list[Payload], asof: date | None) -> Payload | None:
     """The net-worth chart's slice: months, solid market vs dashed at-cost
     arrays (split so each segment draws in the right style), the seam index."""
     if len(series) < 2:
         return None
     n = len(series)
-    labels, market, atcost, tips = [], [], [], []
+    labels: list[str] = []
+    market: list[float | None] = []
+    atcost: list[float | None] = []
+    tips: list[Payload] = []
     for i, p in enumerate(series):
         d = p["d"]
         labels.append(MONTH_ABBR[d.month]
@@ -1554,7 +1580,7 @@ def _nw_chart_data(series: list[dict], asof: date | None) -> dict | None:
             "end": {"xy": [n - 1, series[-1]["v"]], "label": m0(series[-1]["v"])}}
 
 
-def yaxis_payload(lo: float, hi: float) -> dict:
+def yaxis_payload(lo: float, hi: float) -> Payload:
     """Python-computed y-axis: min/max/step plus {value: label} — ECharts
     only looks labels up, it never formats money. (Chart payloads stay
     dicts: they are JSON for the data island, not domain objects.)"""

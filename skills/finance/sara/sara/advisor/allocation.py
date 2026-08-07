@@ -34,8 +34,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Any, cast
 
 from sara.vault import VAULT, amount, illiquid_currency_regex, query, rules
+from sara.advisor.types import Money
 
 RESERVED_CLASSES = ("cash", "other")
 DEFAULT_BAND_PTS = 5.0
@@ -78,7 +80,7 @@ def commodity_classes() -> dict[str, dict[str, float]]:
 @dataclass(frozen=True)
 class Targets:
     classes: dict[str, tuple[float, float]]   # name -> (target %, band pts)
-    reserve_usd: float
+    reserve_usd: Money
     exclude_account_re: str | None
     employer: list[str]
     cmap: dict[str, dict[str, float]]         # commodity -> {class: pct}
@@ -89,10 +91,13 @@ def declared_targets() -> Targets | None:
     raw = rules().get("allocation_targets")
     if not isinstance(raw, dict):
         return None
+    raw = cast("dict[str, Any]", raw)  # the rules.toml crossing: TOML tables are str-keyed
     band_default = float(raw.get("band_pts", DEFAULT_BAND_PTS))
     classes: dict[str, tuple[float, float]] = {}
-    for name, v in (raw.get("classes") or {}).items():
+    class_decls: dict[str, Any] = raw.get("classes") or {}
+    for name, v in class_decls.items():
         if isinstance(v, dict):
+            v = cast("dict[str, Any]", v)
             classes[name] = (float(v.get("target_pct", 0)),
                              float(v.get("band_pts", band_default)))
         else:
@@ -103,9 +108,11 @@ def declared_targets() -> Targets | None:
     if not classes:
         return None
     cmap: dict[str, dict[str, float]] = {}
-    for sym, v in (raw.get("map") or {}).items():
+    map_decls: dict[str, Any] = raw.get("map") or {}
+    for sym, v in map_decls.items():
         if isinstance(v, dict):
-            split = {}
+            v = cast("dict[str, Any]", v)
+            split: dict[str, float] = {}
             for cls, pct in v.items():
                 try:
                     split[str(cls)] = float(pct)
@@ -116,13 +123,14 @@ def declared_targets() -> Targets | None:
         elif isinstance(v, str):
             cmap[sym] = {v: 100.0}
     excl = raw.get("exclude_account_re")
-    employer = [str(s) for s in raw.get("employer_stock", []) or []]
+    employer_decl: list[Any] = raw.get("employer_stock", []) or []
+    employer = [str(s) for s in employer_decl]
     return Targets(classes=classes, reserve_usd=float(raw.get("reserve_usd", 0)),
                    exclude_account_re=str(excl) if excl else None,
                    employer=employer, cmap=cmap)
 
 
-def _roll_up(meta_class: str, declared: dict) -> str | None:
+def _roll_up(meta_class: str, declared: dict[str, tuple[float, float]]) -> str | None:
     """Map a metadata class name onto a declared class: exact, else prefix
     (metadata 'equity_us' rolls into a declared 'equity'), else a reserved
     name ('cash'/'other') survives as itself."""
@@ -136,7 +144,7 @@ def _roll_up(meta_class: str, declared: dict) -> str | None:
 class ClassRow:
     name: str
     label: str
-    value: float
+    value: Money
     share_pct: float        # of invested dollars (target classes only)
     target_pct: float
     band_pts: float
@@ -153,17 +161,17 @@ class ClassRow:
 @dataclass(frozen=True)
 class AllocationView:
     rows: list[ClassRow]            # declared classes, in declaration order
-    invested: float                 # dollars the targets are scored over
-    liquid_total: float             # full liquid NW (concentration denominator)
-    cash_total: float               # cash + cash-classed funds, before reserve
-    cash_above_reserve: float
-    reserve_usd: float
-    reserve_short: float            # >0 when cash can't cover the reserve
-    other_value: float              # 'other'-classed holdings (never scored)
-    unclassified: list[tuple[str, float]]   # symbol, value — no class anywhere
-    excluded_value: float           # in accounts matched by exclude_account_re
-    top: tuple[str, float, float] | None       # symbol, value, % of liquid
-    employer: tuple[str, float, float] | None  # symbols, value, % of liquid
+    invested: Money                 # dollars the targets are scored over
+    liquid_total: Money             # full liquid NW (concentration denominator)
+    cash_total: Money               # cash + cash-classed funds, before reserve
+    cash_above_reserve: Money
+    reserve_usd: Money
+    reserve_short: Money            # >0 when cash can't cover the reserve
+    other_value: Money              # 'other'-classed holdings (never scored)
+    unclassified: list[tuple[str, Money]]   # symbol, value — no class anywhere
+    excluded_value: Money           # in accounts matched by exclude_account_re
+    top: tuple[str, Money, float] | None       # symbol, value, % of liquid
+    employer: tuple[str, Money, float] | None  # symbols, value, % of liquid
     stock_pct: float                # equity share of the target mix
 
 
@@ -192,9 +200,9 @@ def allocation_view() -> AllocationView | None:
                  f"WHERE {where} GROUP BY account, currency")
     skip_re = re.compile(tg.exclude_account_re) if tg.exclude_account_re else None
     liquid_total = excluded = cash = other = 0.0
-    class_vals = {name: 0.0 for name in tg.classes}
-    unclassified: dict[str, float] = {}
-    by_symbol: dict[str, float] = {}
+    class_vals: dict[str, Money] = {name: 0.0 for name in tg.classes}
+    unclassified: dict[str, Money] = {}
+    by_symbol: dict[str, Money] = {}
     for r in rows:
         v = amount(r["v"])
         if abs(v) < 0.005:
