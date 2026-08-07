@@ -42,18 +42,11 @@ from home import (Pace, delta0, m0, mon_d, monthly_expense_totals,  # noqa: E402
 WEEK_DAYS = 7          # the letter's window: the last 7 ledger-covered days
 WATCH_HORIZON = 45     # "watching next week": nearest dated item this far out
 
-# sara_line speaks for the home PAGE ("the Next line below", the rooms).
-# The verdict logic is reused verbatim; only its on-page navigation phrases
-# are re-aimed at the letter. An upstream wording change simply no-ops here.
+# sara_line speaks for the home PAGE. The verdict logic is reused verbatim;
+# only page-shaped openings are re-aimed at the letter. An upstream wording
+# change simply no-ops here.
 _LETTER_PHRASES = [
     (re.compile(r"^First morning here — "), "First letter here — "),
-    (re.compile(r"Start with the Next line below — the rest wait in Autopilot\."),
-     "It's just below — the rest can wait."),
-    (re.compile(r"Start with the Next line below\."), "It's just below."),
-    (re.compile(r"they're waiting in Autopilot, none of it urgent\."),
-     "they're on your home page, none of it urgent."),
-    (re.compile(r"The Spending room tells it straight\."),
-     "The week's numbers below tell it straight."),
 ]
 
 

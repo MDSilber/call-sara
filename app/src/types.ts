@@ -287,8 +287,12 @@ export interface SpendRooms {
 }
 
 export interface Spend {
+  /** Present when the payload was computed under a person/joint lens. */
+  owner?: string
   pace: {
     empty: boolean
+    /** Owner-lens payloads title the card ("Danny’s spending"). */
+    title?: string
     window: string
     sub: string
     hero?: string
@@ -511,7 +515,6 @@ export interface Goals {
     grid: EduGrid | null
     tile: { label: string; verdict: string; cls: string; fig: string; sub: string }
   }
-  envelopes: { tag: string; over: boolean; width: string; amt: string }[]
   milestones: { pct: number; next: string | null; crossed: number; label: string } | null
   settings: { key: string; value: number | string | null }[]
   window: string

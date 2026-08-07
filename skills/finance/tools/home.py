@@ -32,7 +32,7 @@ drill-down on click, sums tied to the headline), the net-worth line with
 its why-it-moved attribution (markets vs saved vs spent, suppressed rather
 than mislabeled on stale prices), and the thesis drift strip (loud only
 out of band). GOALS: the 529 story with a contribution what-if slider
-riding a precomputed glide-path grid, plus the project envelopes.
+riding a precomputed glide-path grid.
 AUTOPILOT: the lanes (rules.toml [[lanes]] via checks.lane_status, the
 same detector the findings use), "Needs you" verb cards beyond the
 promoted one, and "Money that must move" — human obligations up front,
@@ -170,12 +170,6 @@ class EduAccount(NamedTuple):
     kid: str
     value: float
     at_cost: bool                 # True = no market price on file, valued at cost
-
-
-class Envelope(NamedTuple):
-    tag: str
-    spent: float
-    budget: float | None
 
 
 # ------------------------------------------------------------- formatting
@@ -921,20 +915,6 @@ def education_pace(accounts: list[EduAccount]) -> float | None:
     return median(monthly[-6:]) if monthly else None
 
 
-def project_envelopes(goals: dict) -> list[Envelope]:
-    """Tagged Expenses spending, joined to facts/goals project_budget_* keys.
-    A transaction carrying several tags counts toward each of them."""
-    rows = query("SELECT str(tags) AS t, sum(convert(position,'USD')) AS v "
-                 "WHERE account ~ '^Expenses' GROUP BY t")
-    spent: dict[str, float] = {}
-    for r in rows:
-        for tag in re.findall(r"'([^']+)'", r["t"] or ""):
-            spent[tag] = spent.get(tag, 0.0) + amount(r["v"])
-    return [Envelope(tag, v,
-                     _as_float(goals.get(f"project_budget_{tag.replace('-', '_')}")))
-            for tag, v in sorted(spent.items(), key=lambda kv: -kv[1])]
-
-
 def findings_date() -> str | None:
     """The `_Generated YYYY-MM-DD` stamp inside findings.md, for the header."""
     p = REPORTS / "findings.md"
@@ -1407,9 +1387,14 @@ SMALL_NUMS = ["zero", "One", "Two", "Three", "Four", "Five", "Six",
 
 def sara_line(pace: Pace, cards_state: str, cards: list[Card], more: int,
               daypart: str = "morning") -> str:
-    """One warm, honest sentence for the hero. States, never invents."""
+    """One warm, honest sentence for the hero — a verdict, never directions.
+    The Next line and the rooms sit right below it; pointing at them from
+    up here read like a tooltip, and Sara is a person. A `daypart` of
+    "night" (after ten) turns "this evening" into "tonight"."""
     over = (pace.pace_delta or 0) > PACE_BAND * (pace.typical or float("inf"))
     under = (pace.pace_delta or 0) < -PACE_BAND * (pace.typical or 0)
+    when = "tonight" if daypart == "night" else f"this {daypart}"
+    today_word = "tonight" if daypart == "night" else "today"
     if cards_state == "none":
         return "First morning here — run the checks and I'll start watching for you."
     n_alerts = sum(1 for c in cards if c.kind == "alert")
@@ -1417,24 +1402,20 @@ def sara_line(pace: Pace, cards_state: str, cards: list[Card], more: int,
         n_lbl = SMALL_NUMS[n_alerts] if n_alerts < 10 else str(n_alerts)
         verb = "wants" if n_alerts == 1 else "want"
         thing = "thing" if n_alerts == 1 else "things"
-        rest = "" if n_alerts == 1 else " — the rest wait in Autopilot"
-        return (f"{n_lbl} {thing} {verb} a decision this {daypart}. "
-                f"Start with the Next line below{rest}.")
+        return f"{n_lbl} {thing} {verb} a decision {when}."
     if cards:
         n = len(cards) + more
         s = "s" if n != 1 else ""
         lead = "Spending is running hot, and a" if over else "A"
-        return (f"{lead} few small thing{s} could use your hands — "
-                f"they're waiting in Autopilot, none of it urgent.")
+        return f"{lead} few small thing{s} could use your hands — none of it urgent."
     if pace.typical is None:
         return "All quiet. A few more months of history and I can show your typical pace."
     if over:
-        return ("Nothing needs your hands — but spending is running ahead of "
-                "typical. The Spending room tells it straight.")
+        return "Nothing needs your hands — but spending is running ahead of typical."
     if under:
         return ("Nothing needs you, and spending is running under typical. "
                 "I checked twice.")
-    return "All quiet. Spending is on pace, and nothing needs your hands today."
+    return f"All quiet. Spending is on pace, and nothing needs your hands {today_word}."
 
 
 # --------------------------------------------------------------- rendering
@@ -1941,7 +1922,7 @@ main { padding-bottom:44px; }
 .wins-list b { font-weight:600; font-variant-numeric:tabular-nums;
   color:var(--ink); white-space:nowrap; }
 
-/* envelope + per-kid rows */
+/* per-kid meter rows */
 .envrow { display:grid; grid-template-columns:minmax(96px,max-content) 1fr auto; gap:14px;
   align-items:center; padding:10px 0; border-top:1px solid var(--grid); }
 .envrow:first-of-type { border-top:none; }
@@ -3131,7 +3112,7 @@ try { var t = localStorage.getItem('sara-home-theme');
 </section>
 
 <section class="room wrap" id="room-goals" role="tabpanel" aria-labelledby="tab-goals" hidden>
-<div class="grid {{ 'g-chesh' if env_rows else 'g-solo' }}">
+<div class="grid g-solo">
 <section class="card">
   {{ cardhead(edu.title, edu.sub) }}
   {% if edu.empty %}
@@ -3164,12 +3145,6 @@ try { var t = localStorage.getItem('sara-home-theme');
   {% endif %}
   {% endif %}
 </section>
-{% if env_rows %}
-<section class="card">
-  {{ cardhead('Projects', projects_sub) }}
-  {% for e in env_rows %}{{ meterrow('#' + e.tag, e.width, e.amt, e.over) }}{% endfor %}
-</section>
-{% endif %}
 </div>
 </section>
 
@@ -4039,21 +4014,6 @@ def _moneymap_ctx(balances: list[tuple[str, float]], liquid: float,
             "table_rows": rows}
 
 
-def _envelope_rows(envelopes: list[Envelope]) -> list[dict]:
-    rows = []
-    for e in envelopes[:6]:
-        if e.budget:
-            pct = 100.0 * e.spent / e.budget
-            rows.append({"tag": e.tag, "over": pct > 100,
-                         "width": f"{max(1.0, min(100.0, pct)):.1f}",
-                         "amt": (f"{m0(e.spent)} of {m0(e.budget)}"
-                                 + (f" · {m0(e.spent - e.budget)} over"
-                                    if pct > 100 else ""))})
-        else:
-            rows.append({"tag": e.tag, "over": False, "width": "100.0",
-                         "amt": f"{m0(e.spent)} · no budget set"})
-    return rows
-
 
 # ----------------------------------------------------- chart data builders
 def _pace_chart_data(pace: Pace) -> dict | None:
@@ -4306,9 +4266,6 @@ def build_page(now: datetime | None = None) -> str:
         attr=_attribution_ctx(series, asof),
         thesis=_thesis_ctx(alloc, asof),
         ch=ch,
-        env_rows=_envelope_rows(project_envelopes(goals)),
-        projects_sub=("Each project's tagged spending against the budget "
-                      "set for it — all-time totals."),
         paper=m0(paper) if paper else None,
         unpriced=[a for a, _ in unpriced[:3]], unpriced_more=len(unpriced) > 3,
         css=Markup(css), island=Markup(island_json),

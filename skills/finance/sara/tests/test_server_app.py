@@ -95,7 +95,8 @@ GET_ENDPOINTS = ["ping", "glance", "activity", "spend", "networth",
                  "activity?q=trader&limit=10", "accounts", "owners",
                  "search?q=chase", "insights", "connections",
                  "spend/drill?category=Food&month=2026-07",
-                 "map?owner=alex", "investments?owner=jordan"]
+                 "map?owner=alex", "investments?owner=jordan",
+                 "spend?owner=alex", "spend?owner=joint"]
 _token = ""  # filled by the client fixture (per-launch server token)
 
 
@@ -443,6 +444,123 @@ def test_insights_categories_match_summary(client: TestClient) -> None:
         key=lambda kv: sum(float(x) for x in as_list(kv[1])))[0]
     names = {str(c["name"]) for c in cats}
     assert str(top).split(":")[0] in {n.split(" ")[0] for n in names} or top in names
+
+
+DEMO_OWNERS = ("alex", "jordan", "joint")
+
+
+def test_spend_all_path_is_the_snapshot(client: TestClient) -> None:
+    """No lens (and owner=all) serves summary.json's app.spend verbatim —
+    the household path must stay byte-identical to the snapshot."""
+    base = _body(client.get("/api/spend"))
+    assert _body(client.get("/api/spend?owner=all")) == base
+    snapshot = json.loads((VAULT / "reports" / "summary.json").read_text())
+    assert base == snapshot["app"]["spend"]
+
+
+def test_spend_owner_slices_conserve_household_totals(client: TestClient) -> None:
+    """The lens is a partition: per-owner paced-month expenses sum to the
+    household total from the bean-query-built snapshot, to the dollar
+    (every demo funding account carries an owner). Fig 12."""
+    household = as_dict(_body(client.get("/api/spend"))["cheshbon"])
+    hh_month = str(household["window"]).split(" · ")[0]
+    sliced = 0.0
+    for owner in DEMO_OWNERS:
+        api = _body(client.get(f"/api/spend?owner={owner}"))
+        assert api["owner"] == owner
+        ches = as_dict(api["cheshbon"])
+        assert str(ches["window"]).split(" · ")[0] == hh_month  # same paced month
+        sliced += _dollars(str(ches["exp"]))
+    # four whole-dollar renderings stack at most $0.50 of rounding each
+    assert abs(sliced - _dollars(str(household["exp"]))) <= 4.0
+
+
+def test_spend_owner_month_matches_activity_engine(client: TestClient) -> None:
+    """Cross-engine to the dollar: the lens cheshbon's month expenses equal
+    the Activity engine's owner-filtered month total (independent SQL path
+    over the same DB — a wrong owner-join column breaks this)."""
+    for owner in ("alex", "jordan"):
+        ches = as_dict(_body(client.get(f"/api/spend?owner={owner}"))["cheshbon"])
+        m = re.match(r"(\w+) (\d{4})", str(ches["window"]))
+        assert m
+        months = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug",
+                  "Sep", "Oct", "Nov", "Dec"]
+        y, mo = int(m.group(2)), months.index(m.group(1))
+        d0 = f"{y:04d}-{mo:02d}-01"
+        d1 = f"{y:04d}-{mo:02d}-28" if mo == 2 else f"{y:04d}-{mo:02d}-31"
+        act = _body(client.get(
+            f"/api/activity?owner={owner}&date_from={d0}&date_to={d1}&limit=1"))
+        assert _close(_dollars(str(as_dict(act["totals"])["spent"])),
+                      _dollars(str(ches["exp"])))                       # fig 13
+
+
+def test_spend_owner_categories_conserve(client: TestClient) -> None:
+    """Owner category sums: each owner's rail is internally consistent
+    (rows sum to the period total) and the owners' slices of the top
+    household category sum back to the household row. Fig 14."""
+    hh_rooms = as_dict(_body(client.get("/api/spend"))["rooms"])
+    hh_cats = as_dicts(hh_rooms["cats"])
+    top_idx = int(str(as_list(as_dict(hh_rooms["order"])["six"])[0]))
+    top = hh_cats[top_idx]
+    top_name = str(top["name"])
+    hh_amt = _dollars(str(as_dict(as_dict(top["per"])["six"])["amt"]))
+    sliced = 0.0
+    for owner in DEMO_OWNERS:
+        rooms = as_dict(_body(client.get(f"/api/spend?owner={owner}"))["rooms"])
+        cats = as_dicts(rooms["cats"])
+        # internal consistency: visible six-period rows sum to the header
+        period_total = next(
+            _dollars(str(p["total"])) for p in as_dicts(rooms["periods"])
+            if p["key"] == "six")
+        row_sum = sum(
+            _dollars(str(as_dict(as_dict(c["per"])["six"])["amt"]))
+            for c in cats if "six" in as_dict(c["per"]))
+        assert abs(row_sum - period_total) <= len(cats) + 1.0
+        mine = next((c for c in cats if str(c["name"]) == top_name), None)
+        if mine and "six" in as_dict(mine["per"]):
+            sliced += _dollars(str(as_dict(as_dict(mine["per"])["six"])["amt"]))
+    assert abs(sliced - hh_amt) <= 4.0
+
+
+def test_spend_owner_lens_actually_differs(client: TestClient) -> None:
+    """The reported bug: every owner used to get the identical payload.
+    Distinct demo owners must see distinct numbers and a titled card."""
+    alex = _body(client.get("/api/spend?owner=alex"))
+    jordan = _body(client.get("/api/spend?owner=jordan"))
+    assert as_dict(alex["pace"])["title"] == "Alex\u2019s spending"
+    assert as_dict(jordan["pace"])["title"] == "Jordan\u2019s spending"
+    a_exp = _dollars(str(as_dict(alex["cheshbon"])["exp"]))
+    j_exp = _dollars(str(as_dict(jordan["cheshbon"])["exp"]))
+    assert abs(a_exp - j_exp) > 25  # the demo owners spend differently
+    assert alex["tile"] != jordan["tile"] or alex["pace_chart"] != jordan["pace_chart"]
+    # the pace card mirrors the snapshot semantics: a median-path baseline
+    sub = str(as_dict(alex["pace"])["sub"])
+    assert "median path" in sub and "full months" in sub
+    tile = as_dict(alex["tile"])
+    assert str(tile["verdict"]) in ("Under pace", "On pace", "Running hot",
+                                    "Finding pace")
+    assert "typical" in str(tile["sub"])
+
+
+def test_sara_line_verdict_only_with_night_daypart(client: TestClient) -> None:
+    """The snapshot's sara lines are verdicts (no on-page navigation) and
+    carry the late-evening "tonight" variant for the live picker."""
+    summary = json.loads((VAULT / "reports" / "summary.json").read_text())
+    by_dp = as_dict(as_dict(as_dict(summary["app"])["glance"])["sara_by_daypart"])
+    assert set(by_dp) == {"morning", "afternoon", "evening", "night"}
+    for line in by_dp.values():
+        low = str(line).lower()
+        assert "next line" not in low and "below" not in low
+        assert "autopilot" not in low
+
+
+def test_insights_owner_lens_flows_through(client: TestClient) -> None:
+    """/api/insights?owner= re-slices end to end (the strip the Spending
+    room renders under the lens)."""
+    household = _body(client.get("/api/insights"))
+    alex = _body(client.get("/api/insights?owner=alex"))
+    assert as_dicts(household["cats"]) and as_dicts(alex["cats"])
+    assert household != alex
 
 
 def test_connections_payload_shape(client: TestClient) -> None:

@@ -20,7 +20,7 @@ show_walkaway: true                # Sara Home's Independence room (walk-away nu
 education_target: 120000           # Riley's 529 by 2038
 house_downpayment: 120000          # the house fund target (THESIS: by 2029)
 house_year: 2029                   # target purchase year
-project_budget_nursery_refresh: 900   # the #nursery-refresh envelope (Sara Home projects card)
+project_budget_nursery_refresh: 900   # budget for `query.py project nursery-refresh` (tag drill)
 milestone_net_worth_above: [100000, 250000]   # info finding when liquid net worth first crosses one (flat keys — the goals parser is flat)
 milestone_net_worth_above_crossed: []         # auto-updated by tools/checks.py so each fires once; remove a value to re-arm it
 ```

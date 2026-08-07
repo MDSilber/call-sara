@@ -33,6 +33,9 @@ from .assemble import GOAL_KEYS, _card, _friendly_date, _milestones, _text, clea
 
 
 def daypart(now: datetime) -> str:
+    # small hours belong to the night owls, not the morning people
+    if now.hour < 5:
+        return "evening"
     return ("morning" if now.hour < 12
             else "afternoon" if now.hour < 18 else "evening")
 
@@ -47,8 +50,13 @@ def patch_glance(snapshot: dict[str, object],
     names = household("names")
     out["greet"] = f"Good {dp}, {names}" if names else f"Good {dp}"
     by_daypart = out.pop("sara_by_daypart", None)
-    if isinstance(by_daypart, dict) and by_daypart.get(dp):
-        out["sara"] = by_daypart[dp]
+    # Sara's line says "tonight" after ten; older snapshots carry only the
+    # three plain dayparts, so the evening line stands in
+    sara_dp = "night" if (now.hour >= 22 or now.hour < 5) else dp
+    if isinstance(by_daypart, dict):
+        line = by_daypart.get(sara_dp) or by_daypart.get(dp)
+        if line:
+            out["sara"] = line
     out["generated_at"] = now.isoformat(timespec="seconds")
     out["next"] = live_next(now.date())
     return out

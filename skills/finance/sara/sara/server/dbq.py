@@ -81,7 +81,7 @@ def owners() -> list[dict[str, str]]:
     return [{"owner": n, "label": n[:1].upper() + n[1:]} for n in ordered]
 
 
-def _owner_clause(owner: str | None, col: str) -> tuple[str, dict[str, object]]:
+def owner_clause(owner: str | None, col: str) -> tuple[str, dict[str, object]]:
     """WHERE fragment filtering `col` (an account column) by owner via the
     accounts dim. Person/joint views exclude transit by construction."""
     if not owner or owner == "all":
@@ -132,7 +132,7 @@ def _activity_where(f: ActivityFilters) -> tuple[str, dict[str, object]]:
         params["d1"] = f.date_to
     if f.uncategorized_only:
         where += " AND p.account IN ('Expenses:Uncategorized', 'Expenses:FIXME')"
-    clause, extra = _owner_clause(f.owner, "p.other_account")
+    clause, extra = owner_clause(f.owner, "p.other_account")
     return where + clause, {**params, **extra}
 
 
@@ -319,7 +319,7 @@ def register(account: str, cursor: str | None, owner: str | None = None,
 def account_list(owner: str | None = None) -> list[dict[str, object]]:
     """Assets/Liabilities accounts with their latest balance — palette rows
     and register jump targets."""
-    clause, extra = _owner_clause(owner, "a.account")
+    clause, extra = owner_clause(owner, "a.account")
     rows = DB.rows(f"""
         SELECT a.account, a.owner, a.institution, a.is_open,
                coalesce(b.value, 0) AS value
@@ -371,7 +371,7 @@ def insights(owner: str | None = None, months: int = 12) -> dict[str, object]:
         """
         params: dict[str, object] = {}
     else:
-        clause, params = _owner_clause(owner, "p.other_account")
+        clause, params = owner_clause(owner, "p.other_account")
         src = f"""
             SELECT p.account, date_trunc('month', p.date)::DATE AS month,
                    sum(p.amount_home) AS total
@@ -428,7 +428,7 @@ def insights(owner: str | None = None, months: int = 12) -> dict[str, object]:
 def spend_drill(category: str, month: str, owner: str | None = None,
                 limit: int = 12) -> dict[str, object]:
     """Merchants inside one category for one month (owner-lens aware)."""
-    clause, extra = _owner_clause(owner, "p.other_account")
+    clause, extra = owner_clause(owner, "p.other_account")
     rows = DB.rows(f"""
         SELECT coalesce(nullif(trim(p.payee), ''), '(no payee)') AS merch,
                sum(p.amount_home) AS total, count(*) AS n
@@ -452,7 +452,7 @@ def spend_drill(category: str, month: str, owner: str | None = None,
 def lots(today: date, owner: str | None = None) -> list[dict[str, object]]:
     """Per-lot holdings: surviving (account, symbol, cost_date, cost_number)
     groups under beancount booking, valued at the latest price on file."""
-    clause, extra = _owner_clause(owner, "p.account")
+    clause, extra = owner_clause(owner, "p.account")
     home = home_currency()
     rows = DB.rows(f"""
         WITH lot AS (
@@ -507,7 +507,7 @@ def lots(today: date, owner: str | None = None) -> list[dict[str, object]]:
 def dividends_timeline(owner: str | None = None,
                        months: int = 24) -> dict[str, object]:
     """Dividend income by month (Income:*Dividend* postings, negated)."""
-    clause, extra = _owner_clause(owner, "p.other_account")
+    clause, extra = owner_clause(owner, "p.other_account")
     rows = DB.rows(f"""
         SELECT date_trunc('month', p.date)::DATE AS month,
                sum(-p.amount_home) AS total, count(*) AS n
@@ -550,7 +550,7 @@ def contribution_pace(year: int, owner: str | None = None) -> list[dict[str, obj
     (bucket, owner) gets its own row. Two flows never count: opening-balance
     seeds (Equity:* counter leg) and rollovers between retirement accounts —
     both are moves, not contributions."""
-    clause, extra = _owner_clause(owner, "p.account")
+    clause, extra = owner_clause(owner, "p.account")
     out: list[dict[str, object]] = []
     for key, label, pattern in RETIREMENT_GROUPS:
         rows = DB.rows(f"""
@@ -588,7 +588,7 @@ def contribution_pace(year: int, owner: str | None = None) -> list[dict[str, obj
 def positions(owner: str | None = None) -> list[dict[str, object]]:
     """Holdings by symbol at the latest snapshot day — the DB twin of the
     positions table, owner-lens aware."""
-    clause, extra = _owner_clause(owner, "b.account")
+    clause, extra = owner_clause(owner, "b.account")
     home = home_currency()
     rows = DB.rows(f"""
         SELECT b.currency AS symbol, sum(b.units) AS units,
@@ -629,7 +629,7 @@ def positions(owner: str | None = None) -> list[dict[str, object]]:
 def map_tree(owner: str) -> dict[str, object]:
     """The owner-lens money map: institution → account over the latest
     balances, filtered to one owner's accounts (transit never shows)."""
-    clause, extra = _owner_clause(owner, "b.account")
+    clause, extra = owner_clause(owner, "b.account")
     rows = DB.rows(f"""
         SELECT b.account, sum(b.value_home) AS value, a.institution
         FROM balances_daily b

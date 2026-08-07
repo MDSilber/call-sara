@@ -29,7 +29,7 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import TOOLS_DIR, connections, dbq, live, regen, security, uploads
+from . import TOOLS_DIR, connections, dbq, live, regen, security, spendlens, uploads
 from .actions import ActionError, categorize, dismiss, set_goal
 from .readmodel import SUMMARY, ReadModelMissing, contribution_limits
 
@@ -77,8 +77,18 @@ def create_app(port: int = 8787) -> FastAPI:
         return _read(lambda: live.patch_glance(SUMMARY.app("glance")))
 
     @app.get("/api/spend")
-    def spend() -> JSONResponse:
-        return _read(lambda: SUMMARY.app("spend"))
+    def spend(owner: str | None = None) -> JSONResponse:
+        lens = owner if owner and owner != "all" else None
+        if lens is None:  # the household view IS the snapshot, verbatim
+            return _read(lambda: SUMMARY.app("spend"))
+
+        def build() -> dict[str, object]:
+            out = spendlens.build(lens)
+            # Sara's wins are parsed from dated notes — household by nature,
+            # so the lens carries them through (the frontend badges them)
+            out["wins"] = SUMMARY.app("spend").get("wins")
+            return out
+        return _read(build)
 
     @app.get("/api/networth")
     def networth() -> JSONResponse:

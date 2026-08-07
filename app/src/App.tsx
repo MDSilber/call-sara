@@ -13,7 +13,6 @@ import { Hero } from './components/Glance'
 import { Palette } from './components/Palette'
 import { TabBar } from './components/TabBar'
 import { LoadError } from './components/ui'
-import { ownerLabel, useOwner } from './ownerLens'
 import { isRefreshing, onRefreshChange } from './refresh'
 import { ActivityRoom } from './rooms/Activity'
 import { AutopilotRoom } from './rooms/Autopilot'
@@ -56,7 +55,6 @@ function parseHash(): Route {
 export default function App() {
   const [route, setRoute] = useState<Route>(parseHash)
   const [paletteOpen, setPaletteOpen] = useState(false)
-  const owner = useOwner()
   const glance = useFetch('glance', api.glance)
   const refreshing = useSyncExternalStore(onRefreshChange, isRefreshing)
 
@@ -102,12 +100,6 @@ export default function App() {
       <Hero data={glance.data} refreshing={refreshing}
         onPalette={() => setPaletteOpen(true)} />
       <TabBar rooms={TABS} active={activeTab} onPick={pick} />
-      {owner !== 'all' && room !== 'connections' && (
-        <p className="lensnote wrap" role="status">
-          Owner lens: <b>{ownerLabel(owner)}</b> — activity, accounts,
-          holdings, and trends re-slice; verdict cards stay household-wide.
-        </p>
-      )}
       <main className="wrap">
         {glance.error && <LoadError error={glance.error} retry={glance.reload} />}
         <div className="room" role="tabpanel" id={`room-${activeTab}`}>

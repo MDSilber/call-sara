@@ -1,6 +1,6 @@
 /** The Goals room: the 529 story with its what-if slider (precomputed
- * grid — the slider only looks strings up), project envelopes, and the
- * three app-editable targets, saved through the gated set-goal action. */
+ * grid — the slider only looks strings up) and the three app-editable
+ * targets, saved through the gated set-goal action. */
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { useToast } from '../components/toastContext'
@@ -76,19 +76,6 @@ function GoalsBody({ data }: { data: Goals }) {
         )}
       </Card>
       <div className="sidecol">
-        <Card k="Project envelopes" sub="Tagged spending against the budget set for each project — all-time totals.">
-          {data.envelopes.length === 0 ? (
-            <Empty><b>No tagged projects yet.</b> Tag transactions (#kitchen-redo) and budgets in facts/goals light these up.</Empty>
-          ) : (
-            data.envelopes.map((e) => (
-              <div className="envrow" key={e.tag}>
-                <span className="name">#{e.tag}</span>
-                <Track fill={e.width} cls={e.over ? 'over' : ''} />
-                <span className="amt">{e.amt}</span>
-              </div>
-            ))
-          )}
-        </Card>
         <TargetsCard settings={data.settings} />
       </div>
     </div>

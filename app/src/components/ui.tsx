@@ -5,16 +5,23 @@ export function Card(props: {
   k?: string
   sub?: string
   window?: string
+  /** Tiny neutral chip beside the key — e.g. "household" under a person lens. */
+  badge?: string
   className?: string
   children: ReactNode
 }) {
-  const { k, sub, window: win, className, children } = props
+  const { k, sub, window: win, badge, className, children } = props
   return (
     <section className={`card${className ? ` ${className}` : ''}`}>
       {(k || win) && (
         <div className="cardhead">
           <div>
-            {k && <div className="ck">{k}</div>}
+            {k && (
+              <div className="ck">
+                {k}
+                {badge && <span className="hbadge">{badge}</span>}
+              </div>
+            )}
             {sub && <div className="sub">{sub}</div>}
           </div>
           {win && <div className="window">{win}</div>}

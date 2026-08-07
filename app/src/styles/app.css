@@ -1,7 +1,9 @@
-/* Sara App v2 layout + components — the aurora system, disciplined.
+/* Sara App v2 layout + components — the ink system, disciplined.
    Every size rides tokens.css's scales (--fs-*, --sp-*, --r-*); numbers are
    tabular; tables are calm-dense; motion is 150–250ms, reduced-motion gated.
-   One vocabulary for chips, buttons, rows, and dots — no second dialect. */
+   One vocabulary for chips, buttons, rows, and dots — no second dialect.
+   Color discipline: ink for interaction and charts, gold for the one ruled
+   line, green/amber/red only where a verdict is being passed. */
 
 * { box-sizing:border-box; margin:0; }
 html { -webkit-text-size-adjust:100%; }
@@ -21,46 +23,62 @@ kbd { font:600 var(--fs-0)/1 'Inter',system-ui,sans-serif; color:var(--muted);
   border-bottom-width:2px; border-radius:5px; padding:2px 5px; }
 
 /* the shared uppercase micro-label (card keys, day heads, table heads) */
-.ck, .tk, .dayhead, .hi, .postable th, .regtable th {
+.ck, .tk, .dayhead, .postable th, .regtable th {
   font-size:var(--fs-0); font-weight:600; color:var(--muted);
   text-transform:uppercase; letter-spacing:var(--track-caps); }
 
-/* ---- the aurora hero band ---- */
+/* ---- the ink hero band (tint follows the clock via data-daypart) ---- */
 .hero { background:var(--hero-grad); color:#fff; position:relative;
   padding:var(--sp-7) 0 156px; }
 .hero::before { content:""; position:absolute; inset:0;
-  background:var(--hero-wash); background-size:220% 190%;
-  background-position:0% 0%; pointer-events:none; }
+  background:var(--hero-tint); pointer-events:none; }
 .hero::after { content:""; position:absolute; inset:0;
   background:var(--hero-scrim); pointer-events:none; }
 .hero-in { position:relative; z-index:1; }
-.hero-top { display:flex; justify-content:space-between; align-items:flex-start;
-  gap:var(--sp-5); }
-.hi { color:#fff; text-shadow:0 1px 2px rgba(21,15,74,.30); }
-.say { margin-top:10px; font-size:var(--fs-6); line-height:1.45; font-weight:600;
-  max-width:60ch; letter-spacing:-.005em; text-wrap:balance;
-  text-shadow:0 1px 3px rgba(21,15,74,.32); min-height:1.4em; }
-.hero-side { display:flex; align-items:center; gap:var(--sp-2); flex:none; }
-.stamp { font-size:var(--fs-0); line-height:1.5; color:#fff; text-align:right;
-  background:rgba(21,15,74,.40); padding:5px 12px; border-radius:10px; }
-.herobtn, .themebtn { background:rgba(21,15,74,.45); color:#fff; height:28px;
+.hero-top { display:grid; grid-template-columns:minmax(0,1fr) auto;
+  align-items:start; gap:var(--sp-5); }
+.hero-lede { min-width:0; }
+/* the greeting: a quiet mixed-case eyebrow over Sara's one verdict line,
+   ruled off with the ledger-gold underline — Sara's signature */
+.hi { font-size:var(--fs-3); font-weight:600; line-height:28px;
+  color:rgba(255,255,255,.88); letter-spacing:.002em;
+  text-shadow:0 1px 2px rgba(13,10,48,.28); }
+.hi::after { content:""; display:block; width:34px; height:2px;
+  margin-top:7px; border-radius:1px; background:var(--gold);
+  filter:brightness(1.5) saturate(.85); }
+.say { margin-top:12px; font-size:var(--fs-6); line-height:1.45; font-weight:600;
+  max-width:56ch; letter-spacing:-.005em; text-wrap:balance;
+  text-shadow:0 1px 3px rgba(13,10,48,.30); min-height:1.4em; }
+.hero-side { display:flex; flex-direction:column; align-items:flex-end;
+  gap:var(--sp-2); flex:none; }
+.hero-controls { display:flex; align-items:center; gap:var(--sp-2);
+  height:28px; }
+.stamp { font-size:var(--fs-0); line-height:1.5; color:#fff;
+  background:rgba(13,10,48,.38); padding:4px 12px;
+  border-radius:var(--r-pill); white-space:nowrap; }
+/* the lens state, never invisible: a small persistent chip under the pills */
+.lenschip { font-size:var(--fs-0); line-height:1.5; color:#fff;
+  background:rgba(13,10,48,.38); border:1px solid rgba(255,255,255,.30);
+  padding:3px 11px; border-radius:var(--r-pill); white-space:nowrap; }
+.lenschip b { font-weight:600; }
+.herobtn, .themebtn { background:rgba(13,10,48,.42); color:#fff; height:28px;
   border:1px solid rgba(255,255,255,.5); border-radius:var(--r-pill);
   padding:0 12px; font:600 var(--fs-1)/1 'Inter',system-ui,sans-serif;
   cursor:pointer; display:inline-flex; align-items:center; gap:6px;
   transition:background var(--t-fast) ease; }
-.herobtn:hover, .themebtn:hover { background:rgba(21,15,74,.62); }
+.herobtn:hover, .themebtn:hover { background:rgba(13,10,48,.60); }
 .herobtn kbd { background:rgba(255,255,255,.14); color:#fff;
   border-color:rgba(255,255,255,.35); }
 
 /* owner lens — the household segmented control, riding the hero */
-.lens { display:inline-flex; background:rgba(21,15,74,.45); height:28px;
+.lens { display:inline-flex; background:rgba(13,10,48,.42); height:28px;
   border:1px solid rgba(255,255,255,.5); border-radius:var(--r-pill);
   padding:2px; }
 .lens button { border:0; background:none; color:rgba(255,255,255,.85);
   font:600 var(--fs-1)/1 'Inter',system-ui,sans-serif; padding:0 11px;
   border-radius:var(--r-pill); cursor:pointer;
   transition:background var(--t-fast) ease,color var(--t-fast) ease; }
-.lens button[aria-pressed="true"] { background:#fff; color:#3a2fb8; }
+.lens button[aria-pressed="true"] { background:#fff; color:#332e8f; }
 .lens button:hover:not([aria-pressed="true"]) { color:#fff; }
 
 /* ---- the glance: four verdict tiles floating over the aurora ---- */
@@ -83,10 +101,11 @@ kbd { font:600 var(--fs-0)/1 'Inter',system-ui,sans-serif; color:var(--muted);
 .tfig b { font-weight:600; font-variant-numeric:tabular-nums; }
 .tsub { font-size:var(--fs-0); color:var(--muted); margin-top:2px;
   text-transform:none; letter-spacing:0; }
-.tile.glow::after { content:""; position:absolute; inset:6px 10px;
-  border-radius:var(--r-md); pointer-events:none;
-  background:radial-gradient(120% 90% at 50% 0%,var(--pos-soft),transparent 70%);
-  z-index:-1; }
+.hbadge { display:inline-block; margin-left:7px; padding:1px 7px;
+  border-radius:var(--r-pill); background:var(--surface-2);
+  border:1px solid var(--border); color:var(--muted);
+  font-size:10px; font-weight:600; text-transform:lowercase;
+  letter-spacing:.02em; vertical-align:1px; }
 .streak { display:inline-flex; align-items:center; gap:5px; margin-top:7px;
   align-self:flex-start; background:var(--pos-soft); color:var(--pos);
   border-radius:var(--r-pill); padding:2px 9px; font-size:var(--fs-0);
@@ -134,9 +153,6 @@ kbd { font:600 var(--fs-0)/1 'Inter',system-ui,sans-serif; color:var(--muted);
 .tab .badge { position:absolute; top:1px; right:5px; min-width:16px;
   height:16px; border-radius:var(--r-pill); background:var(--accent);
   color:#fff; font-size:10px; font-weight:600; line-height:16px; padding:0 4px; }
-.lensnote { color:var(--muted); font-size:var(--fs-1); text-align:center;
-  margin-top:var(--sp-2); }
-.lensnote b { color:var(--ink-2); font-weight:600; }
 
 /* ---- cards + grids ---- */
 main { padding-bottom:var(--sp-8); }
@@ -722,15 +738,15 @@ footer p + p { margin-top:4px; }
   .g-pace, .g-spend, .g-needs, .g-nwt, .g-half { grid-template-columns:1fr; }
   .tiles { grid-template-columns:1fr 1fr; row-gap:14px; }
   .tile:nth-child(3) { border-left:none; }
-  .hero-top { flex-direction:column; }
-  .hero-side { align-self:flex-start; flex-wrap:wrap; }
-  .stamp { text-align:left; }
+  .hero-top { grid-template-columns:1fr; }
+  .hero-side { align-items:flex-start; }
+  .hero-controls { flex-wrap:wrap; height:auto; min-height:28px; }
+  .stamp, .lenschip { white-space:normal; }
   .conngrid { grid-template-columns:1fr; }
 }
 @media (max-width:560px) {
   .wrap { padding:0 var(--sp-4); }
   .hero { padding-top:var(--sp-6); padding-bottom:124px; }
-  .stamp { flex-basis:100%; }
   .tiles { grid-template-columns:1fr 1fr; padding:var(--sp-3) 0;
     margin-top:-88px; }
   .tile { padding:2px var(--sp-4); }

@@ -78,7 +78,7 @@ test('the owner lens re-slices activity and the map', async ({ page }) => {
   const lens = page.locator('.lens')
   await expect(lens).toBeVisible()
   await lens.locator('button', { hasText: 'Alex' }).click()
-  await expect(page.locator('.lensnote')).toContainText('Alex')
+  await expect(page.locator('.lenschip')).toContainText('Alex’s slice')
   await page.click('.tab:has-text("Activity")')
   await page.waitForSelector('.feed li', { timeout: 30_000 })
   await expect(page.locator('.feed li .ownerchip').first()).toHaveText('alex')
@@ -87,7 +87,47 @@ test('the owner lens re-slices activity and the map', async ({ page }) => {
   await expect(page.locator('.chart-map')).toBeVisible()
   await page.screenshot({ path: `${SHOTS}/e2e-lens-map.png`, fullPage: true })
   await lens.locator('button', { hasText: 'All' }).click()
-  await expect(page.locator('.lensnote')).toHaveCount(0)
+  await expect(page.locator('.lenschip')).toHaveCount(0)
+})
+
+test('the owner lens re-slices Spending and the glance tiles', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForSelector('.tiles .tv-big', { timeout: 30_000 })
+  await page.click('.tab:has-text("Spending")')
+  await settled(page)
+  // household baseline: the untitled pace card and its typical-path line
+  await expect(page.locator('.room .ck').first()).toHaveText('Is this month unusual?')
+  const householdLab = await page.locator('.herolab').innerText()
+  await page.waitForTimeout(700)
+  await page.screenshot({ path: `${SHOTS}/e2e-lens-spend-before.png`, fullPage: true })
+  // flip the lens: the chip appears, the card retitles, the pace re-slices
+  const lens = page.locator('.lens')
+  await lens.locator('button', { hasText: 'Alex' }).click()
+  await settled(page)
+  await expect(page.locator('.lenschip')).toContainText('Alex’s slice')
+  await expect(page.locator('.room .ck').first()).toHaveText('Alex’s spending')
+  await expect(page.locator('.phero')).toBeVisible()
+  await expect(page.locator('.herolab')).not.toHaveText(householdLab)
+  // the glance: Spending and Net worth re-slice, household-only tiles badge
+  await expect(page.locator('.tile').nth(0).locator('.tk')).toContainText('Alex’s spending')
+  await expect(page.locator('.tile').nth(1).locator('.tsub')).toContainText('household')
+  await expect(page.locator('.tile').nth(2).locator('.hbadge')).toHaveText('household')
+  await expect(page.locator('.tile').nth(3).locator('.hbadge')).toHaveText('household')
+  await page.waitForTimeout(700)
+  await page.screenshot({ path: `${SHOTS}/e2e-lens-spend-after.png`, fullPage: true })
+  // the same pair in dark
+  await page.click('.themebtn') // auto -> light
+  await page.click('.themebtn') // light -> dark
+  await settled(page)
+  await page.waitForTimeout(700)
+  await page.screenshot({ path: `${SHOTS}/e2e-lens-spend-after-dark.png`, fullPage: true })
+  await lens.locator('button', { hasText: 'All' }).click()
+  await settled(page)
+  await expect(page.locator('.lenschip')).toHaveCount(0)
+  await expect(page.locator('.room .ck').first()).toHaveText('Is this month unusual?')
+  await page.waitForTimeout(700)
+  await page.screenshot({ path: `${SHOTS}/e2e-lens-spend-before-dark.png`, fullPage: true })
+  await page.click('.themebtn') // dark -> auto, leave the session tidy
 })
 
 test('teaching a rule categorizes the planted transaction', async ({ page }) => {

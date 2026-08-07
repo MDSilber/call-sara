@@ -99,7 +99,7 @@ const lens = (owner?: string) => (owner && owner !== 'all' ? owner : undefined)
 
 export const api = {
   glance: () => get<Glance>('/api/glance'),
-  spend: () => get<Spend>('/api/spend'),
+  spend: (owner?: string) => get<Spend>(`/api/spend${qs({ owner: lens(owner) })}`),
   networth: () => get<Networth>('/api/networth'),
   investments: (owner?: string) =>
     get<Investments>(`/api/investments${qs({ owner: lens(owner) })}`),

@@ -37,7 +37,6 @@ from home import (
     _auto_tile,
     _cheshbon_ctx,
     _education_ctx,
-    _envelope_rows,
     _machine_ctx,
     _moneymap_ctx,
     _networth_ctx,
@@ -57,7 +56,6 @@ from home import (
     monthly_expense_totals,
     must_move,
     needs_you,
-    project_envelopes,
     sara_line,
     saras_wins,
     spend_pace,
@@ -148,6 +146,15 @@ def _daypart(now: datetime) -> str:
             else "afternoon" if now.hour < 18 else "evening")
 
 
+# Sara's line distinguishes late evening ("tonight"); the greeting keeps the
+# plain three dayparts — "Good night" would read as a sign-off.
+SARA_DAYPARTS = ("morning", "afternoon", "evening", "night")
+
+
+def _sara_daypart(now: datetime) -> str:
+    return "night" if now.hour >= 22 else _daypart(now)
+
+
 def _friendly_date(iso: str | None) -> str | None:
     """'2026-08-06' -> 'Aug 6' (stamps read like a person wrote them)."""
     if not iso:
@@ -202,11 +209,11 @@ def glance(now: datetime | None = None) -> dict[str, object]:
     return cast(dict[str, object], clean({
         "generated_at": now,
         "greet": f"Good {daypart}, {names}" if names else f"Good {daypart}",
-        "sara": sara_line(pace, needs_state, cards, more, daypart),
+        "sara": sara_line(pace, needs_state, cards, more, _sara_daypart(now)),
         # every daypart, so the snapshot-served glance greets in the
         # requester's part of day (sara/server/live.py picks one)
         "sara_by_daypart": {dp: sara_line(pace, needs_state, cards, more, dp)
-                            for dp in ("morning", "afternoon", "evening")},
+                            for dp in SARA_DAYPARTS},
         "ledger_stamp": (f"Ledger through {mon_d(asof)}" if asof
                          else "Ledger empty"),
         "checks_stamp": (f"checks from {checks_from}" if checks_from else ""),
@@ -502,7 +509,6 @@ def goals_payload(now: datetime | None = None) -> dict[str, object]:
 
     return cast(dict[str, object], clean({
         "education": edu,
-        "envelopes": _envelope_rows(project_envelopes(goals)),
         "milestones": _milestones(liquid),
         "settings": [_setting(k) for k in GOAL_KEYS],
         "window": "targets from facts/goals · balances at latest prices",

@@ -80,6 +80,9 @@ the design; if yours doesn't fit, open an issue and describe its shape.
 
 ## Someday — intended, undated
 
+- **Project envelopes** — tagged spending vs per-project budgets — cut
+  from v2 until a real household wants it (the `#tag` data and the
+  `query.py project` drill stay).
 - ~~**Interactive home v2**~~ — **shipped** as Sara App
   (`dashboard.sh --app`): the local web app over the same verified
   builders, with three whitelisted write actions (teach a rule, set a

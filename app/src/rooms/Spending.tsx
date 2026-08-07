@@ -15,11 +15,14 @@ import { useFetch } from '../useFetch'
 type PeriodKey = 'cur' | 'prev' | 'six'
 
 export function SpendingRoom() {
-  const { data, error, loading, reload } = useFetch('spend', api.spend)
+  const owner = useOwner()
+  const { data, error, loading, reload } = useFetch(`spend:${owner}`, () => api.spend(owner))
   if (loading) return <div className="grid g-pace"><CardSkeleton lines={7} /><CardSkeleton lines={5} /></div>
   if (error) return <LoadError error={error} retry={reload} />
   if (!data) return null
-  return <SpendingBody data={data} />
+  // key by owner so a lens flip re-enters the room (the entrance motion
+  // marks what changed; prefers-reduced-motion already gates it)
+  return <SpendingBody key={owner} data={data} />
 }
 
 function SpendingBody({ data }: { data: Spend }) {
@@ -102,7 +105,8 @@ function SpendingBody({ data }: { data: Spend }) {
   return (
     <>
       <div className="grid g-pace">
-        <Card k="Is this month unusual?" sub={data.pace.sub} window={data.pace.window}>
+        <Card k={data.pace.title ?? 'Is this month unusual?'} sub={data.pace.sub}
+          window={data.pace.window}>
           {data.pace.empty ? (
             <Empty><b>Nothing to pace yet.</b> Import a statement and the line starts drawing.</Empty>
           ) : (
@@ -137,7 +141,8 @@ function SpendingBody({ data }: { data: Spend }) {
             )}
           </Card>
           {data.wins && (
-            <Card k="Sara’s finds" sub={data.wins.count_lbl} window={data.wins.year}>
+            <Card k="Sara’s finds" badge={data.owner ? 'household' : undefined}
+              sub={data.wins.count_lbl} window={data.wins.year}>
               <div className="winhero num">{data.wins.total} <span className="of">found this year</span></div>
               <ul className="wins-list">
                 {data.wins.rows.map((w) => (
