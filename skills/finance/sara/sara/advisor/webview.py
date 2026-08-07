@@ -26,11 +26,10 @@ import re
 from calendar import monthrange
 from datetime import date, datetime
 
-from sara.vault import (REPORTS, VAULT, amount, dated_bullets,
-                   illiquid_currency_regex, query)
-from sara.advisor.dismissals import filter_findings
 from sara.advisor.checks import goals as goals_config
+from sara.advisor.dismissals import filter_findings
 from sara.advisor.types import YM, Finding, Money, Payload
+from sara.vault import REPORTS, VAULT, amount, dated_bullets, illiquid_currency_regex, query
 
 MAX_CURVE_POINTS = 24      # two years of month-ends is a curve; more is wallpaper
 PRICE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\s+price\s+(\S+)\s+([\d.,]+)\s+USD\b", re.M)

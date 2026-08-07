@@ -14,38 +14,68 @@ Window labels ride every figure group; consumers must show them.
 import json
 import re
 from datetime import date, datetime
+from typing import Any, cast
 
-from sara.advisor.crosscheck import ensure_crosschecks
-from sara.vault import (OWNER_JOINT, OWNER_UNASSIGNED, REPORTS, VAULT, account_owners,
-                   amount, dated_bullets, query, shadow_currency)
-from sara.advisor.reports import liquid_balances, owner_rollup, paper_value, spend_matrix
-from sara.advisor.webview import units_of, latest_ledger_date, networth_series, parse_findings
+from sara.advisor.builders import (
+    EduAccount,
+    Pace,
+    auto_tile,
+    education_accounts,
+    education_ctx,
+    education_pace,
+    findings_date,
+    machine_ctx,
+    monthly_expense_totals,
+    must_move,
+    needs_you,
+    networth_ctx,
+    next_ctx,
+    sara_line,
+    spend_pace,
+    spend_tile,
+    under_streak,
+    window_label,
+)
 from sara.advisor.checks import goals as goals_config
 from sara.advisor.checks import lane_status
+from sara.advisor.crosscheck import ensure_crosschecks
 from sara.advisor.forecast import DEFAULT_DAYS, build_forecast
-from sara.advisor.builders import (auto_tile, education_ctx, machine_ctx, networth_ctx,
-                      next_ctx, spend_tile, education_accounts, education_pace,
-                      findings_date, monthly_expense_totals, must_move, needs_you,
-                      sara_line, spend_pace, under_streak, window_label)
+from sara.advisor.reports import liquid_balances, owner_rollup, paper_value, spend_matrix
+from sara.advisor.types import YM, Money, Payload
+from sara.advisor.webview import latest_ledger_date, networth_series, parse_findings, units_of
+from sara.vault import (
+    OWNER_JOINT,
+    OWNER_UNASSIGNED,
+    REPORTS,
+    VAULT,
+    account_owners,
+    amount,
+    dated_bullets,
+    query,
+    shadow_currency,
+)
 
+Balances = list[tuple[str, Money]]
 SCHEMA = 1
 CASHFLOW_MONTHS = 13          # trailing 12 closed months + the current one
 TAG_RE = re.compile(r"<[^>]+>")
 
 
 # ------------------------------------------------------------ sanitizers
-def _plain(value):
+def _plain(value: object) -> str | None:
     """Markup/str -> tag-free text (tile chips carry <b> for the page)."""
     return TAG_RE.sub("", str(value)) if value is not None else None
 
 
-def _clean(obj):
+def _clean(obj: object) -> object:
     """Recursively make a builder's output JSON-safe: dates -> ISO strings,
     Markup -> plain text, tuples -> lists, money floats -> 2 decimals."""
     if isinstance(obj, dict):
-        return {str(k): _clean(v) for k, v in obj.items()}
+        d = cast("dict[object, object]", obj)
+        return {str(k): _clean(v) for k, v in d.items()}
     if isinstance(obj, (list, tuple)):
-        return [_clean(v) for v in obj]
+        seq = cast("list[object] | tuple[object, ...]", obj)
+        return [_clean(v) for v in seq]
     if isinstance(obj, (datetime, date)):
         return obj.isoformat()
     if isinstance(obj, float):
@@ -57,12 +87,13 @@ def _clean(obj):
     return _plain(obj)
 
 
-def _ym(ym) -> str:
+def _ym(ym: YM) -> str:
     return f"{ym[0]:04d}-{ym[1]:02d}"
 
 
 # --------------------------------------------------------------- sections
-def _networth(balances, unpriced, liquid, paper, asof, series):
+def _networth(balances: Balances, unpriced: list[tuple[str, str]], liquid: Money,
+              paper: Money, asof: date | None, series: list[Payload]) -> Payload:
     assets = sum(v for a, v in balances if a.startswith("Assets"))
     liab = sum(v for a, v in balances if a.startswith("Liabilities"))
     return {
@@ -85,12 +116,12 @@ OWNER_CONVENTION = ("owner: metadata on each account's open directive; "
                     f"'{OWNER_JOINT}' is shared, '{OWNER_UNASSIGNED}' means untagged")
 
 
-def _owned_rows(balances):
+def _owned_rows(balances: Balances) -> list[Payload]:
     owners = account_owners()  # one bean-query for the whole table
     return [{"account": a, "usd": v, "owner": owners.get(a)} for a, v in balances]
 
 
-def _owners(balances, asof):
+def _owners(balances: Balances, asof: date | None) -> Payload:
     """The owner lens: per-owner liquid + account counts from the SAME
     balances rows as the headline (crosscheck holds the slice sum to liquid
     net worth to the cent). split_5050 is the two-person convenience view —
@@ -103,7 +134,7 @@ def _owners(balances, asof):
     people = [(who, v) for who, v, _n in slices
               if who not in (OWNER_JOINT, OWNER_UNASSIGNED)]
     joint = next((v for who, v, _n in slices if who == OWNER_JOINT), 0.0)
-    split = None
+    split: Payload | None = None
     if len(people) == 2:
         split = {"note": ("joint split evenly between the two people — "
                           "a display convention, not an agreement"),
@@ -115,9 +146,9 @@ def _owners(balances, asof):
             "split_5050": split}
 
 
-def _positions():
+def _positions() -> list[Payload]:
     """Same query as query.py's `positions` command, returned as data."""
-    out = []
+    out: list[Payload] = []
     for r in query("SELECT currency, sum(position) AS units, "
                    "sum(convert(position,'USD')) AS usd "
                    "WHERE account ~ '^Assets' AND currency != 'USD' "
@@ -129,8 +160,9 @@ def _positions():
     return out
 
 
-def _spend(pace, tile, months, cats):
-    prev = None
+def _spend(pace: Pace, tile: Payload, months: list[YM],
+           cats: dict[str, dict[YM, Money]]) -> Payload:
+    prev: YM | None = None
     if pace.cur in months and months.index(pace.cur) > 0:
         prev = months[months.index(pace.cur) - 1]
     elif months and months[-1] < pace.cur:
@@ -157,21 +189,20 @@ def _spend(pace, tile, months, cats):
             "window": window_label(months) or "no expense months yet",
             "months": [_ym(m) for m in months],
             "categories": {c: [round(cats[c].get(m, 0.0), 2) for m in months]
-                           for c in sorted(cats,
-                                           key=lambda c: -sum(cats[c].values()))},
+                           for c in sorted(cats, key=lambda c: -sum(cats[c].values()))},
             "totals": per_month_totals,
         },
     }
 
 
-def _cashflow():
+def _cashflow() -> Payload:
     """Income vs expenses by month — the same one-query shape as query.py's
     `cashflow` command and home's month_in_out, trailing window."""
     rows = query("SELECT year, month, root(account,1) AS r, "
                  "sum(convert(position,'USD')) AS v "
                  "WHERE account ~ '^(Income|Expenses)' "
                  "GROUP BY year, month, r ORDER BY year, month")
-    by_month = {}
+    by_month: dict[YM, dict[str, Money]] = {}
     for r in rows:
         try:
             ym = (int(r["year"]), int(r["month"]))
@@ -179,7 +210,7 @@ def _cashflow():
             continue
         by_month.setdefault(ym, {})[r["r"]] = amount(r["v"])
     months = sorted(by_month)[-CASHFLOW_MONTHS:]
-    out = []
+    out: list[Payload] = []
     for ym in months:
         inc = -by_month[ym].get("Income", 0.0)   # income posts negative
         exp = by_month[ym].get("Expenses", 0.0)
@@ -189,7 +220,7 @@ def _cashflow():
             "months": out}
 
 
-def _findings():
+def _findings() -> Payload:
     findings, counts, errors = parse_findings()
     if findings is None:
         return {"window": "checks never ran", "generated": None,
@@ -203,7 +234,7 @@ def _findings():
             "errors": errors}
 
 
-def _forecast(today):
+def _forecast(today: date) -> Payload:
     fc = build_forecast(today=today)
     h = fc["household"]
     return {
@@ -230,7 +261,7 @@ def _forecast(today):
     }
 
 
-def _autopilot(lanes):
+def _autopilot(lanes: list[Payload]) -> Payload:
     mach = machine_ctx(lanes)
     return {
         "window": mach["window"], "summary": mach["summary"],
@@ -240,11 +271,12 @@ def _autopilot(lanes):
                    "last_amount": r["last_amount"], "expected": r["expected"],
                    "balance": r["balance"], "floor": r["floor"],
                    "note": r["note"], "detail": ctx["detail"]}
-                  for r, ctx in zip(lanes, mach["rows"])],
+                  for r, ctx in zip(lanes, mach["rows"], strict=False)],
     }
 
 
-def _education(accounts, pace, tile, goals, asof):
+def _education(accounts: list[EduAccount], pace: Money | None, tile: Payload,
+               goals: dict[str, Any], asof: date | None) -> Payload:
     target = goals.get("education_target")
     return {
         "window": f"through {asof.isoformat()}" if asof else "ledger empty",
@@ -257,7 +289,7 @@ def _education(accounts, pace, tile, goals, asof):
     }
 
 
-def _goals_calendar(goals, today):
+def _goals_calendar(goals: dict[str, Any], today: date) -> Payload:
     bullets = dated_bullets()
     future = [{"date": d, "days_until": (d - today).days, "text": t,
                "source": str(f)} for d, t, f in bullets if d >= today]
@@ -268,7 +300,7 @@ def _goals_calendar(goals, today):
                          "upcoming": future, "recently_passed": passed}}
 
 
-def _thesis_rules():
+def _thesis_rules() -> Payload:
     """THESIS.md's headline rules, grouped by `##` section: every top-level
     `- ` bullet (wrapped continuation lines joined); a bulletless section
     contributes its prose paragraph as one rule instead. Pure-italic lines
@@ -277,9 +309,12 @@ def _thesis_rules():
     path = VAULT / "THESIS.md"
     if not path.exists():
         return {"source": None, "sections": []}
-    sections, heading, rules, prose = [], None, [], []
+    sections: list[Payload] = []
+    heading: str | None = None
+    rules: list[str] = []
+    prose: list[str] = []
 
-    def flush():
+    def flush() -> None:
         if heading and (rules or prose):
             sections.append({"heading": heading,
                              "rules": rules.copy() or [" ".join(prose)]})
@@ -300,8 +335,9 @@ def _thesis_rules():
     return {"source": "THESIS.md", "sections": sections}
 
 
-def _glance(pace, totals, lanes, edu_tile, nw_delta_plain, liquid, asof,
-            today, daypart="morning"):
+def _glance(pace: Pace, totals: list[tuple[YM, Money]], lanes: list[Payload],
+            edu_tile: Payload, nw_delta_plain: str | None, liquid: Money,
+            asof: date | None, today: date, daypart: str = "morning") -> Payload:
     cards, more, needs_state = needs_you(today)
     moves_human = [mv for mv in must_move(today) if not mv["plumbing"]]
     nxt = next_ctx(needs_state, cards, more, moves_human)
@@ -321,7 +357,7 @@ def _glance(pace, totals, lanes, edu_tile, nw_delta_plain, liquid, asof,
     }
 
 
-def _app_snapshot(now):
+def _app_snapshot(now: datetime) -> Payload:
     """The Sara App read model — the same verified builders, rendered once
     here (write side) so the app server never parses the ledger on a GET."""
     from sara.advisor.snapshot import app_snapshot
@@ -329,7 +365,7 @@ def _app_snapshot(now):
 
 
 # ------------------------------------------------------------------ build
-def build_summary(now: datetime | None = None) -> dict:
+def build_summary(now: datetime | None = None) -> Payload:
     now = now or datetime.now().astimezone()
     today = now.date()
     balances, unpriced = liquid_balances()
@@ -386,8 +422,7 @@ def build_summary(now: datetime | None = None) -> dict:
                           liquid, asof, today, daypart),
         "app": _app_snapshot(now),
     })
-    assert isinstance(cleaned, dict)  # _clean maps dict -> dict
-    return cleaned
+    return cast(Payload, cleaned)  # _clean maps dict -> dict[str, ...]
 
 
 def summary() -> None:

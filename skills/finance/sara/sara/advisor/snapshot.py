@@ -25,10 +25,7 @@ from datetime import date, datetime, timedelta
 from typing import cast
 
 from sara.advisor.allocation import allocation_view
-from sara.advisor.checks import goals as goals_config
-from sara.advisor.checks import lane_status
-from sara.advisor.dismissals import active_ids, finding_id, load_dismissals
-from sara.advisor.home import (
+from sara.advisor.builders import (
     MINUS,
     MONTH_FULL,
     Card,
@@ -36,41 +33,44 @@ from sara.advisor.home import (
     attribution_ctx,
     auto_tile,
     cheshbon_ctx,
+    education_accounts,
     education_ctx,
+    education_pace,
+    findings_date,
+    m0,
     machine_ctx,
+    mon_d,
     moneymap_ctx,
+    monthly_expense_totals,
+    must_move,
+    needs_you,
     networth_ctx,
     next_ctx,
     nw_chart_data,
     pace_chart_data,
     pace_ctx,
-    sparkline,
-    spend_tile,
-    wins_ctx,
-    education_accounts,
-    education_pace,
-    findings_date,
-    m0,
-    mon_d,
-    monthly_expense_totals,
-    must_move,
-    needs_you,
     sara_line,
     saras_wins,
+    sparkline,
     spend_pace,
+    spend_tile,
     spending_data,
     under_streak,
+    wins_ctx,
 )
+from sara.advisor.checks import goals as goals_config
+from sara.advisor.checks import lane_status
+from sara.advisor.dismissals import active_ids, finding_id, load_dismissals
 from sara.advisor.reports import liquid_balances, paper_value
 from sara.advisor.webview import (
     MONTH_ABBR,
-    units_of,
     action_queue,
     latest_ledger_date,
     milestone_state,
     networth_series,
     parse_findings,
     price_history,
+    units_of,
 )
 from sara.vault import (
     REPORTS,
@@ -201,7 +201,7 @@ def _event_short(text: str, limit: int = 40) -> str:
     head = re.split(r"[:;(]", text, maxsplit=1)[0].strip()
     if len(head) <= limit:
         return head
-    cut = head[:limit].rsplit(" ", 1)[0].rstrip(",.–- ")  # noqa: RUF001 — strips a trailing en dash too
+    cut = head[:limit].rsplit(" ", 1)[0].rstrip(",.–- ")
     return f"{cut}…"
 
 
@@ -582,7 +582,7 @@ def investments(now: datetime | None = None) -> dict[str, object]:
             "cash_above_reserve": (m0(alloc.cash_above_reserve)
                                    if alloc.reserve_usd > 0 else None),
         }
-    ytd_win = f"Jan–{MONTH_ABBR[now.month]} {year}"  # noqa: RUF001 — window labels keep the en dash
+    ytd_win = f"Jan–{MONTH_ABBR[now.month]} {year}"
     paper = paper_value()
     paper_note = None
     if paper_syms:

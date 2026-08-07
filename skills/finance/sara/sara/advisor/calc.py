@@ -26,8 +26,7 @@ refusal wording; keep them in sync.
 import ast
 import sys
 from collections.abc import Callable
-from decimal import (ROUND_HALF_UP, Decimal, DecimalException, DivisionByZero,
-                     getcontext)
+from decimal import ROUND_HALF_UP, Decimal, DecimalException, DivisionByZero, getcontext
 
 PRECISION = 50          # significant digits — far beyond any money figure
 MAX_EXPR = 1_000        # characters; also bounds parser recursion

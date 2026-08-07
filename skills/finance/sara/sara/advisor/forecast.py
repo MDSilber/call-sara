@@ -29,21 +29,26 @@ Read-only: never writes to the vault.
 from __future__ import annotations
 
 import calendar
+import itertools
 import re
 import sys
 from collections import Counter
 from datetime import date, datetime, timedelta
 from typing import Any, Literal, NotRequired, TypedDict, cast
 
-from sara.vault import (amount, dated_bullets, illiquid_currency_regex,
-                   money, query, rules)
 # checks.py's cycle/merchant helpers are underscore-named but shared with this
 # module by design (its subscription radar and card-cycle parser ARE the spec):
 # pyright: reportPrivateUsage=false
-from sara.advisor.checks import (FIXED_DRIFT_TOLERANCE, _closed_accounts,
-                    _cycle_anchors, _cycle_day, _matches_segments,
-                    _normalize_merchant)
+from sara.advisor.checks import (
+    FIXED_DRIFT_TOLERANCE,
+    _closed_accounts,
+    _cycle_anchors,
+    _cycle_day,
+    _matches_segments,
+    _normalize_merchant,
+)
 from sara.advisor.types import Money
+from sara.vault import amount, dated_bullets, illiquid_currency_regex, money, query, rules
 
 # ---------------------------------------------------------------- tuning
 DEFAULT_DAYS = 60             # two rent+paycheck cycles: long enough to catch a rent/tax
@@ -128,7 +133,7 @@ class Stream(TypedDict):
     label: str
     kind: str
     cadence: str        # a CADENCE_WINDOWS name | semimonthly | declared
-    step: int | None    # median in-window gap; None for month-stepped cadences
+    step: int | None    # median in-window gap in days; None for semimonthly/declared
     amount: Money
     dates: list[date]
     last: date
@@ -213,7 +218,7 @@ class Forecast(TypedDict):
 
 # functional form: "from" is a keyword
 DeclaredCard = TypedDict("DeclaredCard", {"bill": int, "close": int,
-                                          "from": "str | None", "label": str})
+                                          "from": str | None, "label": str})
 
 
 def _merchant(label: str) -> str:
@@ -271,7 +276,7 @@ def _cadence_of(dates: list[date]) -> tuple[str | None, int | None]:
     all land on <= 2 days-of-month upgrade to "semimonthly" (1st/15th payroll
     projects on those days instead of drifting by +15d steps).
     """
-    gaps = [(b - a).days for a, b in zip(dates, dates[1:])]
+    gaps = [(b - a).days for a, b in itertools.pairwise(dates)]
     if not gaps:
         return None, None
     for name, lo, hi in CADENCE_WINDOWS:
@@ -287,7 +292,7 @@ def _cadence_of(dates: list[date]) -> tuple[str | None, int | None]:
 
 def _offcycle_gaps(dates: list[date], lo: int, hi: int) -> int:
     """How many gaps in the history fall OUTSIDE the cadence window."""
-    gaps = [(b - a).days for a, b in zip(dates, dates[1:])]
+    gaps = [(b - a).days for a, b in itertools.pairwise(dates)]
     return sum(1 for g in gaps if not lo <= g <= hi)
 
 
@@ -338,7 +343,7 @@ def recurring_streams(posts: list[Post], today: date | None = None) -> list[Stre
     """
     skip = _closed_accounts()
     by_exact: dict[tuple[str, str, Money], dict[date, Occurrence]] = {}
-    by_key: dict[tuple[str, str, bool], dict[date, list[Any]]] = {}  # [amt, label, kind], a mutable triple
+    by_key: dict[tuple[str, str, bool], dict[date, list[Any]]] = {}  # day -> [amt, label, kind]
     for p in posts:
         if not p["merchant"] or p["account"] in skip:
             continue
@@ -407,7 +412,7 @@ def _cycle_spend(card_posts: list[Post], close_day: int, today: date) -> Money |
     anchors = _cycle_anchors(close_day, first - timedelta(days=62), max(newest, today))
     closed = [a for a in anchors if a <= newest]
     spends: list[Money] = []
-    for lo, hi in zip(closed, closed[1:]):
+    for lo, hi in itertools.pairwise(closed):
         if hi < first:
             continue  # cycle closed before the card existed — absence, not history
         spends.append(-sum(p["amt"] for p in charges if lo < p["date"] <= hi))
@@ -560,8 +565,8 @@ def _future_dates(stream: Stream, floor: date, end: date) -> list[date]:
     anchor = stream.get("anchor_day") or last.day  # declared card cycles carry their own
     #        anchor ("last" -> 31); _add_months clamps it to short months
     for k in range(1, (end - last).days + 2):  # generous bound; the break below governs
-        nxt = (_add_months(last, months * k, anchor) if months  # day-stepped cadences
-               else last + timedelta(days=cast(int, stream["step"]) * k))  # always carry a step
+        nxt = (_add_months(last, months * k, anchor) if months
+               else last + timedelta(days=cast(int, stream["step"]) * k))  # day-stepped: step set
         if nxt > end:
             break
         if nxt > floor:
@@ -569,8 +574,7 @@ def _future_dates(stream: Stream, floor: date, end: date) -> list[date]:
     return out
 
 
-def known_oneoffs(today: date, end: date
-                  ) -> tuple[list[Oneoff], list[Oneoff], list[DatedNote]]:
+def known_oneoffs(today: date, end: date) -> tuple[list[Oneoff], list[Oneoff], list[DatedNote]]:
     """Dated facts/ bullets inside the horizon, three buckets.
 
     quantified: amount + clear cash direction — in the math. ambiguous: amount
@@ -630,8 +634,7 @@ def build_forecast(days: int = DEFAULT_DAYS, today: date | None = None) -> Forec
             balances[acct] += extra
     streams = recurring_streams(posts, today)
     streams = declared_autopay_streams(streams, posts, asof, today)
-    floors: dict[str, Money] = {a: float(t) for a, t
-                                in rules().get("fixed_balances", {}).items()}
+    floors: dict[str, Money] = {a: float(t) for a, t in rules().get("fixed_balances", {}).items()}
     flows_by_account: dict[str, list[Flow]] = {}
     for s in streams:
         for d in _future_dates(s, asof[s["account"]], end):
@@ -678,12 +681,13 @@ def build_forecast(days: int = DEFAULT_DAYS, today: date | None = None) -> Forec
             warns.append({"account": a["account"], "kind": "below_floor",
                           "min": a["min"], "date": a["min_date"], "floor": a["floor"],
                           "drivers": named})
-    household: Household = {"start": sum(a["start"] for a in accounts),
-                 "income": totals["income"], "expense": totals["expense"],
-                 "transfer_net": totals["transfer"], "oneoffs": oneoffs,
-                 "oneoff_total": oneoff_total, "ambiguous": ambiguous,
-                 "unquantified": unquantified,
-                 "surplus": sum(totals.values()) + oneoff_total, "warns": warns}
+    household: Household = {
+        "start": sum(a["start"] for a in accounts),
+        "income": totals["income"], "expense": totals["expense"],
+        "transfer_net": totals["transfer"], "oneoffs": oneoffs,
+        "oneoff_total": oneoff_total, "ambiguous": ambiguous,
+        "unquantified": unquantified,
+        "surplus": sum(totals.values()) + oneoff_total, "warns": warns}
     return {"today": today, "end": end, "accounts": accounts, "household": household}
 
 

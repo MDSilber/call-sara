@@ -26,4 +26,4 @@ Payload = dict[str, Any]
 """A JSON-bound dict headed for summary.json / the app — display strings for
 money, floats only for chart geometry."""
 
-__all__ = ["Finding", "Money", "Payload", "Row", "YM", "date"]
+__all__ = ["YM", "Finding", "Money", "Payload", "Row", "date"]

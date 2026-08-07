@@ -34,53 +34,31 @@ from datetime import date, datetime
 import jinja2
 from markupsafe import Markup
 
-from sara.vault import REPORTS, household
-from sara.advisor.reports import liquid_balances, paper_value
-from sara.advisor.webview import latest_ledger_date, networth_series
-from sara.advisor.checks import goals as goals_config
-from sara.advisor.checks import lane_status
-# Re-exports — sara/server (assemble.py, live.py) imports these names from
-# `home`; the implementations moved intact to builders.py. Keep this list a
-# superset of what the server touches so its import path needs no edit.
-from sara.advisor.builders import (  # noqa: F401
-    MINUS,
-    MONTH_FULL,
-    SMALL_NUMS,
-    Card,
-    EduAccount,
-    Pace,
-    attribution_ctx,
+from sara.advisor.builders import (
     auto_tile,
-    cheshbon_ctx,
-    _codespans,
-    education_ctx,
-    machine_ctx,
-    moneymap_ctx,
-    networth_ctx,
-    next_ctx,
-    nw_chart_data,
-    pace_chart_data,
-    pace_ctx,
-    sparkline,
-    spend_tile,
-    thesis_ctx,
-    wins_ctx,
-    delta0,
     education_accounts,
+    education_ctx,
     education_pace,
     findings_date,
     m0,
+    machine_ctx,
     mon_d,
     monthly_expense_totals,
     must_move,
     needs_you,
+    networth_ctx,
+    next_ctx,
     sara_line,
-    saras_wins,
     spend_pace,
-    spending_data,
+    spend_tile,
     under_streak,
-    window_label,
 )
+from sara.advisor.checks import goals as goals_config
+from sara.advisor.checks import lane_status
+from sara.advisor.reports import liquid_balances, paper_value
+from sara.advisor.types import Payload
+from sara.advisor.webview import latest_ledger_date, networth_series
+from sara.vault import REPORTS, household
 
 _ENV = jinja2.Environment(autoescape=True, trim_blocks=True, lstrip_blocks=True)
 
@@ -259,7 +237,7 @@ def build_page(now: datetime | None = None) -> str:
         paper=m0(paper) if paper else None)
 
 
-def _ink(nxt: dict) -> dict:
+def _ink(nxt: Payload) -> Payload:
     """Print polish: the meta line's backticks mark quoted bank text on
     screen surfaces; on paper they read as typos — quote plainly."""
     if nxt.get("meta"):

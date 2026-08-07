@@ -67,13 +67,7 @@ packages = ["sara"]
 # stay strict-zero.
 include = ["sara", "tests", "tests_server"]
 pythonVersion = "3.11"
-# STAGED: sara/advisor arrived from the untyped tools/ layer on 2026-08-07
-# (consolidation stage 1b, a behavior-preserving move) and is checked at
-# "basic" until stage 1d brings it to strict + Decimal like the rest of the
-# package — at which point `strict` becomes ["sara", "tests"] again and the
-# ignore list disappears.
-typeCheckingMode = "basic"
-strict = ["sara/*.py", "sara/cli", "sara/ledger", "sara/sources", "sara/server", "sara/advisor/snapshot.py", "sara/advisor/run_checks.py", "sara/advisor/dismissals.py", "sara/advisor/documents.py", "sara/advisor/inbox.py", "sara/advisor/crosscheck.py", "sara/advisor/types.py", "tests"]
+typeCheckingMode = "strict"
 # plaid-python is generated OpenAPI code without a py.typed marker; the two
 # modules that touch it confine every value to a typed boundary immediately.
 reportMissingTypeStubs = false
@@ -85,16 +79,14 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 ignore = [
-    "E501",  # long lines: ported report strings keep their exact wording
+    "E501",    # long lines: report strings keep their exact wording
+    "RUF001",  # "ambiguous" unicode in strings — the typography (—, ’, ≈, −)
+    "RUF002",  #   in Sara's user-facing copy and its docstrings is deliberate
+    "RUF003",  #   house style, not an accident
 ]
 
 [tool.ruff.lint.isort]
 known-first-party = ["sara"]
-
-# STAGED with the pyright carve-out above: the moved advisor layer keeps its
-# tools-era lint tolerance until stage 1d raises it to the package standard.
-[tool.ruff.lint.per-file-ignores]
-"sara/advisor/*" = ["E402", "I001", "UP", "B", "SIM", "RUF", "E7", "F841"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]  # server contract tests: `pytest tests_server` (own session — one process binds one vault)

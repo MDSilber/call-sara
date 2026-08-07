@@ -32,15 +32,15 @@ rules.toml fields, never echoed from the upload's own name.
 import re
 import shutil
 import sys
-from typing import Any
 from datetime import date, datetime
 from pathlib import Path
+from typing import Any
 
-from sara.vault import VAULT, rules
-from sara.rules import entry_by_acctid
-from sara.sources.ofx import acctid, read_ofx
 # scripts/ joined sys.path above; static analyzers only see tools/
 from sara.advisor.documents import file_document, fingerprint, md5
+from sara.rules import entry_by_acctid
+from sara.sources.ofx import acctid, read_ofx
+from sara.vault import VAULT, rules
 
 INBOX = VAULT / "inbox"
 DOCUMENTS = VAULT / "documents"
@@ -151,7 +151,7 @@ def _identify_csv(path: Path) -> Item:
     except (OSError, IndexError):
         return Item(path, "CSV", "unreadable or empty — a session should look")
     cols = {c.strip().strip('"') for c in header.split(",")}
-    if not CHASE_CSV_COLS <= cols:
+    if not cols >= CHASE_CSV_COLS:
         return Item(path, "CSV (unrecognized columns)",
                     "no importer matched — importers/chase_csv.py reads Chase "
                     "card exports; a session should look")

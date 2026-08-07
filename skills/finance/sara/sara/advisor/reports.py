@@ -20,10 +20,20 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from sara.vault import (OWNER_JOINT, OWNER_UNASSIGNED, REPORTS, VAULT, account_owners,
-                   amount, dated_bullets, illiquid_currency_regex, money, query,
-                   shadow_currency)
 from sara.advisor.types import YM, Money
+from sara.vault import (
+    OWNER_JOINT,
+    OWNER_UNASSIGNED,
+    REPORTS,
+    VAULT,
+    account_owners,
+    amount,
+    dated_bullets,
+    illiquid_currency_regex,
+    money,
+    query,
+    shadow_currency,
+)
 
 
 def stamp(name: str) -> str:
@@ -165,7 +175,7 @@ def upcoming() -> None:
         chores = [ln for ln in cal.read_text().splitlines()
                   if re.match(r"^- (daily|weekly|monthly|quarterly|yearly)", ln, re.I)]
         if chores:
-            lines += ["\n## Recurring chores"] + chores
+            lines += ["\n## Recurring chores", *chores]
     (REPORTS / "upcoming.md").write_text("\n".join(lines) + "\n")
 
 
@@ -191,9 +201,9 @@ if __name__ == "__main__":
     # the static dashboard retired 2026-08-07 — clear a stale artifact so an
     # old page can never be mistaken for a fresh one
     (REPORTS / "dashboard.html").unlink(missing_ok=True)
+    from sara.advisor.digest import digest  # same: the weekly letter reuses the builders
     from sara.advisor.home import home  # imported lazily: home reuses this module's math
     from sara.advisor.summary import summary  # same: the machine-readable twin
-    from sara.advisor.digest import digest  # same: the weekly letter reuses the builders
     for fn in (net_worth, spend_by_month, upcoming, home, summary, digest,
                analytics):
         try:

@@ -24,6 +24,7 @@ THE VOICE GATE — every user-visible string (titles, details, queue fixes):
 from __future__ import annotations
 
 import calendar
+import itertools
 import re
 from collections import Counter
 from collections.abc import Callable
@@ -31,8 +32,16 @@ from datetime import date, datetime, timedelta
 from typing import Any, TypedDict, cast
 
 from sara.advisor.types import YM, Finding, Money, Row
-from sara.vault import (VAULT, amount, dated_bullets, illiquid_currency_regex,
-                   money, query, rules, shadow_currency)
+from sara.vault import (
+    VAULT,
+    amount,
+    dated_bullets,
+    illiquid_currency_regex,
+    money,
+    query,
+    rules,
+    shadow_currency,
+)
 
 
 def goals() -> dict[str, Any]:
@@ -463,7 +472,7 @@ def _subscription_streams() -> list[SubscriptionStream]:
         dates = sorted(dateset)
         if len(dates) < SUB_MIN_OCCURRENCES:
             continue
-        gaps = [(b - a).days for a, b in zip(dates, dates[1:])]
+        gaps = [(b - a).days for a, b in itertools.pairwise(dates)]
         cadence = next((name for name, (lo, hi) in
                         (("monthly", SUB_MONTHLY_GAP), ("yearly", SUB_YEARLY_GAP))
                         if sum(1 for g in gaps if lo <= g <= hi)
@@ -746,7 +755,7 @@ def coverage() -> list[Finding]:
                     f"Sara files it.")))
             else:
                 hole = next(((a, b) for a, b in
-                             zip(reversed(dates[:-1]), reversed(dates[1:]))
+                             zip(reversed(dates[:-1]), reversed(dates[1:]), strict=False)
                              if len(_cycle_anchors(declared, a, b)) > 1), None)
                 if hole:
                     a, b = hole
@@ -760,7 +769,7 @@ def coverage() -> list[Finding]:
                         f"Re-download that window from `{inst}` — overlapping "
                         f"exports are safe, Sara dedupes.")))
             continue
-        gaps = sorted((b - a).days for a, b in zip(dates, dates[1:]))
+        gaps = sorted((b - a).days for a, b in itertools.pairwise(dates))
         floor = COV_CADENCE_DAYS.get(str(acfg.get("cadence", "")).lower(), COV_GAP_FLOOR_DAYS)
         expected = max(gaps[len(gaps) // 2], floor)
         silent = (today - last_seen).days
@@ -773,7 +782,7 @@ def coverage() -> list[Finding]:
                 f"statement from `{inst}` and drop it in; Sara files it.")))
             continue
         hole_floor = max(COV_HOLE_DAYS, expected)
-        hole = next(((a, b) for a, b in zip(reversed(dates[:-1]), reversed(dates[1:]))
+        hole = next(((a, b) for a, b in zip(reversed(dates[:-1]), reversed(dates[1:]), strict=False)
                      if (b - a).days > hole_floor), None)
         if hole:
             a, b = hole

@@ -16,15 +16,15 @@ Usage:
   recategorize.py --target Expenses:Personal --write   re-run rules over another bucket
 """
 import re
-from decimal import Decimal, InvalidOperation
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from sara.ledger.writer import atomic_write
 from sara.rules import categorize
 from sara.vault import BEAN_CHECK, LEDGER, VAULT
-from sara.ledger.writer import atomic_write
 
 TXN_HEADER = re.compile(r'^(\d{4}-\d{2}-\d{2}) [*!] "([^"]*)"')
 POSTING = re.compile(r"^(\s+)([A-Z][\w:-]+)(\s+(-?[\d.,]+) USD)?\s*$")

@@ -19,21 +19,39 @@ fragments are built with Markup.format, which escapes their arguments.
 import math
 import re
 from calendar import monthrange
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, timedelta
 from statistics import median
-from collections.abc import Callable
 from typing import Any, NamedTuple
 
 from markupsafe import Markup, escape
 
-from sara.vault import (REPORTS, VAULT, account_owners, amount, dated_bullets,
-                   illiquid_currency_regex, owner_label, query)
-from sara.advisor.webview import (MONTH_ABBR, units_of, action_queue, code_spans,
-                     deadline_items, month_label, nice_ticks, parse_findings,
-                     price_history, queue_lane)
+from sara.advisor.checks import LANE_REINVEST
+from sara.advisor.checks import goals as goals_config
 from sara.advisor.types import Finding, Payload
-from sara.advisor.checks import LANE_REINVEST, goals as goals_config
+from sara.advisor.webview import (
+    MONTH_ABBR,
+    action_queue,
+    code_spans,
+    deadline_items,
+    month_label,
+    nice_ticks,
+    parse_findings,
+    price_history,
+    queue_lane,
+    units_of,
+)
+from sara.vault import (
+    REPORTS,
+    VAULT,
+    account_owners,
+    amount,
+    dated_bullets,
+    illiquid_currency_regex,
+    owner_label,
+    query,
+)
 
 MONTH_FULL = ["", "January", "February", "March", "April", "May", "June",
               "July", "August", "September", "October", "November", "December"]
@@ -736,7 +754,7 @@ def moneymap_data(balances: list[tuple[str, float]],
         if len(curs) > 1 or (curs and curs[0][0] != "USD"):
             node["hold"] += curs
 
-    tree = []
+    tree: list[Payload] = []
     ordered = sorted(groups.values(), key=lambda g: -g["value"])
     for gi, g in enumerate(ordered):
         kids: list[Payload] = []
@@ -758,7 +776,7 @@ def moneymap_data(balances: list[tuple[str, float]],
             if children and len(children) > 1:
                 kid["children"] = children
             kids.append(kid)
-        top = {"name": g["name"], "value": round(g["value"], 2),
+        top: Payload = {"name": g["name"], "value": round(g["value"], 2),
                "amt": m0(g["value"]), "pct": pcts(g["value"]),
                "cvar": f"--map-{min(gi + 1, MAP_GROUP_VARS + 1)}",
                "children": kids}
@@ -799,7 +817,7 @@ def edu_grid(total: float, target: float | None, pace: float | None,
         if c == 0:
             arrive.append("parked — $0/mo never arrives")
         else:
-            need = int(math.ceil((target - total) / c))
+            need = math.ceil((target - total) / c)
             if need > EDU_MAX_YEARS * 12:
                 arrive.append(f"{EDU_MAX_YEARS}+ yrs out at this pace")
             else:
@@ -1555,7 +1573,7 @@ def nw_chart_data(series: list[Payload], asof: date | None) -> Payload | None:
     atcost: list[float | None] = []
     tips: list[Payload] = []
     for i, p in enumerate(series):
-        d = p["d"]
+        d: date = p["d"]
         labels.append(MONTH_ABBR[d.month]
                       + (f" ’{str(d.year)[2:]}" if d.month == 1 or i == 0 else ""))
         market.append(None if p["est"] else p["v"])

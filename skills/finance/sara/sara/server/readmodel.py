@@ -36,7 +36,7 @@ REPORTS = VAULT / "reports"
 SUMMARY_PATH = REPORTS / "summary.json"
 DB_PATH = REPORTS / "analytics.duckdb"
 
-MINUS = "−"  # noqa: RUF001 — the true minus, same glyph the reports use
+MINUS = "−"
 
 
 class ReadModelMissing(RuntimeError):

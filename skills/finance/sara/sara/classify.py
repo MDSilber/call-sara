@@ -161,7 +161,7 @@ P2P_RAILS = re.compile(
 # markers below. "SQ *JANE DOE" is Square moving money to a person, so the
 # prefix is stripped before the shape test and the star does not exempt it.
 _SQ_PREFIX = re.compile(r"^SQ\s*\*\s*", re.I)
-_NAME_TOKEN = re.compile(r"^[A-Z][A-Za-z'’-]*$")  # noqa: RUF001 — feeds use the curly apostrophe too
+_NAME_TOKEN = re.compile(r"^[A-Z][A-Za-z'’-]*$")
 _BUSINESS_CHARS = re.compile(r"[\d*#&@/+_]|\.\s*(COM|ORG|NET|CO|IO)\b|WWW\.", re.I)
 _BUSINESS_WORDS = frozenset({
     "INC", "LLC", "LLP", "LTD", "CORP", "CO", "COMPANY", "PLLC", "PC", "DBA",

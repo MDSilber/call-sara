@@ -28,14 +28,36 @@ from datetime import date, datetime, timedelta
 
 import jinja2
 
-from sara.vault import (OWNER_JOINT, REPORTS, account_owners, amount,
-                   dated_bullets, household, owner_label, query)
-from sara.advisor.webview import latest_ledger_date
+from sara.advisor.builders import (
+    Pace,
+    auto_tile,
+    delta0,
+    m0,
+    machine_ctx,
+    mon_d,
+    monthly_expense_totals,
+    must_move,
+    needs_you,
+    next_ctx,
+    sara_line,
+    saras_wins,
+    spend_pace,
+    spend_tile,
+    under_streak,
+)
 from sara.advisor.checks import lane_status
-from sara.advisor.builders import (Pace, delta0, m0, mon_d, monthly_expense_totals,
-                      must_move, needs_you, saras_wins, sara_line, spend_pace,
-                      under_streak, auto_tile, machine_ctx, next_ctx,
-                      spend_tile)
+from sara.advisor.types import YM, Money, Payload
+from sara.advisor.webview import latest_ledger_date
+from sara.vault import (
+    OWNER_JOINT,
+    REPORTS,
+    account_owners,
+    amount,
+    dated_bullets,
+    household,
+    owner_label,
+    query,
+)
 
 WEEK_DAYS = 7          # the letter's window: the last 7 ledger-covered days
 WATCH_HORIZON = 45     # "watching next week": nearest dated item this far out
@@ -67,7 +89,7 @@ def week_in_out(start: date, end: date) -> tuple[float, float]:
 
 
 def _week_beat(today: date, asof: date | None, pace: Pace,
-               streak: int) -> dict | None:
+               streak: int) -> Payload | None:
     """Beat 1 — the week in money. The window is the last WEEK_DAYS days the
     ledger actually covers (never 'this week' with silent gaps); the month
     pace verdict rides along as a second sentence, its own window named."""
@@ -89,12 +111,12 @@ def _week_beat(today: date, asof: date | None, pace: Pace,
             "pace_line": pace_line}
 
 
-def _plain(markup) -> str:
+def _plain(markup: object) -> str:
     """Markup -> plain text for the twin: strip tags, unescape entities."""
     return html_mod.unescape(re.sub(r"<[^>]+>", "", str(markup))).strip()
 
 
-def _needs_owner(texts: list[str], lanes: list[dict]) -> str | None:
+def _needs_owner(texts: list[str], lanes: list[Payload]) -> str | None:
     """Whose hands a needs-item is for, from account `owner:` metadata:
     an account path in the item text maps directly; a lane NAME in the
     text maps through the lane's declared account (lane names already
@@ -113,7 +135,7 @@ def _needs_owner(texts: list[str], lanes: list[dict]) -> str | None:
     return owner_label(next(iter(hits))) if len(hits) == 1 else None
 
 
-def _needs_beat(nxt: dict, lanes: list[dict]) -> dict | None:
+def _needs_beat(nxt: Payload, lanes: list[Payload]) -> Payload | None:
     """Beat 2 — the one thing that wants a human, straight from the home
     page's Next-line builder (same precedence: alert, then nearest dated
     obligation). Owner-specific items say whose hands (`who`). Quiet weeks
@@ -126,7 +148,7 @@ def _needs_beat(nxt: dict, lanes: list[dict]) -> dict | None:
             "who": _needs_owner([text_plain, nxt["meta"] or ""], lanes)}
 
 
-def _delight_beat(today: date, totals: list, pace: Pace) -> dict | None:
+def _delight_beat(today: date, totals: list[tuple[YM, Money]], pace: Pace) -> Payload | None:
     """Beat 3 — one delight, only when TRUE: realized finds this year
     (saras_wins parses only explicit `[x] … realized $N` lines), else a
     2+ month under-typical streak. Nothing true = no beat, never padding."""
@@ -144,7 +166,7 @@ def _delight_beat(today: date, totals: list, pace: Pace) -> dict | None:
     return None
 
 
-def _auto_beat(lanes: list[dict]) -> dict | None:
+def _auto_beat(lanes: list[Payload]) -> Payload | None:
     """Beat 4 — autopilot health in one line, the same auto_tile the
     morning page shows. Nothing wired = nothing to report weekly."""
     tile = auto_tile(machine_ctx(lanes))
@@ -153,7 +175,7 @@ def _auto_beat(lanes: list[dict]) -> dict | None:
     return {"text": f"{tile['verdict']} — {tile['sub']}.", "cls": tile["cls"]}
 
 
-def _watch_beat(today: date, already: str) -> dict | None:
+def _watch_beat(today: date, already: str) -> Payload | None:
     """Beat 5 — the nearest FUTURE dated item on the household calendar
     (facts/ dated bullets — the calendar every surface reads), so next
     week never arrives unannounced. The item the needs-you beat already

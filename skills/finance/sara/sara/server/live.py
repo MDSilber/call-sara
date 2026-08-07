@@ -17,9 +17,7 @@ import re
 from datetime import date, datetime
 from typing import cast
 
-from sara.advisor.checks import goals as goals_config
-from sara.advisor.dismissals import active_ids, finding_id, load_dismissals
-from sara.advisor.home import (
+from sara.advisor.builders import (
     SMALL_NUMS,
     EduAccount,
     education_ctx,
@@ -28,6 +26,8 @@ from sara.advisor.home import (
     needs_you,
     next_ctx,
 )
+from sara.advisor.checks import goals as goals_config
+from sara.advisor.dismissals import active_ids, finding_id, load_dismissals
 from sara.advisor.snapshot import (
     GOAL_KEYS,
     _card,

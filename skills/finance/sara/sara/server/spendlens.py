@@ -102,8 +102,8 @@ def _window_label(months: list[YM]) -> str:
     if a == b:
         return _mon_yr(a)
     if a[0] == b[0]:
-        return f"{MONTH_ABBR[a[1]]}–{MONTH_ABBR[b[1]]} {a[0]}"  # noqa: RUF001 — window labels keep the en dash
-    return f"{_mon_yr(a)} – {_mon_yr(b)}"  # noqa: RUF001
+        return f"{MONTH_ABBR[a[1]]}–{MONTH_ABBR[b[1]]} {a[0]}"
+    return f"{_mon_yr(a)} – {_mon_yr(b)}"
 
 
 def _month_days(ym: YM) -> int:
@@ -299,14 +299,14 @@ def pace_ctx(pace: Pace, owner: str) -> dict[str, object]:
                    if pace.through_day else "no activity imported yet")
     window = (f"{cur_lbl} · {through_lbl}"
               + (" · latest imported month" if pace.fallback else ""))
-    title = f"{_cap(owner)}’s spending"  # noqa: RUF001 — product copy keeps the curly apostrophe
+    title = f"{_cap(owner)}’s spending"
     if pace.typical is None and not pace.daily_cum:
         return {"empty": True, "title": title, "window": cur_lbl,
-                "sub": f"Spending vs {_cap(owner)}’s typical month."}  # noqa: RUF001
+                "sub": f"Spending vs {_cap(owner)}’s typical month."}
 
     hero_cls = ""
     if pace.typical is not None and pace.left is not None:
-        sub = (f"typical = the median path of {_cap(owner)}’s last "  # noqa: RUF001
+        sub = (f"typical = the median path of {_cap(owner)}’s last "
                f"{len(pace.typical_window)} full months "
                f"({_window_label(pace.typical_window)}).")
         band = PACE_BAND * pace.typical
@@ -463,7 +463,7 @@ def _rooms(owner: str, pace: Pace) -> dict[str, object] | None:
                   for p, sel in keeps}
     partial = (pace.through_day is not None
                and pace.through_day < pace.ndays)
-    through = (f"{MONTH_ABBR[cur[1]]} 1–{pace.through_day}"  # noqa: RUF001
+    through = (f"{MONTH_ABBR[cur[1]]} 1–{pace.through_day}"
                if pace.through_day else "nothing imported yet")
 
     cats: list[dict[str, object]] = []

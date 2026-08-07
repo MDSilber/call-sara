@@ -25,10 +25,18 @@ import re
 import sys
 from datetime import date
 
-from sara.vault import (OWNER_JOINT, OWNER_UNASSIGNED, account_owners, amount,
-                   illiquid_currency_regex, money, query, shadow_currency)
 from sara.advisor.checks import goals
 from sara.advisor.types import Money
+from sara.vault import (
+    OWNER_JOINT,
+    OWNER_UNASSIGNED,
+    account_owners,
+    amount,
+    illiquid_currency_regex,
+    money,
+    query,
+    shadow_currency,
+)
 
 
 def bql_str(s: str) -> str:

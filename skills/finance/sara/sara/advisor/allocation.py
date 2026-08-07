@@ -36,8 +36,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, cast
 
-from sara.vault import VAULT, amount, illiquid_currency_regex, query, rules
 from sara.advisor.types import Money
+from sara.vault import VAULT, amount, illiquid_currency_regex, query, rules
 
 RESERVED_CLASSES = ("cash", "other")
 DEFAULT_BAND_PTS = 5.0
