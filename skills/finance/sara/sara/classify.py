@@ -10,57 +10,78 @@ first — and the first tier to speak wins:
           mapped account exists in this vault's chart. The shipped table
           lives in sara/plaid_map.py; rules.toml [plaid_category_map]
           overrides/extends it.
-  tier 3  a cheap batched claude-haiku call over the weak-signal residue,
-          JSON-schema-constrained, applied only at >= the confidence floor;
-          weaker guesses are printed as suggestions and the posting stays
-          in review. The model picks from the vault's real chart — it can
+  tier 3  a ladder of model backends over the weak-signal residue. The
+          first backend takes the whole batch and only what it can't
+          decide escalates to the next: `apple` (on-device Apple
+          Intelligence, free, merchant strings never leave the Mac),
+          `ollama` (a local daemon, free), `haiku` (the Claude API, needs
+          a key). Every backend is JSON-schema-constrained and applied
+          only at >= its confidence floor; the final residue stays in
+          review with the best below-floor guesses printed as
+          suggestions. A model picks from the vault's real chart — it can
           never invent a category.
 
 Every rewrite lands through the same machinery as recategorize.py (atomic
 tmp+rename per file, bean-check, full rollback on failure), and every
 machine-moved posting gains `classifier:` metadata naming its tier and
-signal ("plaid:FOOD_AND_DRINK_COFFEE", "haiku:0.91") so the move is
-auditable and re-doable. Machine classifications never create payee_rules —
+signal ("plaid:FOOD_AND_DRINK_COFFEE", "apple:0.92", "haiku:0.91") so the
+move is auditable, re-doable, and says which brain judged it. Machine classifications never create payee_rules —
 rules stay human-taught via the app/review loop; instead the report calls
 out recurring residue worth teaching a rule for.
 
 Usage:
   python -m sara.classify                dry run (default): report only
   python -m sara.classify --write        apply (atomic + bean-check)
-  python -m sara.classify --skip-model   tiers 1-2 only — no API call
-  python -m sara.classify --model-limit N  send at most N txns to the model
-  (or: tools/run classify.py — same flags. A dry run still calls the model
-  for suggestions when tier 3 is armed; --skip-model keeps the run free.)
+  python -m sara.classify --skip-model   tiers 1-2 only — no model calls
+  python -m sara.classify --model-limit N  send at most N txns to the ladder
+  python -m sara.classify --backend apple,haiku  override the ladder once
+  (or: tools/run classify.py — same flags. A dry run still runs the ladder
+  for suggestions when tier 3 is armed; --skip-model keeps the run silent.)
 
 CONFIG — $VAULT/rules.toml (all optional; defaults shown):
 
   [classification]
   tier2 = true                    # Plaid-signal tier
-  tier3 = true                    # model tier (also needs the key below)
+  tier3 = true                    # model tier (the backend ladder)
   plaid_min_confidence = "high"   # or "very_high"
-  model_min_confidence = 0.8      # apply threshold, 0-1
-  model = "claude-haiku-4-5"      # Messages API model id
+  model_backends = ["haiku"]      # the tier-3 ladder, in escalation order:
+                                  #   "apple"  on-device (macOS 26+, $0)
+                                  #   "ollama" local daemon ($0)
+                                  #   "haiku"  Claude API (needs the key below)
+  model_min_confidence = 0.8      # apply threshold, 0-1, for every backend...
+  apple_min_confidence = 0.8      # ...unless a per-backend floor overrides
+  model = "claude-haiku-4-5"      # the haiku rung's Messages API model id
+  ollama_url = "http://127.0.0.1:11434"
+  ollama_model = "llama3.2:3b"
 
   [plaid_category_map]
   "FOOD_AND_DRINK_COFFEE" = "Expenses:Food:Coffee"
 
-CREDENTIALS: $VAULT/.secrets/anthropic.env holds ANTHROPIC_API_KEY=sk-...
-(0600; .secrets/ is gitignored). Without it tier 3 quietly skips and the
-report says how to enable it.
+CREDENTIALS: only the haiku rung needs any — $VAULT/.secrets/anthropic.env
+holds ANTHROPIC_API_KEY=sk-... (0600; .secrets/ is gitignored). A rung that
+can't run (no key, Apple Intelligence off, no ollama daemon) is skipped
+with a one-line note and the rest of the ladder still works; the report
+says how to enable what's missing. The apple rung compiles its tiny Swift
+shim (shim/sara-classify-shim/) on first use — one `swift build`, cached.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import platform
 import re
+import shutil
+import subprocess
 import sys
-from collections.abc import Callable
-from dataclasses import dataclass
+import urllib.error
+import urllib.request
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, Protocol
 
 from sara.cli.shared import err, reject_unknown_flags
 from sara.ledger.queries import opened_accounts
@@ -74,15 +95,28 @@ REVIEW_ACCOUNTS = frozenset({EXPENSE_DEFAULT, INCOME_DEFAULT})
 ANTHROPIC_ENV_FILE = SECRETS_DIR / "anthropic.env"
 FLAGS = frozenset({"--write", "--skip-model", "--verbose"})
 
+BACKEND_NAMES = ("apple", "ollama", "haiku")  # everything a ladder may name
+DEFAULT_BACKENDS = ("haiku",)  # the pre-ladder behavior, so nothing regresses
 DEFAULT_MODEL = "claude-haiku-4-5"
-MODEL_BATCH_SIZE = 40  # txns per Messages API request — small enough to stay sharp
+DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
+DEFAULT_OLLAMA_MODEL = "llama3.2:3b"
+MODEL_BATCH_SIZE = 40  # txns per backend call — small enough to stay sharp
 MODEL_MAX_TOKENS = 8192
 MAX_HISTORY_EXAMPLES = 40  # recent payee->category pairs shown to the model
 MAX_RULE_EXAMPLES = 25
 RULE_SUGGESTION_MIN = 3  # a payee seen this often in the residue earns a rule hint
+NO_SIGNAL = "no signal (model tier not run)"
 # claude-haiku-4-5 list price (USD per million tokens, 2026-08) — estimate only.
 PRICE_IN_PER_MTOK = Decimal("1.00")
 PRICE_OUT_PER_MTOK = Decimal("5.00")
+
+# The on-device shim (see shim/sara-classify-shim/): built lazily, cached in
+# its .build/ tree, spoken to over stdin/stdout JSON. One subprocess per batch.
+SHIM_DIR = Path(__file__).resolve().parent.parent / "shim" / "sara-classify-shim"
+SHIM_BINARY = SHIM_DIR / ".build" / "release" / "sara-classify-shim"
+SHIM_TIMEOUT = 600.0  # seconds per batch — on-device generation is not instant
+OLLAMA_PROBE_TIMEOUT = 2.0
+OLLAMA_TIMEOUT = 600.0  # local models chew on 40-txn batches
 
 ZERO = Decimal(0)
 ONE = Decimal(1)
@@ -263,8 +297,39 @@ class Config(NamedTuple):
     tier2: bool
     tier3: bool
     plaid_min: str  # "high" | "very_high"
-    model_min: Decimal  # 0-1
-    model: str
+    model_min: Decimal  # 0-1, the apply threshold every backend defaults to
+    model: str  # the haiku rung's Messages API model id
+    backends: tuple[str, ...]  # the tier-3 ladder, escalation order
+    floors: dict[str, Decimal]  # per-backend threshold overrides
+    ollama_url: str
+    ollama_model: str
+
+    def floor(self, backend: str) -> Decimal:
+        return self.floors.get(backend, self.model_min)
+
+
+def _conf_floor(value: object) -> Decimal | None:
+    """A 0-1 confidence from config, or None when absent/unusable."""
+    if value is None:
+        return None
+    d = _dec(str(value))
+    return d if d is not None and ZERO <= d <= ONE else None
+
+
+def _backend_ladder(raw: object) -> tuple[str, ...]:
+    """model_backends validated: known names only, order kept, dupes dropped.
+    Absent means DEFAULT_BACKENDS; an explicit empty list means no ladder."""
+    if raw is None:
+        return DEFAULT_BACKENDS
+    names: list[str] = []
+    for v in as_list(raw):
+        s = str(v).strip().lower()
+        if s in BACKEND_NAMES and s not in names:
+            names.append(s)
+        elif s and s not in names:
+            print(f'; warning: rules.toml model_backends entry "{s}" ignored '
+                  f"(known: {', '.join(BACKEND_NAMES)})", file=sys.stderr)
+    return tuple(names)
 
 
 def _config() -> Config:
@@ -272,15 +337,21 @@ def _config() -> Config:
     plaid_min = str(c.get("plaid_min_confidence") or "high").lower()
     if plaid_min not in CONF_RANK:
         plaid_min = "high"
-    model_min = _dec(str(c.get("model_min_confidence", "0.8")))
-    if model_min is None or not ZERO <= model_min <= ONE:
+    model_min = _conf_floor(c.get("model_min_confidence"))
+    if model_min is None:
         model_min = Decimal("0.8")
+    floors = {name: floor for name in BACKEND_NAMES
+              if (floor := _conf_floor(c.get(f"{name}_min_confidence"))) is not None}
     return Config(
         tier2=bool(c.get("tier2", True)),
         tier3=bool(c.get("tier3", True)),
         plaid_min=plaid_min,
         model_min=model_min,
         model=str(c.get("model") or DEFAULT_MODEL),
+        backends=_backend_ladder(c.get("model_backends")),
+        floors=floors,
+        ollama_url=str(c.get("ollama_url") or DEFAULT_OLLAMA_URL).rstrip("/"),
+        ollama_model=str(c.get("ollama_model") or DEFAULT_OLLAMA_MODEL),
     )
 
 
@@ -433,8 +504,8 @@ def _history_examples(history: list[Example]) -> list[str]:
     return out
 
 
-def model_system_prompt(categories: list[str], rule_lines: list[str],
-                        history_lines: list[str]) -> str:
+def model_system_prompt(categories: Sequence[str], rule_lines: Sequence[str],
+                        history_lines: Sequence[str]) -> str:
     parts = [
         "You are the bookkeeper for one household's plain-text ledger. "
         "Classify each bank/card transaction into exactly one account from "
@@ -457,19 +528,24 @@ def model_system_prompt(categories: list[str], rule_lines: list[str],
     return "\n\n".join(parts)
 
 
-def _batch_payload(batch: list[ReviewTxn]) -> str:
-    rows = [{"id": i, "date": t.when.isoformat(), "payee": t.payee,
+def _txn_rows(batch: Sequence[ReviewTxn]) -> list[dict[str, object]]:
+    return [{"id": i, "date": t.when.isoformat(), "payee": t.payee,
              "amount": f"{t.amount:.2f}", "account": t.primary,
              "hint": t.plaid_detailed} for i, t in enumerate(batch)]
-    return json.dumps({"transactions": rows}, ensure_ascii=False)
 
 
-def parse_model_reply(text: str, batch_size: int) -> dict[int, tuple[str, Decimal, str]] | str:
+def _batch_payload(batch: Sequence[ReviewTxn]) -> str:
+    return json.dumps({"transactions": _txn_rows(batch)}, ensure_ascii=False)
+
+
+def parse_model_reply(text: str, batch_size: int,
+                      id_key: str = "id") -> dict[int, tuple[str, Decimal, str]] | str:
     """-> {id: (category, confidence, reason)}, or a refusal reason.
 
     Structural problems (bad JSON, wrong shapes, out-of-range or duplicate
     ids) refuse the WHOLE batch — a reply that breaks the schema has
     forfeited trust. Unknown categories are judged per-txn by the caller.
+    (The apple shim's guided type calls the id "index" — id_key covers it.)
     """
     try:
         data = json.loads(text, parse_float=Decimal)
@@ -479,7 +555,7 @@ def parse_model_reply(text: str, batch_size: int) -> dict[int, tuple[str, Decima
     out: dict[int, tuple[str, Decimal, str]] = {}
     for item in results:
         row = as_dict(item)
-        raw_id, category = row.get("id"), row.get("category")
+        raw_id, category = row.get(id_key), row.get("category")
         raw_conf, reason = row.get("confidence"), row.get("reason")
         if not isinstance(raw_id, int) or isinstance(raw_id, bool) \
                 or not 0 <= raw_id < batch_size:
@@ -500,67 +576,425 @@ def parse_model_reply(text: str, batch_size: int) -> dict[int, tuple[str, Decima
     return out
 
 
-class ModelRun(NamedTuple):
+class Judgment(NamedTuple):
+    """One backend's verdict on one transaction."""
+
+    category: str
+    confidence: Decimal
+    reason: str
+
+
+class BatchContext(NamedTuple):
+    """Everything a backend needs beyond the txns themselves."""
+
+    categories: tuple[str, ...]  # the only legal answers
+    rule_examples: tuple[str, ...]  # "REGEX -> account"
+    history_examples: tuple[str, ...]  # "payee -> account", newest first
+
+
+class BatchRefused(Exception):
+    """This batch's reply forfeited trust (malformed/mis-shaped) — the txns
+    move on down the ladder, the backend itself stays in the run."""
+
+
+class ModelBackend(Protocol):
+    """One rung of the tier-3 ladder.
+
+    `name` tags provenance ("apple:0.92") and the report; `detail` is report
+    color (a model id, "on-device"); probe() says why the rung can't run
+    right now (None = it can); classify_batch() judges one batch, one answer
+    per txn in order (None = no answer for that txn), raising BatchRefused
+    when a reply forfeits trust and anything else when the backend itself
+    has died for the rest of the run.
+    """
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def detail(self) -> str: ...
+
+    def probe(self) -> str | None: ...
+
+    def classify_batch(self, txns: Sequence[ReviewTxn],
+                       context: BatchContext) -> list[Judgment | None]: ...
+
+
+def _judgments(parsed: dict[int, tuple[str, Decimal, str]],
+               count: int) -> list[Judgment | None]:
+    return [Judgment(*parsed[i]) if i in parsed else None for i in range(count)]
+
+
+class HaikuBackend:
+    """The API rung — the original tier-3 Messages path behind the protocol.
+    The only rung that costs money and the only one that leaves the machine,
+    so it belongs at the BOTTOM of a ladder, mopping up what the free local
+    rungs weren't sure about."""
+
+    name = "haiku"
+
+    def __init__(self, model: str, api_key: str | None,
+                 call: ModelCall | None = None) -> None:
+        self._model = model
+        self._key = api_key
+        self._call = call
+        self.usage = ModelUsage(0, 0)  # summed across batches, for the cost line
+
+    @property
+    def detail(self) -> str:
+        return self._model
+
+    def probe(self) -> str | None:
+        if self._call or self._key:
+            return None
+        return f"no key — put ANTHROPIC_API_KEY=sk-... in {ANTHROPIC_ENV_FILE} to enable"
+
+    def classify_batch(self, txns: Sequence[ReviewTxn],
+                       context: BatchContext) -> list[Judgment | None]:
+        if self._call is None:
+            self._call = anthropic_model_call(self._key or "")
+        system = model_system_prompt(context.categories, context.rule_examples,
+                                     context.history_examples)
+        text, usage = self._call(self._model, system, _batch_payload(txns), MODEL_MAX_TOKENS)
+        self.usage = ModelUsage(self.usage.input_tokens + usage.input_tokens,
+                                self.usage.output_tokens + usage.output_tokens)
+        parsed = parse_model_reply(text, len(txns))
+        if isinstance(parsed, str):
+            raise BatchRefused(parsed)
+        return _judgments(parsed, len(txns))
+
+
+Transport = Callable[[str, bytes | None, float], str]
+"""(url, POST body | None for GET, timeout) -> response body text.
+
+The one seam to the local HTTP daemon: tests inject a fake; OSError from it
+means nobody is listening.
+"""
+
+
+def _http_transport(url: str, body: bytes | None, timeout: float) -> str:
+    req = urllib.request.Request(url, data=body,
+                                 method="POST" if body is not None else "GET")
+    if body is not None:
+        req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        raw: bytes = resp.read()
+    return raw.decode("utf-8", "replace")
+
+
+class OllamaBackend:
+    """The local-daemon rung: any Ollama model over localhost HTTP with
+    structured outputs (`format` = the same JSON schema the API rung uses).
+    Free, cross-platform, and merchant strings stay on the machine as long
+    as ollama_url points at it."""
+
+    name = "ollama"
+
+    def __init__(self, url: str, model: str,
+                 transport: Transport | None = None) -> None:
+        self._url = url.rstrip("/")
+        self._model = model
+        self._transport = transport or _http_transport
+
+    @property
+    def detail(self) -> str:
+        return self._model
+
+    def probe(self) -> str | None:
+        try:
+            self._transport(f"{self._url}/api/tags", None, OLLAMA_PROBE_TIMEOUT)
+        except OSError:
+            return (f"nothing listening at {self._url} — start it (`ollama serve`, "
+                    f"then `ollama pull {self._model}` once) or drop \"ollama\" "
+                    f"from model_backends")
+        return None
+
+    def classify_batch(self, txns: Sequence[ReviewTxn],
+                       context: BatchContext) -> list[Judgment | None]:
+        system = model_system_prompt(context.categories, context.rule_examples,
+                                     context.history_examples)
+        body = json.dumps({
+            "model": self._model, "stream": False,
+            "messages": [{"role": "system", "content": system},
+                         {"role": "user", "content": _batch_payload(txns)}],
+            "format": RESPONSE_SCHEMA,  # structured outputs: the reply parses or refuses
+            "options": {"temperature": 0},
+        }).encode()
+        try:
+            raw = self._transport(f"{self._url}/api/chat", body, OLLAMA_TIMEOUT)
+        except urllib.error.HTTPError as e:  # daemon up, request rejected
+            raise RuntimeError(f"HTTP {e.code} from ollama — is the model pulled? "
+                               f"(`ollama pull {self._model}`)") from e
+        try:
+            data: object = json.loads(raw)
+        except ValueError:
+            raise BatchRefused("response was not JSON") from None
+        content = as_dict(as_dict(data).get("message")).get("content")
+        if not isinstance(content, str):
+            raise BatchRefused("response had no message.content")
+        parsed = parse_model_reply(content, len(txns))
+        if isinstance(parsed, str):
+            raise BatchRefused(parsed)
+        return _judgments(parsed, len(txns))
+
+
+ShimRunner = Callable[[list[str], str], tuple[int, str, str]]
+"""(argv tail, stdin text) -> (returncode, stdout, stderr) for the shim.
+
+The one seam to the on-device binary: tests inject a fake and never touch
+Swift; the real one is built lazily by AppleBackend._prepare().
+"""
+
+
+def _shim_runner(binary: Path) -> ShimRunner:
+    def run(args: list[str], stdin: str) -> tuple[int, str, str]:
+        proc = subprocess.run([str(binary), *args], input=stdin,
+                              capture_output=True, text=True, timeout=SHIM_TIMEOUT)
+        return proc.returncode, proc.stdout, proc.stderr
+    return run
+
+
+def _last_line(*streams: str) -> str:
+    for text in streams:
+        lines = [ln.strip() for ln in text.strip().splitlines() if ln.strip()]
+        if lines:
+            return lines[-1]
+    return ""
+
+
+class AppleBackend:
+    """The on-device rung: Apple's Foundation Models via a tiny Swift shim
+    (shim/sara-classify-shim/). Zero setup when Apple Intelligence is on —
+    the shim is compiled once on first use and cached; merchant strings
+    never leave the Mac. probe() reports the SPECIFIC unavailability reason
+    the shim sees (device not eligible, Apple Intelligence off, model still
+    downloading) so the fix is always named."""
+
+    name = "apple"
+    detail = "on-device"
+
+    def __init__(self, runner: ShimRunner | None = None) -> None:
+        self._runner = runner
+
+    def probe(self) -> str | None:
+        if self._runner is None:
+            not_ready = self._prepare()
+            if not_ready:
+                return not_ready
+        assert self._runner is not None
+        rc, out, errtxt = self._runner(["--probe"], "")
+        if rc != 0:
+            return _last_line(errtxt, out) or "the shim's availability probe failed"
+        return None
+
+    def _prepare(self) -> str | None:
+        """Platform gate + one-time `swift build` -> arm the real runner,
+        or say in one line why this Mac can't run the rung."""
+        if sys.platform != "darwin":
+            return "needs macOS 26+ (Apple Intelligence)"
+        macos = platform.mac_ver()[0]
+        major = macos.split(".", 1)[0]
+        if not major.isdigit() or int(major) < 26:
+            return f"needs macOS 26+ (this Mac reports {macos or 'an unknown version'})"
+        if not SHIM_BINARY.is_file():
+            if shutil.which("swift") is None:
+                return ("the on-device shim isn't built and there's no Swift "
+                        "toolchain — `xcode-select --install` once, then re-run")
+            err("building the on-device classify shim (one-time, ~30s)…")
+            try:
+                proc = subprocess.run(["swift", "build", "-c", "release"],
+                                      cwd=SHIM_DIR, capture_output=True, text=True,
+                                      timeout=SHIM_TIMEOUT)
+            except (OSError, subprocess.TimeoutExpired) as e:
+                return f"shim build failed ({e})"
+            if proc.returncode != 0 or not SHIM_BINARY.is_file():
+                return (f"shim build failed "
+                        f"({_last_line(proc.stderr, proc.stdout) or 'no output'}; "
+                        f"run `swift build -c release` in {SHIM_DIR} to see why)")
+        self._runner = _shim_runner(SHIM_BINARY)
+        return None
+
+    def classify_batch(self, txns: Sequence[ReviewTxn],
+                       context: BatchContext) -> list[Judgment | None]:
+        if self._runner is None:
+            raise RuntimeError("probe() must arm the shim before classify_batch()")
+        request = json.dumps({
+            "categories": list(context.categories),
+            "examples": [*context.rule_examples, *context.history_examples],
+            "txns": _txn_rows(txns),
+        }, ensure_ascii=False)
+        rc, out, errtxt = self._runner([], request)
+        if rc != 0:  # went unavailable mid-run, guardrails, context overflow…
+            raise RuntimeError(_last_line(errtxt, out) or f"shim exited {rc}")
+        parsed = parse_model_reply(out, len(txns), id_key="index")
+        if isinstance(parsed, str):
+            raise BatchRefused(parsed)
+        return _judgments(parsed, len(txns))
+
+
+def build_backends(cfg: Config, names: Sequence[str],
+                   model_call: ModelCall | None = None) -> list[ModelBackend]:
+    """The configured ladder, instantiated. The key file is read only when
+    haiku is actually on the ladder — an all-local run never touches
+    .secrets. model_call is the test seam for the haiku rung."""
+    ladder: list[ModelBackend] = []
+    for n in names:
+        if n == "apple":
+            ladder.append(AppleBackend())
+        elif n == "ollama":
+            ladder.append(OllamaBackend(cfg.ollama_url, cfg.ollama_model))
+        else:
+            ladder.append(HaikuBackend(cfg.model, model_api_key(), model_call))
+    return ladder
+
+
+# ---------------------------------------------------------------- the ladder
+@dataclass
+class RungStats:
+    """What one rung did, for the report."""
+
+    name: str
+    detail: str
+    floor: Decimal
+    skipped: str = ""  # probe reason; the rung never ran
+    judged: int = 0
+    applied: int = 0
+    unsure: int = 0  # below the floor -> escalated (or queued at the end)
+    refused: int = 0  # malformed batches, unknown categories, no answer, died
+
+
+def _plaid_hint(t: ReviewTxn) -> str:
+    if not t.plaid_detailed:
+        return ""
+    return (f"plaid {t.plaid_detailed} "
+            f"({t.plaid_confidence or 'no confidence'}) — below the bar")
+
+
+@dataclass
+class _Work:
+    """One residue txn riding the ladder: the latest reason it's still
+    unplaced plus every below-floor suggestion collected on the way down."""
+
+    txn: ReviewTxn
+    reason: str = NO_SIGNAL
+    suggestions: list[tuple[Decimal, str, str]] = field(
+        default_factory=list[tuple[Decimal, str, str]])
+
+    def suggest(self, backend: str, answer: Judgment) -> None:
+        self.suggestions.append((answer.confidence,
+                                 f"{answer.category} ({backend} {answer.confidence:.2f})",
+                                 answer.reason))
+
+    def queued(self) -> Queued:
+        """Best-confidence suggestion first (with its reason); the others
+        trail so a two-brain disagreement is visible at a glance."""
+        ranked = sorted(self.suggestions, key=lambda s: s[0], reverse=True)
+        if not ranked:
+            return Queued(self.txn, self.reason,
+                          suggestion=_plaid_hint(self.txn) if self.reason == NO_SIGNAL else "")
+        _, best_text, best_reason = ranked[0]
+        parts = [f"{best_text} — {best_reason}" if best_reason else best_text]
+        parts.extend(text for _, text, _ in ranked[1:])
+        return Queued(self.txn, self.reason, suggestion=" / ".join(parts))
+
+
+class LadderRun(NamedTuple):
     decisions: list[Decision]
     queued: list[Queued]
     sent: int
-    usage: ModelUsage
-    notes: list[str]  # batch-level refusals / errors
+    stats: list[RungStats]  # one per rung, ladder order
+    notes: list[str]  # batch-level refusals / failures, printed loudly
 
 
-def run_model_tier(residue: list[ReviewTxn], cfg: Config, chart: set[str],
-                   history: list[Example], call: ModelCall,
-                   limit: int | None) -> ModelRun:
+def run_ladder(residue: list[ReviewTxn], cfg: Config, chart: set[str],
+               history: list[Example], ladder: Sequence[ModelBackend],
+               limit: int | None) -> LadderRun:
+    """Tier 3: each rung takes everything still undecided, batch by batch;
+    what it can't decide (below its floor, refused, unanswered, or the rung
+    died) escalates to the next rung; whatever survives the whole ladder
+    queues with the best suggestions attached."""
     to_send = residue if limit is None else residue[:limit]
     overflow = [] if limit is None else residue[limit:]
-    categories = model_categories(chart)
-    allowed = set(categories)
-    system = model_system_prompt(categories, _rule_examples(),
-                                 _history_examples(history))
+    context = BatchContext(tuple(model_categories(chart)),
+                           tuple(_rule_examples()),
+                           tuple(_history_examples(history)))
+    allowed = set(context.categories)
+    work = [_Work(t) for t in to_send]
     decisions: list[Decision] = []
-    queued: list[Queued] = []
     notes: list[str] = []
-    tokens_in = tokens_out = 0
-    aborted = False
-    for at in range(0, len(to_send), MODEL_BATCH_SIZE):
-        batch = to_send[at:at + MODEL_BATCH_SIZE]
-        if aborted:
-            queued.extend(Queued(t, "model call aborted earlier in this run") for t in batch)
+    stats: list[RungStats] = []
+    for backend in ladder:
+        if not work:
+            break
+        floor = cfg.floor(backend.name)
+        st = RungStats(backend.name, backend.detail, floor)
+        stats.append(st)
+        skip = backend.probe()
+        if skip is not None:
+            st.skipped = skip
             continue
-        try:
-            text, usage = call(cfg.model, system, _batch_payload(batch), MODEL_MAX_TOKENS)
-        except Exception as e:  # network/API failure: keep the run, keep the queue
-            notes.append(f"batch {at // MODEL_BATCH_SIZE + 1}: API call failed — {e}")
-            queued.extend(Queued(t, "model call failed") for t in batch)
-            aborted = True
-            continue
-        tokens_in += usage.input_tokens
-        tokens_out += usage.output_tokens
-        parsed = parse_model_reply(text, len(batch))
-        if isinstance(parsed, str):
-            notes.append(f"batch {at // MODEL_BATCH_SIZE + 1}: refused — {parsed}; "
-                         f"its {len(batch)} txns stay queued")
-            queued.extend(Queued(t, "model reply refused (malformed)") for t in batch)
-            continue
-        for i, t in enumerate(batch):
-            answer = parsed.get(i)
-            if answer is None:
-                queued.append(Queued(t, "model gave no answer"))
+        passed: list[_Work] = []
+        dead = False
+        for at in range(0, len(work), MODEL_BATCH_SIZE):
+            batch = work[at:at + MODEL_BATCH_SIZE]
+            if dead:
+                for w in batch:
+                    w.reason = f"{backend.name} call aborted earlier in this run"
+                passed.extend(batch)
                 continue
-            category, conf, reason = answer
-            if category not in allowed:
-                queued.append(Queued(t, f"model named unknown category {category!r}"))
-            elif category == t.review_account:
-                queued.append(Queued(t, "model agrees it belongs in review"))
-            elif conf < cfg.model_min:
-                queued.append(Queued(t, f"model unsure ({conf:.2f} < {cfg.model_min})",
-                                     suggestion=f"{category} ({conf:.2f}) — {reason}"))
-            else:
-                decisions.append(Decision(t, category, "model",
-                                          f"haiku:{conf:.2f}", note=reason))
+            try:
+                answers = backend.classify_batch([w.txn for w in batch], context)
+            except BatchRefused as e:
+                notes.append(f"{backend.name}: batch {at // MODEL_BATCH_SIZE + 1} "
+                             f"refused — {e}; its {len(batch)} txns move on")
+                st.judged += len(batch)
+                st.refused += len(batch)
+                for w in batch:
+                    w.reason = f"{backend.name} reply refused (malformed)"
+                passed.extend(batch)
+                continue
+            except Exception as e:  # subprocess/network/API death: rung is done
+                notes.append(f"{backend.name}: call failed — {e}")
+                st.judged += len(batch)
+                st.refused += len(batch)
+                for w in batch:
+                    w.reason = f"{backend.name} call failed"
+                passed.extend(batch)
+                dead = True
+                continue
+            if len(answers) != len(batch):
+                notes.append(f"{backend.name}: {len(answers)} answers for "
+                             f"{len(batch)} txns — batch refused")
+                st.judged += len(batch)
+                st.refused += len(batch)
+                for w in batch:
+                    w.reason = f"{backend.name} reply refused (wrong batch size)"
+                passed.extend(batch)
+                continue
+            st.judged += len(batch)
+            for w, answer in zip(batch, answers, strict=True):
+                if answer is None:
+                    st.refused += 1
+                    w.reason = f"{backend.name} gave no answer"
+                    passed.append(w)
+                elif answer.category not in allowed:
+                    st.refused += 1
+                    w.reason = f"{backend.name} named unknown category {answer.category!r}"
+                    passed.append(w)
+                elif answer.confidence < floor:
+                    st.unsure += 1
+                    w.reason = f"{backend.name} unsure ({answer.confidence:.2f} < {floor})"
+                    w.suggest(backend.name, answer)
+                    passed.append(w)
+                else:
+                    st.applied += 1
+                    decisions.append(Decision(
+                        w.txn, answer.category, "model",
+                        f"{backend.name}:{answer.confidence:.2f}", note=answer.reason))
+        work = passed
+    queued = [w.queued() for w in work]
     queued.extend(Queued(t, f"past --model-limit {limit}") for t in overflow)
-    return ModelRun(decisions, queued, len(to_send),
-                    ModelUsage(tokens_in, tokens_out), notes)
+    return LadderRun(decisions, queued, len(to_send), stats, notes)
 
 
 # ------------------------------------------------------------------ rewrite
@@ -634,8 +1068,15 @@ def _rule_suggestions(queue: list[Queued]) -> list[str]:
 
 def run_classification(write: bool, skip_model: bool = False,
                        model_limit: int | None = None,
-                       model_call: ModelCall | None = None) -> Summary:
-    """The whole run: scan -> tiers -> report -> (optionally) rewrite."""
+                       model_call: ModelCall | None = None,
+                       backend_names: Sequence[str] | None = None,
+                       backends: Sequence[ModelBackend] | None = None) -> Summary:
+    """The whole run: scan -> tiers -> report -> (optionally) rewrite.
+
+    backend_names overrides the configured ladder (the --backend flag);
+    backends injects ready-made rungs and model_call injects the haiku
+    rung's API seam — both test seams, neither touches the network.
+    """
     require_vault()
     cfg = _config()
     chart = opened_accounts()
@@ -662,37 +1103,49 @@ def run_classification(write: bool, skip_model: bool = False,
         print("  tier 2 — plaid category: off ([classification] tier2 = false)")
 
     model_ds: list[Decision] = []
-    key = model_api_key()
-    if residue and not skip_model and cfg.tier3 and (model_call or key):
-        call = model_call or anthropic_model_call(key or "")
-        run = run_model_tier(residue, cfg, chart, scan.history, call, model_limit)
+    ladder: Sequence[ModelBackend] = []
+    if residue and not skip_model and cfg.tier3:
+        names = tuple(backend_names) if backend_names is not None else cfg.backends
+        ladder = backends if backends is not None else build_backends(cfg, names, model_call)
+    if ladder:
+        run = run_ladder(residue, cfg, chart, scan.history, ladder, model_limit)
         model_ds = run.decisions
         queued.extend(run.queued)
         verb = "applied" if write else "would apply"
-        print(f"  tier 3 — {cfg.model}: {run.sent} sent, {len(model_ds)} {verb} "
-              f"(>= {cfg.model_min}), {len(run.queued)} stay queued")
+        print(f"  tier 3 — ladder: {' → '.join(b.name for b in ladder)}"
+              f" — {run.sent} sent")
+        for i, st in enumerate(run.stats):
+            if st.skipped:
+                print(f"    {st.name}: skipped — {st.skipped}")
+                continue
+            later = any(not s.skipped for s in run.stats[i + 1:])
+            line = (f"    {st.name} ({st.detail}): judged {st.judged} — "
+                    f"{verb} {st.applied} (>= {st.floor})")
+            if st.unsure:
+                line += f", {'escalated' if later else 'unsure'} {st.unsure}"
+            if st.refused:
+                line += f", refused {st.refused}"
+            print(line)
         for d in sorted(model_ds, key=lambda d: d.txn.when):
             print(_txn_line(d.txn, f"-> {d.account}  [{d.label}] {d.note}"))
         for note in run.notes:
             print(f"    ! {note}")
-        cost = (run.usage.input_tokens * PRICE_IN_PER_MTOK
-                + run.usage.output_tokens * PRICE_OUT_PER_MTOK) / 1_000_000
-        print(f"    cost: {run.usage.input_tokens:,} in + "
-              f"{run.usage.output_tokens:,} out tokens ~ ${cost:.4f}")
+        for b in ladder:  # the cost line, API rungs only — local rungs are $0
+            if isinstance(b, HaikuBackend) and \
+                    (b.usage.input_tokens or b.usage.output_tokens):
+                cost = (b.usage.input_tokens * PRICE_IN_PER_MTOK
+                        + b.usage.output_tokens * PRICE_OUT_PER_MTOK) / 1_000_000
+                print(f"    cost ({b.name}): {b.usage.input_tokens:,} in + "
+                      f"{b.usage.output_tokens:,} out tokens ~ ${cost:.4f}")
         decisions.extend(model_ds)
     else:
         why = ("--skip-model" if skip_model
                else "off ([classification] tier3 = false)" if not cfg.tier3
-               else "no key — put ANTHROPIC_API_KEY=sk-... in "
-                    f"{ANTHROPIC_ENV_FILE} to enable" if not (model_call or key)
-               else "nothing left for it")
+               else "nothing left for it" if not residue
+               else "ladder empty ([classification] model_backends = [])")
         print(f"  tier 3 — model: {why}")
-        queued.extend(
-            Queued(t, "no signal (model tier not run)",
-                   suggestion=(f"plaid {t.plaid_detailed} "
-                               f"({t.plaid_confidence or 'no confidence'}) — below the bar"
-                               if t.plaid_detailed else ""))
-            for t in residue)
+        queued.extend(Queued(t, NO_SIGNAL, suggestion=_plaid_hint(t))
+                      for t in residue)
 
     print(f"  queued: {len(queued)} stay in review")
     for q in sorted(queued, key=lambda q: q.txn.when):
@@ -720,6 +1173,26 @@ def run_classification(write: bool, skip_model: bool = False,
 
 
 # --------------------------------------------------------------------- main
+def _backend_flag(argv: list[str], usage: str) -> tuple[list[str] | None, list[str]]:
+    """Pull '--backend apple[,ollama,haiku]' out of argv -> (names, rest).
+    Unknown names exit loudly — a typo'd ladder must not silently become
+    the default one."""
+    if "--backend" not in argv:
+        return None, argv
+    i = argv.index("--backend")
+    value = argv[i + 1] if i + 1 < len(argv) else ""
+    names: list[str] = []
+    for s in value.split(","):
+        s = s.strip().lower()
+        if s and s not in names:
+            names.append(s)
+    bad = [s for s in names if s not in BACKEND_NAMES]
+    if not names or bad:
+        raise SystemExit(f"--backend needs a comma-separated subset of "
+                         f"{', '.join(BACKEND_NAMES)} (got {value or 'nothing'})\n\n{usage}")
+    return names, argv[:i] + argv[i + 2:]
+
+
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
     usage = __doc__ or ""
@@ -732,11 +1205,13 @@ def main(argv: list[str] | None = None) -> None:
                              f"(got {value or 'nothing'})\n\n{usage}")
         model_limit = int(value)
         argv = argv[:i] + argv[i + 2:]
+    backend_names, argv = _backend_flag(argv, usage)
     reject_unknown_flags(argv, FLAGS, usage)
     try:
         run_classification(write="--write" in argv,
                            skip_model="--skip-model" in argv,
-                           model_limit=model_limit)
+                           model_limit=model_limit,
+                           backend_names=backend_names)
     except KeyboardInterrupt:
         err("interrupted — nothing was written (writes are all-or-nothing)")
         raise SystemExit(130) from None

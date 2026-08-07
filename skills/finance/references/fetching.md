@@ -170,6 +170,25 @@ so those stay on the browser-pull + inbox lane above. Cursors live in
 `$VAULT/.secrets/plaid-cursors.json` and only advance after a successful
 write; deleting the file just means the next sync re-fetches and dedupes.
 
+### Model backends — the tier-3 ladder
+
+`[classification] model_backends` in the vault's rules.toml names the
+brains in escalation order — each backend judges the batch, and only its
+low-confidence residue moves to the next; whatever survives the whole
+ladder stays in the review queue with the best suggestion shown.
+
+| backend | costs | lives | setup |
+|---|---|---|---|
+| `apple` | free | on your Mac (macOS 26+, Apple Silicon) | it's already there — flip on Apple Intelligence in System Settings; the shim builds itself on first use |
+| `ollama` | free | on any machine | `brew install ollama && ollama pull llama3.2:3b` (URL/model overridable in `[classification]`) |
+| `haiku` | ~a dime per full pass | Anthropic API | `ANTHROPIC_API_KEY` in `$VAULT/.secrets/anthropic.env` |
+
+A sensible ladder for a Mac household: `model_backends = ["apple", "haiku"]`
+— the free brain does the bulk on-device (merchant strings never leave the
+machine), the API brain catches only what it wasn't sure about. Every
+applied posting carries `classifier: "<backend>:<confidence>"` so you can
+always see which brain judged what, and re-judge later.
+
 ## The workflow
 
 **1. Get in.** Load claude-in-chrome tools in ONE ToolSearch call

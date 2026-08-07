@@ -117,6 +117,10 @@ note = "cash withdrawals"
 # or the whole run rolls back. Defaults shown — the table is optional.
 # ---------------------------------------------------------------------------
 # [classification]
+# model_backends = ["apple", "haiku"]  # tier-3 ladder, escalation order:
+#   apple  = free, on-device (macOS 26+; flip on Apple Intelligence)
+#   ollama = free, local daemon (any OS; ollama_url/ollama_model to override)
+#   haiku  = Anthropic API (~a dime per full pass; key in .secrets/anthropic.env)
 # tier2 = true                     # the Plaid-signal tier
 # tier3 = true                     # the model tier (needs the key above)
 # plaid_min_confidence = "high"    # or "very_high"

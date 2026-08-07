@@ -2,27 +2,44 @@
 
 Tier 2 (the Plaid signal) is exercised against the scratch vault's actual
 ledger files — apply, low-confidence queue, unmapped queue, missing-target
-queue, and the [plaid_category_map] override — and tier 3 with an injected
-ModelCall (no network, no SDK): apply at threshold, queue below it, refuse
-unknown categories, and refuse a malformed reply wholesale. The write path
-is the same atomic + bean-check rewrite recategorize uses; with
-FINANCE_TEST_VENV set the real bean-check gate runs too.
+queue, and the [plaid_category_map] override — and tier 3 with injected
+backends (no network, no SDK, no Swift): apply at threshold, queue below
+it, refuse unknown categories, refuse a malformed reply wholesale, and the
+whole escalation ladder — low-confidence residue climbing rung to rung,
+unavailable rungs skipped with a note, the real Apple/Ollama backend
+classes driven through their fake seams. The write path is the same atomic
++ bean-check rewrite recategorize uses; with FINANCE_TEST_VENV set the
+real bean-check gate runs too.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
 from sara.classify import (
+    RESPONSE_SCHEMA,
+    AppleBackend,
+    BatchContext,
+    HaikuBackend,
+    Judgment,
+    ModelBackend,
     ModelUsage,
+    OllamaBackend,
+    ReviewTxn,
     Summary,
+    _backend_flag,  # pyright: ignore[reportPrivateUsage]
+    _config,  # pyright: ignore[reportPrivateUsage]
+    main,
     parse_model_reply,
     run_classification,
 )
+from sara.vault import reset_rules_cache
 
 from .conftest import RULES_TOML, needs_venv
 
@@ -236,6 +253,260 @@ def test_parse_model_reply_edges() -> None:
     assert isinstance(parse_model_reply(
         reply(row(0, "Expenses:X", "0.9"), row(0, "Expenses:Y", "0.9")), 1), str)
     assert isinstance(parse_model_reply(reply(row(0, "Expenses:X", "1.7")), 1), str)
+
+
+# ------------------------------------------------------------ tier 3 ladder
+class FakeBackend:
+    """An injected ModelBackend rung: canned per-payee judgments, an optional
+    probe skip, an optional mid-run explosion — and a record of every batch."""
+
+    detail = "fake"
+
+    def __init__(self, name: str,
+                 judgments: dict[str, Judgment | None] | None = None,
+                 skip: str | None = None, boom: str | None = None) -> None:
+        self.name = name
+        self._judgments = judgments or {}
+        self._skip = skip
+        self._boom = boom
+        self.batches: list[list[str]] = []  # payees, per classify_batch call
+
+    def probe(self) -> str | None:
+        return self._skip
+
+    def classify_batch(self, txns: Sequence[ReviewTxn],
+                       context: BatchContext) -> list[Judgment | None]:
+        self.batches.append([t.payee for t in txns])
+        if self._boom is not None:
+            raise RuntimeError(self._boom)
+        return [self._judgments.get(t.payee) for t in txns]
+
+
+def _rungs(*backends: ModelBackend) -> list[ModelBackend]:
+    """pyright proves ModelBackend conformance for whatever rides through."""
+    return list(backends)
+
+
+def J(category: str, conf: str, reason: str = "looks right") -> Judgment:
+    return Judgment(category, Decimal(conf), reason)
+
+
+def test_ladder_only_low_confidence_residue_escalates(vault: Path) -> None:
+    f = seed(vault,
+             txn("MYSTERY SANDWICHES", "-18.00"),
+             txn("UNKNOWABLE LLC", "-99.00", when="2026-07-04"))
+    apple = FakeBackend("apple", {
+        "MYSTERY SANDWICHES": J("Expenses:Food:Dining", "0.91", "clearly lunch"),
+        "UNKNOWABLE LLC": J("Expenses:Food:Groceries", "0.40", "shrug"),
+    })
+    haiku = FakeBackend("haiku", {"UNKNOWABLE LLC": J("Expenses:Food:Groceries", "0.88")})
+    s = run_classification(write=True, backends=_rungs(apple, haiku))
+    assert (s.applied_model, s.queued) == (2, 0)
+    text = f.read_text()
+    assert '  classifier: "apple:0.91"\n' in text
+    assert '  classifier: "haiku:0.88"\n' in text
+    assert apple.batches == [["MYSTERY SANDWICHES", "UNKNOWABLE LLC"]]
+    assert haiku.batches == [["UNKNOWABLE LLC"]]  # the sure one never left rung 1
+
+
+def test_ladder_both_unsure_queues_with_both_suggestions(
+        vault: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    f = seed(vault, txn("UNKNOWABLE LLC", "-99.00"))
+    before = f.read_text()
+    apple = FakeBackend("apple",
+                        {"UNKNOWABLE LLC": J("Expenses:Food:Dining", "0.62", "maybe catering")})
+    haiku = FakeBackend("haiku", {"UNKNOWABLE LLC": J("Expenses:Food:Groceries", "0.41")})
+    s = run_classification(write=True, backends=_rungs(apple, haiku))
+    assert (s.applied_model, s.queued) == (0, 1)
+    assert f.read_text() == before  # nothing rewritten
+    out = capsys.readouterr().out
+    line = next(ln for ln in out.splitlines() if "UNKNOWABLE" in ln and "suggest" in ln)
+    assert "Expenses:Food:Dining (apple 0.62) — maybe catering" in line
+    assert "Expenses:Food:Groceries (haiku 0.41)" in line
+    assert line.index("apple 0.62") < line.index("haiku 0.41")  # best confidence first
+
+
+def test_unavailable_rung_skips_to_next_with_note(
+        vault: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    f = seed(vault, txn("MYSTERY SANDWICHES", "-18.00"))
+    apple = FakeBackend("apple", skip="Apple Intelligence is off")
+    haiku = FakeBackend("haiku", {"MYSTERY SANDWICHES": J("Expenses:Food:Dining", "0.90")})
+    s = run_classification(write=True, backends=_rungs(apple, haiku))
+    assert (s.applied_model, s.queued) == (1, 0)
+    assert apple.batches == []  # a skipped rung is never asked
+    assert "apple: skipped — Apple Intelligence is off" in capsys.readouterr().out
+    assert '  classifier: "haiku:0.90"\n' in f.read_text()
+
+
+def test_rung_failure_escalates_and_notes(
+        vault: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    seed(vault, txn("MYSTERY SANDWICHES", "-18.00"))
+    apple = FakeBackend("apple", boom="shim exploded")
+    haiku = FakeBackend("haiku", {"MYSTERY SANDWICHES": J("Expenses:Food:Dining", "0.90")})
+    s = run_classification(write=True, backends=_rungs(apple, haiku))
+    assert (s.applied_model, s.queued) == (1, 0)
+    assert "! apple: call failed — shim exploded" in capsys.readouterr().out
+
+
+def review_txn(payee: str) -> ReviewTxn:
+    return ReviewTxn(file=Path("2026.beancount"), start=0, when=date(2026, 7, 2),
+                     payee=payee, ofx_type="", amount=Decimal("-18.00"),
+                     primary=CHECKING, review_account="Expenses:Uncategorized",
+                     target_line=3, meta_insert=1, classifier_line=None,
+                     plaid_detailed="", plaid_confidence="", rewritable=True)
+
+
+def test_apple_backend_end_to_end_via_fake_shim(vault: Path) -> None:
+    f = seed(vault, txn("MYSTERY SANDWICHES", "-18.00"))
+    requests: list[str] = []
+
+    def runner(args: list[str], stdin: str) -> tuple[int, str, str]:
+        if args == ["--probe"]:
+            return 0, "available\n", ""
+        requests.append(stdin)
+        return 0, ('{"results": [{"index": 0, "category": "Expenses:Food:Dining", '
+                   '"confidence": 0.92, "reason": "sandwich shop"}]}'), ""
+
+    s = run_classification(write=True, backends=_rungs(AppleBackend(runner=runner)))
+    assert (s.applied_model, s.queued) == (1, 0)
+    assert '  classifier: "apple:0.92"\n' in f.read_text()
+    sent = json.loads(requests[0])
+    assert "Expenses:Food:Dining" in sent["categories"]
+    assert "Expenses:Uncategorized" not in sent["categories"]  # review buckets never offered
+    assert [t["payee"] for t in sent["txns"]] == ["MYSTERY SANDWICHES"]
+    assert any("WHOLE FOODS" in e for e in sent["examples"])  # taught rules ride along
+
+
+def test_apple_probe_unavailable_skips_onward(
+        vault: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    msg = "unavailable: Apple Intelligence is off — enable it in System Settings"
+
+    def runner(args: list[str], stdin: str) -> tuple[int, str, str]:
+        assert args == ["--probe"]  # an unavailable shim must never be asked to classify
+        return 1, "", msg + "\n"
+
+    haiku = FakeBackend("haiku", {"MYSTERY SANDWICHES": J("Expenses:Food:Dining", "0.90")})
+    seed(vault, txn("MYSTERY SANDWICHES", "-18.00"))
+    s = run_classification(write=True, backends=_rungs(AppleBackend(runner=runner), haiku))
+    assert (s.applied_model, s.queued) == (1, 0)
+    assert f"apple: skipped — {msg}" in capsys.readouterr().out
+
+
+def test_apple_malformed_shim_output_refuses_batch_loudly(
+        vault: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    f = seed(vault, txn("MYSTERY SANDWICHES", "-18.00"))
+    before = f.read_text()
+
+    def runner(args: list[str], stdin: str) -> tuple[int, str, str]:
+        if args == ["--probe"]:
+            return 0, "available\n", ""
+        return 0, "probably lunch?", ""
+
+    s = run_classification(write=True, backends=_rungs(AppleBackend(runner=runner)))
+    assert (s.applied_model, s.queued) == (0, 1)
+    assert f.read_text() == before  # a refused batch never touches the ledger
+    out = capsys.readouterr().out
+    assert "! apple: batch 1 refused — reply was not valid JSON" in out
+    assert "apple reply refused (malformed)" in out
+
+
+def test_ollama_backend_end_to_end_via_fake_transport(vault: Path) -> None:
+    f = seed(vault, txn("MYSTERY SANDWICHES", "-18.00"))
+    calls: list[tuple[str, bytes | None]] = []
+
+    def transport(url: str, body: bytes | None, timeout: float) -> str:
+        calls.append((url, body))
+        if body is None:  # the /api/tags probe
+            return '{"models": []}'
+        return json.dumps({"message": {
+            "role": "assistant",
+            "content": reply(row(0, "Expenses:Food:Dining", "0.91"))}})
+
+    backend = OllamaBackend("http://127.0.0.1:11434", "llama3.2:3b", transport=transport)
+    s = run_classification(write=True, backends=_rungs(backend))
+    assert (s.applied_model, s.queued) == (1, 0)
+    assert '  classifier: "ollama:0.91"\n' in f.read_text()
+    assert calls[0] == ("http://127.0.0.1:11434/api/tags", None)
+    chat_url, chat_body = calls[1]
+    assert chat_url == "http://127.0.0.1:11434/api/chat"
+    assert chat_body is not None
+    sent = json.loads(chat_body)
+    assert sent["model"] == "llama3.2:3b"
+    assert sent["format"] == RESPONSE_SCHEMA  # structured outputs armed
+    assert sent["options"] == {"temperature": 0}
+
+
+def test_ollama_connection_refused_skips_with_note(
+        vault: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    seed(vault, txn("MYSTERY SANDWICHES", "-18.00"))
+
+    def transport(url: str, body: bytes | None, timeout: float) -> str:
+        raise OSError(61, "Connection refused")
+
+    ollama = OllamaBackend("http://127.0.0.1:11434", "llama3.2:3b", transport=transport)
+    haiku = FakeBackend("haiku", {"MYSTERY SANDWICHES": J("Expenses:Food:Dining", "0.90")})
+    s = run_classification(write=True, backends=_rungs(ollama, haiku))
+    assert (s.applied_model, s.queued) == (1, 0)
+    assert ("ollama: skipped — nothing listening at http://127.0.0.1:11434"
+            in capsys.readouterr().out)
+
+
+def test_haiku_backend_direct_probe_and_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    why = HaikuBackend("claude-haiku-4-5", None).probe()
+    assert why is not None and "ANTHROPIC_API_KEY" in why  # keyless rung says how to arm
+    fake = FakeModel(reply(row(0, "Expenses:Food:Dining", "0.93")))
+    armed = HaikuBackend("claude-haiku-4-5", None, call=fake)
+    assert armed.probe() is None
+    got = armed.classify_batch([review_txn("MYSTERY SANDWICHES")],
+                               BatchContext(("Expenses:Food:Dining",), (), ()))
+    assert got == [Judgment("Expenses:Food:Dining", Decimal("0.93"), "looks right")]
+    assert armed.usage == ModelUsage(1_000, 200)
+
+
+# ------------------------------------------------------------ ladder config
+def test_config_defaults_keep_todays_behavior(vault: Path) -> None:
+    cfg = _config()
+    assert cfg.backends == ("haiku",)  # no config -> exactly the old single rung
+    assert cfg.floor("apple") == cfg.floor("haiku") == Decimal("0.8")
+    assert (cfg.ollama_url, cfg.ollama_model) == ("http://127.0.0.1:11434", "llama3.2:3b")
+
+
+def test_config_ladder_order_thresholds_and_unknowns(
+        vault: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (vault / "rules.toml").write_text(RULES_TOML + '''
+[classification]
+model_backends = ["ollama", "apple", "apple", "grok"]
+model_min_confidence = 0.7
+apple_min_confidence = 0.9
+ollama_url = "http://127.0.0.1:11435/"
+ollama_model = "qwen3:4b"
+''')
+    reset_rules_cache()
+    cfg = _config()
+    assert cfg.backends == ("ollama", "apple")  # order kept; dupes and unknowns dropped
+    assert '"grok" ignored' in capsys.readouterr().err
+    assert cfg.floor("apple") == Decimal("0.9")  # per-backend floor wins
+    assert cfg.floor("ollama") == Decimal("0.7")  # others fall to the default
+    assert cfg.ollama_url == "http://127.0.0.1:11435"  # trailing slash dropped
+    assert cfg.ollama_model == "qwen3:4b"
+
+
+def test_empty_configured_ladder_queues_residue(vault: Path) -> None:
+    (vault / "rules.toml").write_text(
+        RULES_TOML + "\n[classification]\nmodel_backends = []\n")
+    seed(vault, txn("MYSTERY SANDWICHES", "-18.00"))
+    s = run_classification(write=True)
+    assert (s.applied, s.queued) == (0, 1)
+
+
+def test_backend_flag_parses_and_rejects_unknown() -> None:
+    names, rest = _backend_flag(["--backend", "Apple,haiku", "--write"], "usage")
+    assert (names, rest) == (["apple", "haiku"], ["--write"])
+    assert _backend_flag(["--write"], "usage") == (None, ["--write"])
+    with pytest.raises(SystemExit) as e:
+        main(["--backend", "grok"])
+    assert "--backend needs" in str(e.value)
 
 
 # ----------------------------------------------------- bean-check gated path
