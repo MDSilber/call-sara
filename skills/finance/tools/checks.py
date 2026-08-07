@@ -8,6 +8,17 @@ Nothing household-specific lives here: thresholds come from facts/goals,
 tuning from rules.toml, dates from facts/, transactions from the ledger.
 One deliberate exception to "no side effects": milestones() records crossed
 milestones back into facts/goals/index.md so each fires exactly once.
+
+THE VOICE GATE — every user-visible string (titles, details, queue fixes):
+1. Sara is talking. Verdict first, why second; never brochure, never scold.
+2. A remedy names WHO does WHAT by WHEN, with real dollars when the data has them.
+3. No paths, commands, filenames, or config keys — "tell Sara" is how a human
+   reaches them; the check name routes the work, Sara knows her own tools.
+4. Plain words for mechanisms ("checked against a statement", "standing order")
+   and human dates/money (Sep 6, $1,240/yr) — never ISO dates or raw paths.
+5. The FIRST sentence of a detail must stand alone as the queue line
+   (webview.fix_line falls back to it). Terminal output is operator-land —
+   commands live there, and only there.
 """
 import calendar
 import re
@@ -58,8 +69,30 @@ def bql_str(s):
 
 
 # ------------------------------------------------------------- concentration
+def _thesis_declared_symbols():
+    """Symbols the written plan already covers: tickers named anywhere in
+    THESIS.md (a mention means a policy exists — the selling rule, a lane,
+    an explicit call) plus rules.toml [allocation_targets] employer_stock.
+    A declared position auto-resolves in concentration(): the plan says when
+    to act, so the check has nothing to add."""
+    text = ""
+    path = VAULT / "THESIS.md"
+    if path.exists():
+        try:
+            text = path.read_text()
+        except OSError:
+            text = ""
+    stock = rules().get("allocation_targets", {}).get("employer_stock", [])
+    named = {str(s).strip().upper() for s in stock if str(s).strip()}
+    return named, text
+
+
 def concentration():
-    """Flag any single holding above the ceiling, as % of total (liquid+paper)."""
+    """Flag a single holding above the ceiling, as % of total (liquid+paper).
+
+    Only UNDECLARED LIQUID positions fire. Illiquid paper is the thesis's
+    act-at-a-liquidity-event class by construction, and any ticker the
+    thesis names already has a policy — both auto-resolve silently."""
     ceiling = goals().get("concentration_ceiling_pct") or 15
     excl = illiquid_currency_regex()
     rows = query("SELECT currency, sum(convert(position, 'USD')) AS v "
@@ -86,17 +119,21 @@ def concentration():
     total = liquid_total + sum(paper.values())
     if total <= 0:
         return []
+    named, thesis_text = _thesis_declared_symbols()
     out = []
-    for sym, v in list(values.items()) + list(paper.items()):
+    for sym, v in values.items():  # liquid only — paper auto-resolves per the thesis
         pct = 100.0 * v / total
-        if pct > ceiling:
-            tag = " (illiquid paper)" if sym in paper else ""
-            out.append(finding(
-                "concentration", "watch",
-                f"{sym}{tag} is {pct:.0f}% of net worth (ceiling {ceiling:.0f}%)",
-                f"~{money(v)} in one position vs ~{money(total)} total. If it's illiquid, "
-                f"the actionable moment is a liquidity event — apply the THESIS.md selling "
-                f"rule then. If liquid, this is a diversification decision now. Watch, not alarm."))
+        if pct <= ceiling:
+            continue
+        if sym.upper() in named or re.search(rf"\b{re.escape(sym)}\b", thesis_text):
+            continue  # the written plan already covers this position
+        out.append(finding(
+            "concentration", "watch",
+            f"{sym} is {pct:.0f}% of net worth (ceiling {ceiling:.0f}%)",
+            f"~{money(v)} sits in one position you could sell, against ~{money(total)} "
+            f"total. That's a live diversification decision — trim it, or if the "
+            f"written plan already covers this position, tell Sara and she'll stop "
+            f"flagging it. Watch, not alarm."))
     return out
 
 
@@ -114,7 +151,7 @@ def deadlines():
             out.append(finding(
                 "deadlines", "watch",
                 f"In {days} days ({d.isoformat()}): {text}",
-                f"From {relpath}. Confirm whether it needs an action or is informational."))
+                f"From your notes ({relpath}). Does it need doing, or just knowing?"))
     return out
 
 
@@ -138,9 +175,9 @@ def inbox():
                else f"oldest has waited {age} day{'s' if age != 1 else ''}")
     return [finding(
         "inbox", "watch",
-        f"{n} document{'s' if n != 1 else ''} waiting in inbox/ to be filed",
-        f"{names} — {waiting}. Run `tools/run inbox.py` to identify and file "
-        f"them (statement exports file themselves; PDFs get a reading eye).")]
+        f"{n} document{'s' if n != 1 else ''} waiting in the inbox to be filed",
+        f"Ask Sara to file them — statements file themselves, PDFs she reads "
+        f"first. Waiting: {names} ({waiting}).")]
 
 
 # ------------------------------------------------------------------ anomaly
@@ -191,7 +228,8 @@ def _rare_payee_charges():
                 "anomaly", "alert",
                 f"{money(n)} at rarely-seen payee — merchant text: `{payee[:48]}` ({r['date']})",
                 f"Category {r['account'].replace('Expenses:', '')}. Seen "
-                f"{freq[payee.upper()]}x ever. Confirm it's yours — once confirmed, append it to [anomaly] ignore_payee_regex in rules.toml so it never re-alerts."))
+                f"{freq[payee.upper()]}x ever. Confirm it's yours — then tell Sara "
+                f"it's fine and she won't flag this merchant again."))
     return out[-8:]  # cap noise
 
 
@@ -208,6 +246,9 @@ def _category_spikes():
     category tripling never pages anyone. Median is taken over the ACTIVE
     trailing months (zero months excluded) — sparse categories would
     otherwise median to ~0 and everything would look like a spike.
+    Severity info: a spike is context for the month review, not a page.
+    A spike explained by an annual renewal (a yearly-cadence subscription
+    stream billing into that category this month) is suppressed outright.
     """
     floor_amt = goals().get("anomaly_min_amount") or 400
     lumpy = rules().get("anomaly", {}).get("ignore_account_regex", "Cash|Uncategorized")
@@ -232,9 +273,12 @@ def _category_spikes():
             y, m = y - 1, 12
         trailing.append((y, m))
     scored = []
+    renewed = _annual_renewal_categories(cur)
     for cat, series in by_cat.items():
         if lumpy and re.search(lumpy, cat):
             continue
+        if cat in renewed:
+            continue  # an annual renewal billed this month — expected, not a spike
         hist = sorted(series[ym] for ym in trailing if series.get(ym, 0) > 0)
         if len(hist) < SPIKE_MIN_ACTIVE_MONTHS:
             continue
@@ -242,31 +286,50 @@ def _category_spikes():
         curv = series.get(cur, 0.0)
         if curv >= floor_amt and curv > SPIKE_FACTOR * med:
             scored.append((curv - med, finding(
-                "anomaly", "watch",
+                "anomaly", "info",
                 f"{cat.replace('Expenses:', '')} ran {curv / med:.1f}x its usual month: "
                 f"{money(curv)} vs ~{money(med)} median",
                 f"{cur[0]}-{cur[1]:02d} vs the median of its active months in the trailing "
                 f"{SPIKE_TRAILING_MONTHS}. Scan the line items — planned one-off, price creep, "
-                f"or a miscategorization. If it's known-lumpy (annual premiums, taxes), add it "
-                f"to rules.toml [anomaly] ignore_account_regex so it stops firing.")))
+                f"or a miscategorization. If this category is just lumpy (annual premiums, "
+                f"taxes), tell Sara and she'll stop flagging it.")))
     scored.sort(key=lambda t: -t[0])
     return [f for _, f in scored[:SPIKE_TOP_N]]
 
 
+def _annual_renewal_categories(cur):
+    """Expense categories where a yearly-cadence subscription stream billed in
+    month `cur` — a doubled month explained by a known annual renewal. Matched
+    by normalized merchant against that month's postings."""
+    annual = {s["merchant"] for s in _subscription_streams()
+              if s["cadence"] == "yearly"
+              and (s["last"].year, s["last"].month) == cur}
+    if not annual:
+        return set()
+    start = date(cur[0], cur[1], 1)
+    end = date(cur[0], cur[1], calendar.monthrange(*cur)[1])
+    out = set()
+    for r in query(f"SELECT payee, root(account, 2) AS cat WHERE account ~ '^Expenses' "
+                   f"AND date >= {start.isoformat()} AND date <= {end.isoformat()}"):
+        if _normalize_merchant(r["payee"]) in annual:
+            out.add(r["cat"])
+    return out
+
+
 # ------------------------------------------------------------ review queue
-REVIEW_SHARE_PCT = 2  # >2% of the latest month's expense postings uncategorized = the month
-                      # can't be reviewed honestly yet; below that, stragglers are tolerable
+REVIEW_SHARE_PCT = 5  # the finding fires only past this share of the current month's
+                      # expense postings — below it, the Activity badge is the standing
+                      # meter and stragglers never page anyone
 
 
 def review_queue():
-    """Uncategorized postings are unfinished work — the categorization backlog.
+    """The month can't be reviewed honestly yet — the categorization gate.
 
     Counts Expenses:Uncategorized (this vault's convention) and Expenses:FIXME
     (the beancount-import convention) — importers park what they can't
-    categorize there rather than stalling, so the debt must stay visible.
-    Also the monthly review gate: when more than REVIEW_SHARE_PCT of the
-    latest data month's expense postings are still uncategorized, the month
-    isn't reviewable yet, so the finding escalates to at least watch.
+    categorize there rather than stalling. A finding emits ONLY when more
+    than REVIEW_SHARE_PCT of the current data month's expense postings are
+    uncategorized; the everyday backlog count lives on the Activity badge.
     """
     rows = query("SELECT year, month, account, count(*) AS n, "
                  "sum(convert(position,'USD')) AS v "
@@ -285,32 +348,25 @@ def review_queue():
         if (int(r["year"]), int(r["month"])) == cur:
             cur_total += c
             cur_uncat += c if uncat else 0
-    n = sum(c for c, _ in per.values())
-    if n == 0:
-        return []
-    v = sum(x for _, x in per.values())
-    fixme = per.get("Expenses:FIXME", [0, 0.0])[0]
     share = 100.0 * cur_uncat / cur_total if cur_total else 0.0
-    sev = "alert" if n > 100 else ("watch" if n > 10 or share > REVIEW_SHARE_PCT else "info")
-    gate = (f" {share:.0f}% of {cur[0]}-{cur[1]:02d}'s postings are uncategorized — "
-            f"categorize before reviewing the month." if share > REVIEW_SHARE_PCT else "")
+    if share <= REVIEW_SHARE_PCT:
+        return []
+    n = sum(c for c, _ in per.values())
+    v = sum(x for _, x in per.values())
     return [finding(
-        "review-queue", sev,
-        f"{n} uncategorized transactions ({money(v)}) awaiting rules"
-        + (f" — {fixme} in Expenses:FIXME" if fixme else ""),
-        f"Run `tools/run query.py uncategorized` for the top payees, add "
-        f"[[payee_rules]] to rules.toml, then `tools/run recategorize.py --write`.{gate}")]
+        "review-queue", "watch",
+        f"{share:.0f}% of this month's spending is uncategorized — "
+        f"{n} transactions ({money(v)}) need names",
+        "Teach Sara a rule per payee — Activity room, or just tell her — and "
+        "she re-files the history too. Until then the month can't be "
+        "reviewed honestly.")]
 
 
 # -------------------------------------------------------------------- goals
 def goals_status():
-    unset = [k for k, v in goals().items() if v is None]
-    if not unset:
-        return []
-    return [finding(
-        "goals", "info",
-        f"{len(unset)} goal targets not yet set: {', '.join(unset)}",
-        "Advisor proposes numbers once the spend/income baseline exists.")]
+    """Retired as a findings source — the Goals room owns its own empty
+    state, so unset targets never page anyone. Kept for compatibility."""
+    return []
 
 
 # ------------------------------------------------------------ subscriptions
@@ -446,17 +502,15 @@ def subscriptions():
                     f"{_cents(oldest['amount'])} through {oldest['last']}). Price hikes ride on "
                     f"inertia — worth a downgrade/annual-billing/retention pass before renewal."))
     active = [s for s in streams if s["active"]]
-    if active:
+    if active:  # the total burden, one info line — the audit itself lives elsewhere
         total_mo = sum(s["monthly"] for s in active)
-        top = sorted(active, key=lambda s: -s["monthly"])[:5]
+        top = sorted(active, key=lambda s: -s["monthly"])[:3]
         out.append(finding(
             "subscriptions", "info",
             f"{len(active)} active recurring charges ≈ {money(total_mo)}/mo "
             f"({money(total_mo * 12)}/yr)",
-            "Largest (merchant text): "
-            + " · ".join(f"`{s['merchant']}` {_cents(s['monthly'])}/mo" for s in top)
-            + ". The standing question for each: still used? right tier? annual billing "
-              "cheaper? (See the savings-hunt reference for the full audit.)"))
+            "Largest: " + " · ".join(f"`{s['merchant']}` {_cents(s['monthly'])}/mo"
+                                     for s in top) + "."))
     return out
 
 
@@ -538,8 +592,9 @@ def reconciliation():
     """Balance-assertion staleness — is the ledger still anchored to reality?
 
     Per active bank/card account: no assertion in ~two statement cycles →
-    re-anchor; never asserted at all → say so once (info). Assertions are
-    what turn "the ledger says" into "the bank agrees".
+    re-anchor. Assertions are what turn "the ledger says" into "the bank
+    agrees". Never-asserted accounts stay quiet — the first import anchors
+    them, and nagging about it earned nobody anything.
     """
     today = date.today()
     anchors = _newest_assertions()
@@ -553,21 +608,15 @@ def reconciliation():
         if (today - dates[-1]).days > RECON_ACTIVE_TXN_DAYS:
             continue
         anchor = anchors.get(account)
-        if anchor is None:
-            out.append(finding(
-                "reconciliation", "info",
-                f"{account} has never had a balance assertion",
-                f"The account is active but nothing anchors its history to a statement. One "
-                f"line fixes it: `YYYY-MM-DD balance {account}  <closing> USD` from any "
-                f"statement (importers emit one automatically when continuity verifies)."))
-        elif (today - anchor).days > RECON_STALE_DAYS:
+        if anchor is not None and (today - anchor).days > RECON_STALE_DAYS:
             out.append(finding(
                 "reconciliation", "watch",
-                f"{account} last reconciled {(today - anchor).days}d ago — "
-                f"pull a statement and re-anchor",
-                f"Newest balance assertion is {anchor.isoformat()}; transactions kept flowing "
-                f"since. Drift (missed rows, fees, holds) accumulates silently — import the "
-                f"latest statement or add an assertion from its closing balance."))
+                f"{account} last matched the bank {(today - anchor).days}d ago — "
+                f"pull a statement",
+                f"Last matched the bank on {anchor.isoformat()}; transactions kept "
+                f"flowing since, and drift (missed rows, fees, holds) piles up "
+                f"quietly. Pull the newest statement and Sara re-anchors to its "
+                f"closing balance."))
     return out
 
 
@@ -668,11 +717,11 @@ def coverage():
                     "coverage", "watch",
                     f"{account}: stale feed — {len(owed)} declared statement days "
                     f"({day_name}) passed with no data. Pull from `{inst}`.",
-                    f"rules.toml declares this account's statement cycle anchored on "
-                    f"{day_name}; statements should have closed on "
-                    f"{', '.join(d.isoformat() for d in owed)} but the newest data is "
-                    f"{last_seen.isoformat()}. The feed has probably stopped — pull a "
-                    f"fresh export from `{inst}` (institution text) and import it.")))
+                    f"Statements should have closed on "
+                    f"{', '.join(d.isoformat() for d in owed)} ({day_name} cycle) but "
+                    f"the newest data is {last_seen.isoformat()}. The feed has probably "
+                    f"stopped — download the latest from `{inst}` and drop it in; "
+                    f"Sara files it.")))
             else:
                 hole = next(((a, b) for a, b in
                              zip(reversed(dates[:-1]), reversed(dates[1:]))
@@ -685,9 +734,9 @@ def coverage():
                         f"({day_name}) has no data",
                         f"No postings between {a.isoformat()} and {b.isoformat()}, a "
                         f"window holding more than one declared statement day "
-                        f"({day_name}) — that statement looks never-imported. Re-pull "
-                        f"it from `{inst}` — the importer dedupes, so overlapping "
-                        f"exports are safe.")))
+                        f"({day_name}) — that statement looks never-imported. "
+                        f"Re-download that window from `{inst}` — overlapping "
+                        f"exports are safe, Sara dedupes.")))
             continue
         gaps = sorted((b - a).days for a, b in zip(dates, dates[1:]))
         floor = COV_CADENCE_DAYS.get(str(acfg.get("cadence", "")).lower(), COV_GAP_FLOOR_DAYS)
@@ -698,9 +747,8 @@ def coverage():
                 "coverage", "watch",
                 f"{account}: stale feed — no data for {silent}d. Pull from `{inst}`.",
                 f"Newest data {last_seen.isoformat()} vs a typical rhythm of ~{expected}d "
-                f"between postings. The feed has probably stopped — pull a fresh export "
-                f"from `{inst}` (institution text) and import it."
-                + (" (Rhythm set by rules.toml cadence.)" if "cadence" in acfg else ""))))
+                f"between postings. The feed has probably stopped — download a fresh "
+                f"statement from `{inst}` and drop it in; Sara files it.")))
             continue
         hole_floor = max(COV_HOLE_DAYS, expected)
         hole = next(((a, b) for a, b in zip(reversed(dates[:-1]), reversed(dates[1:]))
@@ -711,8 +759,8 @@ def coverage():
                 "coverage", "watch",
                 f"{account}: {(b - a).days}d hole in its history — a statement is missing",
                 f"No postings between {a.isoformat()} and {b.isoformat()} despite activity on "
-                f"both sides; that window looks never-imported. Re-pull it from `{inst}` — the "
-                f"importer dedupes, so overlapping exports are safe.")))
+                f"both sides; that window looks never-imported. Re-download that window "
+                f"from `{inst}` — overlapping exports are safe, Sara dedupes.")))
     candidates.sort(key=lambda t: -t[0])
     return [f for _, f in candidates[:COV_MAX_FINDINGS]]
 
@@ -753,12 +801,13 @@ def fixed_balances():
         if abs(drift) <= FIXED_DRIFT_TOLERANCE:
             continue
         direction = "over" if drift > 0 else "under"
-        fix = ("sweep the excess to its thesis destination" if drift > 0
-               else "top it up from the operating buffer")
+        fix = ("move the excess on" if drift > 0
+               else "top it up from the buffer")
         out.append(finding(
             "fixed-balance", "watch",
             f"{account} is ${abs(drift):,.0f} {direction} its fixed ${float(target):,.0f}",
-            f"THESIS.md sets this account at a fixed amount — {fix}."))
+            f"You hold this account at a set level on purpose — {fix} this week; "
+            f"Sara knows the destination."))
     return out
 
 
@@ -930,23 +979,23 @@ def lanes():
             out.append(finding(
                 "lanes", "alert",
                 f"The machine: `{row['name']}` hasn't run{exp}",
-                f"{seen} Declared {row['cadence']} on `{row['account']}` in "
-                f"rules.toml [[lanes]]. Check the standing order at the "
-                f"institution (and that the account's statements are "
-                f"imported), or fix the lane declaration."))
+                f"{seen} It's supposed to run {row['cadence']} into "
+                f"`{row['account']}`. Check the standing order at the bank (and "
+                f"that the account's statements are current) — or if you changed "
+                f"the plan, tell Sara so she watches the right thing."))
         elif row["status"] == "below":
             out.append(finding(
                 "lanes", "alert",
                 f"The machine: {row['account']} is under its "
                 f"{money(row['floor'])} floor ({money(row['balance'])})",
-                "rules.toml [[lanes]] holds this account at a floor — top it "
-                "up per THESIS.md, or lower the floor deliberately."))
+                "You keep this account above that floor on purpose. Top it up "
+                "this week — or lower the floor if the plan changed."))
         elif row["status"] == "invalid":
             out.append(finding(
                 "lanes", "watch",
                 f"The machine: lane `{row['name']}` is misdeclared",
-                f"{row['note']}. Fix the [[lanes]] entry in rules.toml — an "
-                f"unwatchable lane protects nothing."))
+                f"Sara can't watch it as written ({row['note']}). Ask her to fix "
+                f"the setup — an unwatchable lane protects nothing."))
     return out
 
 
@@ -960,28 +1009,36 @@ def projected_shortfall():
     so every number here is an ESTIMATE — the finding is a reason to look,
     not a statement. Accounts already under the line today are the
     fixed-balance / reconciliation checks' business, not this one's.
+    An account with a declared [[lanes]] invest program stays silent: its
+    big projected outflow IS the plan, and the plan funds it (settlement
+    cash, money-market sweeps) in ways cadence inference can't see.
     """
     from forecast import DEFAULT_DAYS, build_forecast  # deferred: forecast
     # imports this module's helpers, so a top-level import would be circular
     warns = build_forecast()["household"]["warns"]
+    lane_funded = {str(lane.get("account")) for lane in rules().get("lanes", [])
+                   if lane.get("kind") == "invest" and lane.get("account")}
     out = []
     for w in warns:
+        if w["account"] in lane_funded:
+            continue  # the declared program owns this outflow and its funding
         if w["kind"] == "below_zero":
             out.append(finding(
                 "projected-shortfall", "alert",
                 f"{w['account']} projected to hit ~{money(w['min'])} around {w['date']}",
-                f"{DEFAULT_DAYS}-day cash-flow projection (cadence patterns — estimates, "
-                f"not a statement) crosses below $0. Largest projected outflows before "
-                f"the crunch (merchant text): `{w['drivers']}`. Verify with tools/run forecast.py, then "
-                f"move money or a payment date before it lands."))
+                f"{DEFAULT_DAYS}-day projection (estimates from spending patterns, not "
+                f"a statement) crosses below $0. Biggest bills before the crunch: "
+                f"`{w['drivers']}`. Move money in before {w['date']}, or push one of "
+                f"those payments past it."))
         else:
             out.append(finding(
                 "projected-shortfall", "watch",
                 f"{w['account']} projected under its {money(w['floor'])} floor "
                 f"(~{money(w['min'])} around {w['date']})",
-                f"THESIS.md holds this account at a fixed level; the {DEFAULT_DAYS}-day "
-                f"projection (estimates from cadence patterns) dips below it. Drivers "
-                f"(merchant text): `{w['drivers']}`. Re-time the outflow or pre-position a top-up."))
+                f"You hold this account at a set level; the {DEFAULT_DAYS}-day "
+                f"projection (estimates from spending patterns) dips below it. "
+                f"Biggest bills on the way: `{w['drivers']}`. Top it up ahead of "
+                f"time, or move one of those payment dates."))
     return out
 
 
@@ -1035,11 +1092,10 @@ def cash_drag():
             f"Idle-cash drag ~{money(drag)}/yr: {account} earns {apy:g}% "
             f"vs the {hurdle:g}% hurdle",
             f"Move the {money(bal)} earning {apy:g}% to a {hurdle:g}%-class "
-            f"home and keep ~{money(drag)}/yr. That's HYSA / money market / "
-            f"T-bills per THESIS.md — or update rules.toml [cash_apy] if the "
-            f"rate changed. Once it moves, log `- [x] moved "
-            f"{account.split(':')[-1]} cash — realized {money(drag)}/yr` in "
-            f"a dated note so it counts as a win."))
+            f"home and keep ~{money(drag)}/yr. HYSA, money market, or T-bills, "
+            f"per the plan. If the account's rate changed, tell Sara the new "
+            f"number — and tell her when the money moves, it goes on the wins "
+            f"board."))
     return out
 
 
@@ -1070,7 +1126,7 @@ def milestones():
     return [finding(
         "milestones", "info",
         f"Milestone crossed: liquid net worth above {money(t)} (now {money(nw)})",
-        "Recorded in facts/goals/index.md so this fires once. Worth marking — and worth "
+        "Noted, so it only fires once. Worth marking — and worth "
         "checking that allocation, insurance limits, and the thesis still fit at this size.")
         for t in newly]
 
@@ -1093,30 +1149,9 @@ def _record_crossed(key, values):
         path.write_text(new)
 
 
-# ---------------------------------------------------------- allocation drift
-def allocation_drift():
-    """Score the live mix against rules.toml [allocation_targets]; a finding
-    per class outside its band. Silent until targets are declared."""
-    from allocation import allocation_view
-    view = allocation_view()
-    if view is None or view.invested <= 0:
-        return []
-    out = []
-    for r in view.rows:
-        if not r.out_of_band:
-            continue
-        toward = "over" if r.drift_pts > 0 else "under"
-        move = abs(view.invested * r.target_pct / 100.0 - r.value)
-        out.append(finding(
-            "allocation_drift", "watch",
-            f"{r.label} {r.share_pct:.0f}% of invested vs the {r.target_pct:.0f}% "
-            f"target (band ±{r.band_pts:.0f})",
-            f"~{money(move)} {toward}weight across ~{money(view.invested)} invested "
-            f"(cash and the reserve sit outside the mix). New contributions can "
-            f"lean the other way before anything needs selling; if a bundled "
-            f"fund (target-date) drives this, the honest fix may be revising "
-            f"the written target instead. Direction, not an order."))
-    return out
+# Allocation drift retired as a findings source (2026-08-07): the mix and its
+# drift live in the Investments room via allocation.allocation_view — a page
+# meter, not a page. The data layer is untouched.
 
 
 # ------------------------------------------------------------ plaid feeds
@@ -1151,9 +1186,9 @@ def plaid_freshness():
             out.append(finding(
                 "plaid_freshness", "watch",
                 f"Plaid item `{alias}` is configured but has never synced",
-                f"rules.toml declares [sources.plaid.items.{alias}] and no cursor exists "
-                f"yet. Finish the trust ramp: `tools/run ingest.py` (read the report), "
-                f"then `tools/run ingest.py --write`."))
+                f"The {alias} connection is set up but has never pulled data. Ask "
+                f"Sara to run the first sync — you read the report before anything "
+                f"is written."))
             continue
         try:
             synced = datetime.fromisoformat(str(synced_raw)).date()
@@ -1165,11 +1200,10 @@ def plaid_freshness():
             out.append(finding(
                 "plaid_freshness", severity,
                 f"Plaid item `{alias}` has not synced in {silent} days",
-                f"Last successful sync {synced.isoformat()}. If the daemon is scheduled, "
-                f"check /tmp/sara-ingestd.log; run `tools/run ingest.py --item {alias}` "
-                f"by hand — a broken connection repairs FREE with "
-                f"`python -m sara.link --repair {alias}` (never re-link fresh: Plaid "
-                f"slots are lifetime)."))
+                f"Data stopped arriving {silent} days ago (last sync "
+                f"{synced.isoformat()}). Ask Sara to sync it — if the connection "
+                f"broke, she can repair it free. Never re-link from scratch; that "
+                f"burns one of the ten lifetime links."))
     return out
 
 
@@ -1252,8 +1286,8 @@ def transfers_drift():
 
 
 ALL = [concentration, deadlines, inbox, anomaly, subscriptions, reconciliation,
-       coverage, review_queue, goals_status, milestones, fixed_balances, lanes,
-       projected_shortfall, cash_drag, allocation_drift, plaid_freshness,
+       coverage, review_queue, milestones, fixed_balances, lanes,
+       projected_shortfall, cash_drag, plaid_freshness,
        catch_all_lumps, transfers_drift]
 
 

@@ -33,6 +33,17 @@ never sent: the household picks its own delivery (mail the HTML, paste
 the text, print it), and the owner reviews the first issue before any
 standing send gets configured. `scripts/dashboard.sh --digest` opens it.
 
+**Silencing a finding has two speeds.** *Dismissed* (snoozed until a date)
+lives in `reports/dismissals.json` — view state, written by the app.
+*Decided* (settled forever) lives in the vault: the `decided:` inline list
+in `facts/goals/index.md`'s yaml block holds finding ids
+(`dismissals.finding_id(check, title)` — 12 hex chars), and
+`dismissals.mark_decided(check, title)` appends one safely (same
+edit-the-yaml-block convention as the app's set-goal action). A decided id
+never emits again on ANY surface — findings.md, the queue, the digest —
+but the id hashes the exact title, so a materially different statement
+(new numbers, new account) is a new decision and resurfaces.
+
 **2. `tools/run query.py` — anything not precomputed.**
 ```
 tools/run query.py networth            # liquid net worth (+ paper if configured)
@@ -228,6 +239,15 @@ The dual-computation gate (`crosscheck.py`) proves the owner slices re-add
 to liquid net worth to the cent before any report is emitted — a dollar is
 never dropped or double-owned. When advising on an owner-specific account,
 address that owner by name (see SKILL.md's advisor stance).
+
+**529 contributions ride an Equity contra, not Income/Expenses.** The
+convention is an `Equity:*529*` pass-through leg per contribution (this is
+why 529 deposits never show as spending and never distort any owner's
+in/out slice). `education_pace` prefers that contra when measuring the
+monthly contribution — external money by construction — and its fallback
+(cost-basis inflows on the 529 accounts) skips the opening-snapshot month
+and anything marked as a reinvested dividend, so "you put in" never counts
+the market compounding itself.
 
 ## Project envelopes (weddings, trips, renovations)
 

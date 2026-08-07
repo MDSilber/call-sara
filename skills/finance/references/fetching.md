@@ -283,8 +283,9 @@ export, ledger drift. Find the cause; never paper it over.
 A discrepancy LARGER than the export window usually means the account missed the vault's opening snapshot — seed a dated opening-balance entry (`Equity:Opening-Balances`) sized so ledger + import = statement, rather than trawling deep history the snapshot already nets out. `--allow-discrepancy` overrides once the cause is understood; a delta that
 can't be explained becomes a flagged adjusting entry plus a finding. An
 account is never called reconciled with a nonzero delta. Uncategorizable
-rows never block: they land in Expenses:Uncategorized and show up in
-`run_checks.py` as the review queue.
+rows never block: they land in Expenses:Uncategorized — the app's Activity
+badge is the standing meter, and `run_checks.py` raises a `review-queue`
+finding only when they exceed 5% of the current month's postings.
 
 ## When the extension is blocked on a domain
 

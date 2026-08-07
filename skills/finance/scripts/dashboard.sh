@@ -1,31 +1,26 @@
 #!/usr/bin/env bash
-# Launch the vault's visual dashboard (fava) — net worth, spending drill-downs,
-# a query console — as a LOCAL-ONLY web page. Nothing leaves the machine:
-# fava binds to 127.0.0.1 and reads the ledger straight off disk.
+# Open the vault's visual surfaces. LOCAL-ONLY, always: everything binds to
+# 127.0.0.1 or is a plain file on disk; nothing leaves the machine.
 #
-# Three views: fava (the default, below) is the interactive drill-down;
-# --pretty generates and opens the STATIC dense brief (reports/dashboard.html,
-# via tools/webview.py); --home generates and opens Sara Home
-# (reports/home.html, via tools/home.py) — the spouse-legible morning page.
-# --digest generates and opens Sara's weekly letter (reports/digest.html +
-# digest.txt, via tools/digest.py) — the email-shaped 20-second read.
-# The static pages need no server: plain self-contained files you can leave
-# open or print.
+#   scripts/dashboard.sh [--vault <dir>] [--port <n>] [mode]
 #
-# Read-only by default: the page can VIEW everything but cannot edit the
-# ledger. --writable re-enables fava's editor for a session that needs it.
-# The port is randomized (41000-49000) unless --port pins it, so the URL
-# isn't guessable-by-default. While the server runs, ANY page open in a
-# local browser could try to reach it — close the dashboard tab when done
-# and Ctrl-C the server rather than leaving it up.
-#   scripts/dashboard.sh [--vault <dir>] [--port <n>] [--writable] [--pretty] [--home] [--digest] [--app]
-#
-# --app launches SARA APP — the interactive local web app (FastAPI +
-# prebuilt frontend, python -m sara.server). Fixed default port 8787 (the
-# server validates Host and gates every write behind a per-launch token, so
-# a guessable URL exposes nothing); --port overrides. The static pages above
-# stay: the app is the daily driver, --home/--pretty remain the file-shaped
-# artifacts you can mail or print.
+# Modes:
+#   (default)  SARA APP — the interactive local web app and daily driver
+#              (FastAPI + prebuilt frontend, python -m sara.server). Fixed
+#              default port 8787 (the server validates Host and gates every
+#              write behind a per-launch token, so a guessable URL exposes
+#              nothing); --port overrides.
+#   --home     the one-viewport PRINT GLANCE (reports/home.html, via
+#              tools/home.py) — a self-contained sheet you can print or mail.
+#   --digest   Sara's weekly letter (reports/digest.html + digest.txt, via
+#              tools/digest.py) — the email-shaped 20-second read.
+#   --fava     the nerd drill-down (fava): raw ledger, query console.
+#              Read-only by default — --writable re-enables fava's editor
+#              for a session that needs it; port randomized (41000-49000)
+#              unless --port pins it. While a server runs, ANY local page
+#              could try to reach it — Ctrl-C when done.
+#              (The old --pretty static brief retired 2026-08-07; the app
+#              is the daily driver and --home the printable artifact.)
 #
 # fava-dashboards caveat: the Dashboards page renders every panel through a
 # POST endpoint, which fava's read-only mode rejects (verified: the page
@@ -39,20 +34,20 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 VAULT="${FINANCE_VAULT:-}"
 PORT=""
 WRITABLE=0
-PRETTY=0
 HOME_PAGE=0
 DIGEST=0
-APP=0
+FAVA=0
+APP=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --vault) VAULT="$2"; shift 2 ;;
     --port)  PORT="$2";  shift 2 ;;
     --writable) WRITABLE=1; shift ;;
-    --pretty) PRETTY=1; shift ;;
-    --home) HOME_PAGE=1; shift ;;
-    --digest) DIGEST=1; shift ;;
+    --home) HOME_PAGE=1; APP=0; shift ;;
+    --digest) DIGEST=1; APP=0; shift ;;
+    --fava) FAVA=1; APP=0; shift ;;
     --app) APP=1; shift ;;
-    *) echo "usage: dashboard.sh [--vault <dir>] [--port <n>] [--writable] [--pretty] [--home] [--digest] [--app]" >&2; exit 1 ;;
+    *) echo "usage: dashboard.sh [--vault <dir>] [--port <n>] [--app | --home | --digest | --fava [--writable]]" >&2; exit 1 ;;
   esac
 done
 if [ -z "$VAULT" ] && [ -f "$HOME/.finance-vault" ]; then
@@ -88,23 +83,19 @@ if [ "$APP" = 1 ]; then
   exec env FINANCE_VAULT="$VAULT" "$PY" -m sara.server --port "$PORT"
 fi
 
-# --pretty / --home / --digest: the static views — generate the page and
-# open it as a plain file. No server, no port, nothing to Ctrl-C.
-if [ "$PRETTY" = 1 ] || [ "$HOME_PAGE" = 1 ] || [ "$DIGEST" = 1 ]; then
+# --home / --digest: the static views — generate the page and open it as a
+# plain file. No server, no port, nothing to Ctrl-C.
+if [ "$HOME_PAGE" = 1 ] || [ "$DIGEST" = 1 ]; then
   PY="$VAULT/.venv/bin/python"
   [ -x "$PY" ] || { echo "❌ no vault venv at $PY — is the vault set up?" >&2; exit 1; }
   if [ "$DIGEST" = 1 ]; then
     FINANCE_VAULT="$VAULT" "$PY" "$HERE/../tools/digest.py"
     PAGE="$VAULT/reports/digest.html"
     echo "✓ weekly letter at $PAGE  (text twin: $VAULT/reports/digest.txt — delivery is yours: email, text, print)"
-  elif [ "$HOME_PAGE" = 1 ]; then
+  else
     FINANCE_VAULT="$VAULT" "$PY" "$HERE/../tools/home.py"
     PAGE="$VAULT/reports/home.html"
-    echo "✓ Sara Home at $PAGE  (self-contained file; --pretty is the dense brief, fava the drill-down)"
-  else
-    FINANCE_VAULT="$VAULT" "$PY" "$HERE/../tools/webview.py"
-    PAGE="$VAULT/reports/dashboard.html"
-    echo "✓ static dashboard at $PAGE  (self-contained file; fava remains the drill-down)"
+    echo "✓ print glance at $PAGE  (one self-contained sheet; the app is the live view, --fava the drill-down)"
   fi
   command -v open >/dev/null && open "$PAGE"
   exit 0

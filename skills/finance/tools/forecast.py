@@ -17,6 +17,9 @@ on known flows, not a spending simulator:
   exception:     a card whose rules.toml [[accounts]] entry declares bill_day
                  projects its autopay DAY-EXACTLY even with zero payment
                  history (see declared_autopay_streams)
+  balances:      $1-NAV money-market positions count as cash in an account's
+                 starting balance (_money_market_cash) — settlement sweeps
+                 must not read as a crunch
 
 The cadence machinery generalizes checks.py's subscription detector to ALL
 regular streams — income + expense + transfer — on cash (USD) accounts.
@@ -30,7 +33,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vault import amount, dated_bullets, money, query, rules  # noqa: E402
+from vault import (amount, dated_bullets, illiquid_currency_regex,  # noqa: E402
+                   money, query, rules)
 from checks import (FIXED_DRIFT_TOLERANCE, _closed_accounts,  # noqa: E402
                     _cycle_anchors, _cycle_day, _matches_segments,
                     _normalize_merchant)
@@ -373,6 +377,38 @@ def declared_autopay_streams(streams, posts, asof, today):
     return out
 
 
+# ------------------------------------------------- money-market cash
+MMF_PRICE_BAND = (0.98, 1.02)  # a $1-NAV fund's latest price sits inside this band;
+                               # real stock/bond funds never hold that peg
+
+
+def _money_market_cash():
+    """{account: usd} of $1-NAV money-market positions (VMFXX/VUSXX-style) —
+    settlement cash wearing a fund ticker. Counted into starting balances:
+    a sweep account holding seven figures of MMF is not about to crunch just
+    because its RESIDUAL USD can't cover a declared auto-invest. A commodity
+    qualifies only when its latest dated price is within MMF_PRICE_BAND of
+    $1.00; unpriced or illiquid holdings never do."""
+    from webview import price_history  # deferred: forecast stays standalone-fast
+    prices = price_history()
+    excl = illiquid_currency_regex()
+    lo, hi = MMF_PRICE_BAND
+    out = {}
+    for r in query("SELECT account, currency, sum(number) AS u "
+                   "WHERE account ~ '^Assets' AND currency != 'USD' "
+                   "GROUP BY account, currency"):
+        sym = r["currency"] or ""
+        if excl and re.match(excl, sym):
+            continue
+        marks = prices.get(sym)
+        if not marks or not lo <= marks[-1][1] <= hi:
+            continue
+        units = amount(r["u"])
+        if units > 0:
+            out[r["account"]] = out.get(r["account"], 0.0) + units * marks[-1][1]
+    return out
+
+
 # ------------------------------------------------------------- projection
 def _add_months(d, months, anchor_day):
     y = d.year + (d.month - 1 + months) // 12
@@ -462,6 +498,10 @@ def build_forecast(days=DEFAULT_DAYS, today=None):
     for p in posts:
         balances[p["account"]] = balances.get(p["account"], 0.0) + p["amt"]
         asof[p["account"]] = max(asof.get(p["account"], date.min), p["date"])
+    mmf = _money_market_cash()  # $1-NAV funds spend like cash — count them
+    for acct, extra in mmf.items():
+        if acct in balances:  # a pure-MMF account has no cash flows to project
+            balances[acct] += extra
     streams = recurring_streams(posts, today)
     streams = declared_autopay_streams(streams, posts, asof, today)
     floors = {a: float(t) for a, t in rules().get("fixed_balances", {}).items()}
@@ -485,7 +525,8 @@ def build_forecast(days=DEFAULT_DAYS, today=None):
                 lo, lo_date = bal, f["date"]
         accounts.append({"account": acct, "start": start, "asof": asof.get(acct),
                          "flows": flows, "min": lo, "min_date": lo_date,
-                         "end_balance": bal, "floor": floors.get(acct)})
+                         "end_balance": bal, "floor": floors.get(acct),
+                         "mmf": round(mmf.get(acct, 0.0), 2)})
     oneoffs, ambiguous, unquantified = known_oneoffs(today, end)
     totals = {"income": 0.0, "expense": 0.0, "transfer": 0.0}
     for a in accounts:
@@ -538,7 +579,8 @@ def main(argv):
     overdue_seen = False
     for a in fc["accounts"]:
         asof = f" (ledger through {a['asof']})" if a["asof"] else ""
-        print(f"{a['account']}   start {money(a['start'])}{asof}")
+        mmf_note = f", incl. {money(a['mmf'])} money-market" if a["mmf"] else ""
+        print(f"{a['account']}   start {money(a['start'])}{mmf_note}{asof}")
         for f in a["flows"]:
             mark = "†" if f["overdue"] else " "
             overdue_seen = overdue_seen or f["overdue"]

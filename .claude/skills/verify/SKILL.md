@@ -58,8 +58,9 @@ T=skills/finance/tools
 "$T/run" ingest.py [--write]                             # Plaid sync (fixture seam above for offline)
 "$T/run" recategorize.py [--write]                       # rules.toml -> ledger rewrite loop
 bash skills/finance/scripts/update_prices.sh --vault "$V"  # informative exit when nothing is tagged
-bash skills/finance/scripts/dashboard.sh --vault "$V"      # fava on 127.0.0.1 (Ctrl-C to stop)
-bash skills/finance/scripts/dashboard.sh --vault "$V" --app # Sara App (FastAPI, port 8787)
+bash skills/finance/scripts/dashboard.sh --vault "$V"        # Sara App (FastAPI, port 8787) — the default
+bash skills/finance/scripts/dashboard.sh --vault "$V" --fava # fava drill-down on 127.0.0.1 (Ctrl-C to stop)
+bash skills/finance/scripts/dashboard.sh --vault "$V" --home # print glance -> reports/home.html
 $V/.venv/bin/bean-check $V/ledger/main.beancount        # ledger must validate after any import
 ```
 

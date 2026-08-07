@@ -25,10 +25,10 @@ from webview import _units, latest_ledger_date, networth_series, parse_findings 
 from checks import goals as goals_config  # noqa: E402
 from checks import lane_status  # noqa: E402
 from forecast import DEFAULT_DAYS, build_forecast  # noqa: E402
-from home import (_auto_tile, _education_ctx, _machine_ctx, _networth_ctx,  # noqa: E402
-                  _next_ctx, _spend_tile, education_accounts, education_pace,
-                  findings_date, monthly_expense_totals, must_move, needs_you,
-                  sara_line, spend_pace, under_streak, window_label)
+from builders import (_auto_tile, _education_ctx, _machine_ctx, _networth_ctx,  # noqa: E402
+                      _next_ctx, _spend_tile, education_accounts, education_pace,
+                      findings_date, monthly_expense_totals, must_move, needs_you,
+                      sara_line, spend_pace, under_streak, window_label)
 
 SCHEMA = 1
 CASHFLOW_MONTHS = 13          # trailing 12 closed months + the current one
@@ -308,8 +308,8 @@ def _glance(pace, totals, lanes, edu_tile, nw_delta_plain, liquid, asof,
         "networth": {
             "value": liquid,
             "delta": nw_delta_plain,
-            "window": (f"liquid · through {asof.isoformat()}" if asof
-                       else "liquid · ledger empty"),
+            "window": (f"liquid + retirement · through {asof.isoformat()}" if asof
+                       else "liquid + retirement · ledger empty"),
         },
         "autopilot": _auto_tile(_machine_ctx(lanes)),
         "education": edu_tile,

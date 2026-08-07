@@ -182,8 +182,10 @@ Tools (`tools/`):
   `python -m sara.link <alias>` (the vault venv's python).
 - `importers/{ofx,chase_csv,invest_ofx,holdings_ofx}.py` — statement-file
   importers; thin shims into `sara/`, the canonical typed ingestion engine.
-- `webview.py` · `home.py` · `digest.py` — the static pages: dashboard,
-  Sara Home, the weekly letter (generate-only; delivery stays the
+- `builders.py` · `webview.py` — the shared read-side builders (spend pace,
+  needs-you queue, net-worth series) every surface assembles from.
+- `home.py` · `digest.py` — the static pages: the one-viewport print
+  glance and the weekly letter (generate-only; delivery stays the
   household's choice).
 - `summary.py` — the machine-readable snapshot the optional phone
   connector serves (`integrations/cloudflare-mcp/`).
@@ -194,9 +196,9 @@ Scripts (`scripts/`):
   anything misbehaves.
 - `update_prices.sh` — refresh market prices; run before reviews and
   dashboard sessions.
-- `dashboard.sh` — the visual surfaces: fava by default, `--app` SARA APP
-  (the daily driver), `--home` Sara Home, `--digest` the letter,
-  `--pretty` the static glance page.
+- `dashboard.sh` — the visual surfaces: SARA APP by default (the daily
+  driver), `--home` the print glance, `--digest` the letter, `--fava` the
+  drill-down.
 - `file_downloads.py` — identify / dedupe / rename / file downloaded PDFs.
 - `inbox-watch.plist.example` · `ingestd.plist.example` — launchd recipes
   (inbox watcher, daily Plaid sync); documented inside, never

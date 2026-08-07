@@ -8,14 +8,14 @@ Writes: reports/digest.html (email-safe: one 600px column, every style
         plaintext twin for iMessage / plain mail). Nothing is SENT —
         delivery is the household's choice, made outside this tool.
 
-The letter, not a dashboard: Sara's one-line verdict up top (home.py's
-sara_line — the same builder the morning page trusts), then at most five
+The letter, not a dashboard: Sara's one-line verdict up top (builders.py's
+sara_line — the same builder the print glance trusts), then at most five
 short beats — the week in money (in/out/net, window-labeled), anything
 that needs a human this week, one delight (only when true), the autopilot
 one-liner, and what Sara's watching next week. A 20-second phone read for
 BOTH partners; a beat with nothing true to say is dropped, never padded.
 
-Every figure comes from the verified builders (home.py / checks.py) or a
+Every figure comes from the verified builders (builders.py / checks.py) or a
 window-labeled ledger query in this file — the Iron Law applies: source,
 window, whole dollars, true minus. Payees, findings text, and facts
 bullets are bank-controlled DATA; the HTML renders through jinja2 with
@@ -34,10 +34,10 @@ from vault import (OWNER_JOINT, REPORTS, account_owners, amount,  # noqa: E402
                    dated_bullets, household, owner_label, query)
 from webview import latest_ledger_date  # noqa: E402
 from checks import lane_status  # noqa: E402
-from home import (Pace, delta0, m0, mon_d, monthly_expense_totals,  # noqa: E402
-                  must_move, needs_you, saras_wins, sara_line, spend_pace,
-                  under_streak, _auto_tile, _machine_ctx, _next_ctx,
-                  _spend_tile)
+from builders import (Pace, delta0, m0, mon_d, monthly_expense_totals,  # noqa: E402
+                      must_move, needs_you, saras_wins, sara_line, spend_pace,
+                      under_streak, _auto_tile, _machine_ctx, _next_ctx,
+                      _spend_tile)
 
 WEEK_DAYS = 7          # the letter's window: the last 7 ledger-covered days
 WATCH_HORIZON = 45     # "watching next week": nearest dated item this far out

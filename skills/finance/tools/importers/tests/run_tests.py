@@ -215,10 +215,12 @@ def main():
                   r.returncode != 0 and "DISCREPANCY" in r.stderr
                   and "BLOCKED" in r.stderr, r.stderr)
 
-            # 11. checks surface the review-queue debt
+            # 11. checks surface the review-queue gate (it fires only when
+            # uncategorized rows exceed 5% of the current month's postings —
+            # this vault is nearly all uncategorized, so it must fire)
             r = run(vault, "run_checks.py")
-            check("run_checks reports uncategorized/FIXME debt",
-                  r.returncode == 0 and "uncategorized transactions" in r.stdout, r.stdout)
+            check("run_checks fires the review-queue gate",
+                  r.returncode == 0 and "is uncategorized" in r.stdout, r.stdout)
         else:
             print("\n(skipped 3 venv-only tests: fuzzy fallback, anchored discrepancy, "
                   "run_checks — set FINANCE_TEST_VENV to run them)")

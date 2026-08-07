@@ -97,7 +97,7 @@ if [ -f "$VAULT/ledger/main.beancount" ] && [ -f "$VAULT/CLAUDE.md" ] && [ -f "$
            "$VAULT/.venv/bin/pip install beanprice"
     fi
     if "$VENV_PY" -c 'import fava' >/dev/null 2>&1; then
-      pass "vault .venv has fava (dashboard.sh)"
+      pass "vault .venv has fava (dashboard.sh --fava)"
       if "$VENV_PY" -c 'import fava_dashboards, fava_investor' >/dev/null 2>&1; then
         pass "vault .venv has fava_dashboards + fava_investor (dashboard panels)"
       else

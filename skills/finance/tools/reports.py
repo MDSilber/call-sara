@@ -3,7 +3,7 @@
 
 Run:    tools/run reports.py
 Writes: reports/net-worth.md, reports/spend-by-month.md, reports/upcoming.md,
-        reports/dashboard.html (via webview.py), reports/home.html (via home.py),
+        reports/home.html (via home.py — the one-viewport print glance),
         reports/summary.json (via summary.py — the machine-readable twin),
         reports/digest.{html,txt} (via digest.py — Sara's weekly letter),
         reports/analytics.duckdb + reports/exports/*.parquet (via
@@ -183,11 +183,13 @@ if __name__ == "__main__":
     from crosscheck import ensure_crosschecks  # noqa: E402 — the dual-computation gate
     ensure_crosschecks()  # refuses (exit 2) before anything is written
     REPORTS.mkdir(exist_ok=True)
-    from webview import dashboard  # noqa: E402 — imported lazily: webview reuses this module's math
-    from home import home  # noqa: E402 — same: home reuses this module + webview
+    # the static dashboard retired 2026-08-07 — clear a stale artifact so an
+    # old page can never be mistaken for a fresh one
+    (REPORTS / "dashboard.html").unlink(missing_ok=True)
+    from home import home  # noqa: E402 — imported lazily: home reuses this module's math
     from summary import summary  # noqa: E402 — same: the machine-readable twin
-    from digest import digest  # noqa: E402 — same: the weekly letter reuses home's builders
-    for fn in (net_worth, spend_by_month, upcoming, dashboard, home, summary, digest,
+    from digest import digest  # noqa: E402 — same: the weekly letter reuses the builders
+    for fn in (net_worth, spend_by_month, upcoming, home, summary, digest,
                analytics):
         try:
             fn()
