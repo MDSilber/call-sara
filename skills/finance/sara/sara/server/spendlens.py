@@ -9,7 +9,7 @@ snapshot's semantics number for number (tools/home.py is the reference):
   against the MEDIAN day-by-day path of the owner's last PACE_WINDOW full
   months (``spend_pace``), including the stale-ledger fallback month;
 - the category rail, merchant drill, and money in/out follow
-  ``spending_data`` / ``_cheshbon_ctx``;
+  ``spending_data`` / ``cheshbon_ctx``;
 - money leaves as display strings with named windows, numbers ride only as
   chart geometry — the same contract the snapshot keeps.
 
@@ -290,8 +290,8 @@ def _under_streak(totals: list[tuple[YM, float]], cur: YM) -> int:
 
 
 # ------------------------------------------------------------ card builders
-def _pace_ctx(pace: Pace, owner: str) -> dict[str, object]:
-    """home._pace_ctx, with the card titled for the person it paces."""
+def pace_ctx(pace: Pace, owner: str) -> dict[str, object]:
+    """home.pace_ctx, with the card titled for the person it paces."""
     cur_lbl = _mon_yr(pace.cur)
     month_name = MONTH_ABBR[pace.cur[1]]
     month_full = MONTH_FULL[pace.cur[1]]
@@ -383,7 +383,7 @@ def _pace_chart(pace: Pace) -> dict[str, object] | None:
 
 
 def _tile(pace: Pace, streak: int) -> dict[str, object]:
-    """home._spend_tile: verdict first, number second, ±PACE_BAND band."""
+    """home.spend_tile: verdict first, number second, ±PACE_BAND band."""
     month_name = MONTH_ABBR[pace.cur[1]]
     tile: dict[str, object] = {
         "verdict": "Finding pace", "cls": "", "fig": "", "glow": False,
@@ -539,7 +539,7 @@ def _month_in_out(owner: str, ym: YM) -> tuple[float, float]:
 
 
 def _cheshbon(owner: str, pace: Pace) -> dict[str, object]:
-    """home._cheshbon_ctx, owner-sliced: this month's in/out and how last
+    """home.cheshbon_ctx, owner-sliced: this month's in/out and how last
     month closed, payday-timing honesty included."""
     ym = pace.cur
     inc, exp = _month_in_out(owner, ym)
@@ -585,7 +585,7 @@ def build(owner: str, now: datetime | None = None) -> dict[str, object]:
     pace = _paced(owner, today, asof, totals)
     return {
         "owner": owner,
-        "pace": _pace_ctx(pace, owner),
+        "pace": pace_ctx(pace, owner),
         "pace_chart": _pace_chart(pace),
         "tile": _tile(pace, _under_streak(totals, pace.cur)),
         "rooms": _rooms(owner, pace),

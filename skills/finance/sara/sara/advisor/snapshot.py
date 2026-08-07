@@ -33,20 +33,20 @@ from sara.advisor.home import (
     MONTH_FULL,
     Card,
     Pace,
-    _attribution_ctx,
-    _auto_tile,
-    _cheshbon_ctx,
-    _education_ctx,
-    _machine_ctx,
-    _moneymap_ctx,
-    _networth_ctx,
-    _next_ctx,
+    attribution_ctx,
+    auto_tile,
+    cheshbon_ctx,
+    education_ctx,
+    machine_ctx,
+    moneymap_ctx,
+    networth_ctx,
+    next_ctx,
     _nw_chart_data,
     _pace_chart_data,
-    _pace_ctx,
-    _sparkline,
-    _spend_tile,
-    _wins_ctx,
+    pace_ctx,
+    sparkline,
+    spend_tile,
+    wins_ctx,
     education_accounts,
     education_pace,
     findings_date,
@@ -256,9 +256,9 @@ def _since_line(lanes: list[dict[str, object]], today: date) -> str | None:
 
 
 def _autopilot_tile(mach: dict[str, object]) -> dict[str, object]:
-    """_auto_tile with the copy in civilian words: every count carries a
+    """auto_tile with the copy in civilian words: every count carries a
     noun, and 'watching for a first arrival' says what is being watched."""
-    tile = _auto_tile(mach)
+    tile = auto_tile(mach)
     rows = cast("list[dict[str, object]]", mach["rows"])
     n = len(rows)
     if not n:
@@ -289,11 +289,11 @@ def glance(now: datetime | None = None) -> dict[str, object]:
     pace = _paced(today, asof, totals)
     cards, more, needs_state = needs_you(today)
     lanes = lane_status(today)
-    mach = _machine_ctx(lanes)
+    mach = machine_ctx(lanes)
     series, cut = networth_series(liquid, asof)
-    nw = _networth_ctx(series, cut, liquid, asof)
+    nw = networth_ctx(series, cut, liquid, asof)
     edu_accounts = education_accounts()
-    edu = _education_ctx(edu_accounts,
+    edu = education_ctx(edu_accounts,
                          education_pace(edu_accounts) if edu_accounts else None,
                          goals, today)
     moves = [mv for mv in must_move(today) if not mv["plumbing"]]
@@ -312,7 +312,7 @@ def glance(now: datetime | None = None) -> dict[str, object]:
                          else "Ledger empty"),
         "checks_stamp": (f"checks from {checks_from}" if checks_from else ""),
         "tiles": {
-            "spend": _spend_tile(pace, under_streak(totals, pace.cur)),
+            "spend": spend_tile(pace, under_streak(totals, pace.cur)),
             "networth": {
                 "value": m0(liquid),
                 "delta": ({"cls": nw["delta"]["cls"],
@@ -320,7 +320,7 @@ def glance(now: datetime | None = None) -> dict[str, object]:
                           if nw["delta"] else None),
                 # under four month-ends a sparkline is noise — number + delta
                 # carry the tile until the history earns a shape
-                "spark": (_sparkline(series)
+                "spark": (sparkline(series)
                           if len(series) >= SPARK_MIN_POINTS else None),
                 "sub": "liquid · " + nw["asof"],
                 "glow": bool(nw["delta"] and nw["delta"]["cls"] == "good"),
@@ -330,7 +330,7 @@ def glance(now: datetime | None = None) -> dict[str, object]:
                                         today),
         },
         "since": _since_line(lanes, today),
-        "next": _next_ctx(needs_state, cards, more, moves),
+        "next": next_ctx(needs_state, cards, more, moves),
     }))
 
 
@@ -455,12 +455,12 @@ def spend(now: datetime | None = None) -> dict[str, object]:
                if not k.startswith("table_") and k != "six_lbl"}
               if sp else None)
     return cast(dict[str, object], clean({
-        "pace": _pace_ctx(pace),
+        "pace": pace_ctx(pace),
         "pace_chart": _pace_chart_data(pace),
-        "tile": _spend_tile(pace, under_streak(totals, pace.cur)),
+        "tile": spend_tile(pace, under_streak(totals, pace.cur)),
         "rooms": island,
-        "cheshbon": _cheshbon_ctx(pace),
-        "wins": _wins_ctx(saras_wins(today), today),
+        "cheshbon": cheshbon_ctx(pace),
+        "wins": wins_ctx(saras_wins(today), today),
     }))
 
 
@@ -492,11 +492,11 @@ def networth() -> dict[str, object]:
     series, cut = networth_series(liquid, asof)
     paper = paper_value()
     return cast(dict[str, object], clean({
-        "headline": _networth_ctx(series, cut, liquid, asof),
+        "headline": networth_ctx(series, cut, liquid, asof),
         "chart": _nw_chart_data(series, asof),
-        "spark": _sparkline(series),
-        "attribution": _attribution_ctx(series, asof),
-        "map": _moneymap_ctx(balances, liquid, asof),
+        "spark": sparkline(series),
+        "attribution": attribution_ctx(series, asof),
+        "map": moneymap_ctx(balances, liquid, asof),
         "cash": _cash_story(),
         "paper": m0(paper) if paper else None,
         "unpriced": [a for a, _ in unpriced],
@@ -619,7 +619,7 @@ def goals_payload(now: datetime | None = None) -> dict[str, object]:
     today = now.date()
     goals = goals_config()
     edu_accounts = education_accounts()
-    edu = _education_ctx(edu_accounts,
+    edu = education_ctx(edu_accounts,
                          education_pace(edu_accounts) if edu_accounts else None,
                          goals, today)
     balances, _ = liquid_balances()
@@ -643,7 +643,7 @@ def goals_payload(now: datetime | None = None) -> dict[str, object]:
 def autopilot(now: datetime | None = None) -> dict[str, object]:
     now = now or datetime.now()
     today = now.date()
-    mach = _machine_ctx(lane_status(today))
+    mach = machine_ctx(lane_status(today))
     findings, counts, errors = parse_findings()
     queue = action_queue(findings) if findings else []
     dismissed = load_dismissals()

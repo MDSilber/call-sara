@@ -22,11 +22,11 @@ from sara.advisor.dismissals import active_ids, finding_id, load_dismissals
 from sara.advisor.home import (
     SMALL_NUMS,
     EduAccount,
-    _education_ctx,
-    _next_ctx,
+    education_ctx,
     findings_date,
     must_move,
     needs_you,
+    next_ctx,
 )
 from sara.advisor.snapshot import (
     GOAL_KEYS,
@@ -105,7 +105,7 @@ def patch_glance(snapshot: dict[str, object],
         out["tiles"] = t
     out["generated_at"] = now.isoformat(timespec="seconds")
     out["next"] = cast("dict[str, object]",
-                       clean(_next_ctx(needs_state, cards, more, moves)))
+                       clean(next_ctx(needs_state, cards, more, moves)))
     return out
 
 
@@ -157,7 +157,7 @@ def goals_live(summary_data: dict[str, object],
                 if isinstance(a, dict)]
     pace_raw = edu_section.get("contribution_pace_monthly")
     pace = float(pace_raw) if isinstance(pace_raw, (int, float)) else None
-    education = _education_ctx(accounts, pace, goals, today)
+    education = education_ctx(accounts, pace, goals, today)
     nw_raw = summary_data.get("networth")
     liquid = float((nw_raw or {}).get("liquid") or 0.0) if isinstance(nw_raw, dict) else 0.0
 

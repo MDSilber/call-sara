@@ -1,3 +1,4 @@
+# pyright: strict
 #!/usr/bin/env python3
 """Generate the vault's reports/ from the ledger + facts. Deterministic — no judgment.
 
@@ -11,28 +12,33 @@ Writes: reports/net-worth.md, reports/spend-by-month.md, reports/upcoming.md,
         when duckdb isn't installed)
 Arithmetic is code; the agent reads these files and reasons about them.
 """
+from __future__ import annotations
+
 import re
 import sys
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 from sara.vault import (OWNER_JOINT, OWNER_UNASSIGNED, REPORTS, VAULT, account_owners,
                    amount, dated_bullets, illiquid_currency_regex, money, query,
                    shadow_currency)
+from sara.advisor.types import YM, Money
 
 
-def stamp(name):
+def stamp(name: str) -> str:
     return f"_Generated {date.today().isoformat()} by tools/{name} — regenerable, do not hand-edit._\n"
 
 
 # ---------------------------------------------------------------- net worth
-def liquid_balances():
+def liquid_balances() -> tuple[list[tuple[str, Money]], list[tuple[str, str]]]:
     """Per-account spendable USD, excluding illiquid commodities."""
     excl = illiquid_currency_regex()
     where = "account ~ '^(Assets|Liabilities)'" + (f" AND NOT currency ~ '{excl}'" if excl else "")
     rows = query(f"SELECT account, sum(convert(position, 'USD')) AS bal WHERE {where} "
                  f"GROUP BY account ORDER BY account")
-    out, unpriced = [], []
+    out: list[tuple[str, Money]] = []
+    unpriced: list[tuple[str, str]] = []
     for r in rows:
         cell = r["bal"] or ""
         if not cell.strip():
@@ -47,7 +53,7 @@ def liquid_balances():
     return out, unpriced
 
 
-def owner_rollup(balances):
+def owner_rollup(balances: list[tuple[str, Money]]) -> list[tuple[str, Money, int]]:
     """Per-owner liquid totals from the SAME balances rows as the headline:
     [(owner, usd, n_accounts)] — people alphabetically, then 'joint', then
     'unassigned' (accounts with no owner metadata). Empty list when the
@@ -56,20 +62,20 @@ def owner_rollup(balances):
     owners = account_owners()
     if not owners:
         return []
-    sums = {}
+    sums: dict[str, list[Any]] = {}  # owner -> [Money, n_accounts], a mutable pair
     for acct, v in balances:
         who = owners.get(acct, OWNER_UNASSIGNED)
         row = sums.setdefault(who, [0.0, 0])
         row[0] += v
         row[1] += 1
 
-    def rank(who):
+    def rank(who: str) -> tuple[int, str]:
         return (2 if who == OWNER_UNASSIGNED else 1 if who == OWNER_JOINT else 0, who)
 
     return [(who, val, n) for who, (val, n) in sorted(sums.items(), key=lambda kv: rank(kv[0]))]
 
 
-def paper_value():
+def paper_value() -> Money:
     """Illiquid holdings valued in the shadow currency, or 0 if none configured."""
     excl = illiquid_currency_regex()
     if not excl:
@@ -79,7 +85,7 @@ def paper_value():
     return amount(rows[0]["v"], shadow_currency()) if rows and rows[0].get("v") else 0.0
 
 
-def net_worth():
+def net_worth() -> None:
     balances, unpriced = liquid_balances()
     assets = sum(v for a, v in balances if a.startswith("Assets"))
     liabilities = sum(v for a, v in balances if a.startswith("Liabilities"))
@@ -103,7 +109,7 @@ def net_worth():
 
 
 # ------------------------------------------------------------- spend by mo
-def spend_matrix(months_back=13):
+def spend_matrix(months_back: int = 13) -> tuple[list[YM], dict[str, dict[YM, Money]]]:
     """(months, {category: {ym: amt}}) over the last `months_back` months
     with expense activity — the data behind spend-by-month.md; summary.py
     serializes the same matrix."""
@@ -113,7 +119,7 @@ def spend_matrix(months_back=13):
                  "GROUP BY year, month, category ORDER BY year, month, category")
     months = sorted({(int(r["year"]), int(r["month"])) for r in rows})[-months_back:]
     keep = set(months)
-    cats = {}
+    cats: dict[str, dict[YM, Money]] = {}
     for r in rows:
         ym = (int(r["year"]), int(r["month"]))
         if ym not in keep:
@@ -123,7 +129,7 @@ def spend_matrix(months_back=13):
     return months, cats
 
 
-def spend_by_month(months_back=13):
+def spend_by_month(months_back: int = 13) -> None:
     months, cats = spend_matrix(months_back)
     header = "| Category | " + " | ".join(f"{y}-{m:02d}" for y, m in months) + " | Total |"
     sep = "|---" * (len(months) + 2) + "|"
@@ -141,7 +147,7 @@ def spend_by_month(months_back=13):
 
 
 # ----------------------------------------------------------------- upcoming
-def upcoming():
+def upcoming() -> None:
     today = date.today()
     lines = ["# Upcoming\n", stamp("reports.py"),
              "Every `- YYYY-MM-DD — …` bullet across facts/, soonest first. "
@@ -164,7 +170,7 @@ def upcoming():
 
 
 # ---------------------------------------------------------------- analytics
-def analytics():
+def analytics() -> None:
     """Rebuild reports/analytics.duckdb + exports/ — the ledger's SQL shadow
     (a regenerated cache, never an archive; sara.analytics owns the build
     and refuses to emit unless its own cross-checks agree)."""

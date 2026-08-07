@@ -22,8 +22,8 @@ from sara.advisor.webview import _units, latest_ledger_date, networth_series, pa
 from sara.advisor.checks import goals as goals_config
 from sara.advisor.checks import lane_status
 from sara.advisor.forecast import DEFAULT_DAYS, build_forecast
-from sara.advisor.builders import (_auto_tile, _education_ctx, _machine_ctx, _networth_ctx,
-                      _next_ctx, _spend_tile, education_accounts, education_pace,
+from sara.advisor.builders import (auto_tile, education_ctx, machine_ctx, networth_ctx,
+                      next_ctx, spend_tile, education_accounts, education_pace,
                       findings_date, monthly_expense_totals, must_move, needs_you,
                       sara_line, spend_pace, under_streak, window_label)
 
@@ -230,7 +230,7 @@ def _forecast(today):
 
 
 def _autopilot(lanes):
-    mach = _machine_ctx(lanes)
+    mach = machine_ctx(lanes)
     return {
         "window": mach["window"], "summary": mach["summary"],
         "lanes": [{"name": r["name"], "kind": r["kind"],
@@ -303,17 +303,17 @@ def _glance(pace, totals, lanes, edu_tile, nw_delta_plain, liquid, asof,
             today, daypart="morning"):
     cards, more, needs_state = needs_you(today)
     moves_human = [mv for mv in must_move(today) if not mv["plumbing"]]
-    nxt = _next_ctx(needs_state, cards, more, moves_human)
+    nxt = next_ctx(needs_state, cards, more, moves_human)
     return {
         "sara": sara_line(pace, needs_state, cards, more, daypart),
-        "spend": _spend_tile(pace, under_streak(totals, pace.cur)),
+        "spend": spend_tile(pace, under_streak(totals, pace.cur)),
         "networth": {
             "value": liquid,
             "delta": nw_delta_plain,
             "window": (f"liquid + retirement · through {asof.isoformat()}" if asof
                        else "liquid + retirement · ledger empty"),
         },
-        "autopilot": _auto_tile(_machine_ctx(lanes)),
+        "autopilot": auto_tile(machine_ctx(lanes)),
         "education": edu_tile,
         "next": {"label": nxt["label"], "text": _plain(nxt["text"]),
                  "meta": _plain(nxt["meta"])},
@@ -344,15 +344,15 @@ def build_summary(now: datetime | None = None) -> dict:
         last_m = max(ym for ym, _ in totals)     # as home.build_page
         if last_m < pace.cur:
             pace = spend_pace(today, asof, totals, month=last_m)
-    spend_tile = _spend_tile(pace, under_streak(totals, pace.cur))
+    spend_tile = spend_tile(pace, under_streak(totals, pace.cur))
     months, cats = spend_matrix()
 
     lanes = lane_status(today)
     edu_accounts = education_accounts()
     edu_pace = education_pace(edu_accounts) if edu_accounts else None
-    edu_tile = _education_ctx(edu_accounts, edu_pace, goals, today)["tile"]
+    edu_tile = education_ctx(edu_accounts, edu_pace, goals, today)["tile"]
 
-    nw_delta = _networth_ctx(series, _cut, liquid, asof)["delta"]
+    nw_delta = networth_ctx(series, _cut, liquid, asof)["delta"]
     nw_delta_plain = _plain(nw_delta["body"]) if nw_delta else None
 
     hour = now.hour

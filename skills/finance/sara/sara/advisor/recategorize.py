@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pyright: strict
 """Re-run rules.toml over transactions already in the ledger.
 
 The loop is: notice a wrong/missing category -> add a [[payee_rules]] entry ->
@@ -18,6 +19,8 @@ import re
 from decimal import Decimal, InvalidOperation
 import subprocess
 import sys
+from dataclasses import dataclass, field
+from pathlib import Path
 
 from sara.rules import categorize
 from sara.vault import BEAN_CHECK, LEDGER, VAULT
@@ -27,8 +30,18 @@ TXN_HEADER = re.compile(r'^(\d{4}-\d{2}-\d{2}) [*!] "([^"]*)"')
 POSTING = re.compile(r"^(\s+)([A-Z][\w:-]+)(\s+(-?[\d.,]+) USD)?\s*$")
 META = re.compile(r'^\s+(?:ofx-type|chase-type|type): "([^"]*)"')
 
+Change = tuple[str, str]  # (payee, new counter-account)
 
-def _flush(block, target, out, changes):
+
+@dataclass
+class _Txn:
+    """One buffered transaction: header payee, its type meta, its raw lines."""
+    payee: str
+    ofx_type: str = ""
+    body: list[str] = field(default_factory=lambda: list[str]())
+
+
+def _flush(block: _Txn, target: str, out: list[str], changes: list[Change]) -> None:
     """Rewrite the buffered transaction's bare target posting, if any.
 
     The fallback income-vs-expense call keys on the REWRITTEN leg's own
@@ -38,8 +51,11 @@ def _flush(block, target, out, changes):
     Keying on whichever explicit amount happened to be parsed LAST (the old
     behavior) flipped a three-leg expense split into Income:US:Other.
     """
-    payee, ofx_type, body = block
-    explicit_sum, primary_acct, target_at, parse_ok = Decimal(0), "", None, True
+    payee, ofx_type, body = block.payee, block.ofx_type, block.body
+    explicit_sum = Decimal(0)
+    primary_acct = ""
+    target_at: int | None = None
+    parse_ok = True
     for j, line in enumerate(body):
         p = POSTING.match(line)
         if not p:
@@ -64,27 +80,28 @@ def _flush(block, target, out, changes):
     out.extend(body)
 
 
-def rewrite(path, target):
+def rewrite(path: Path, target: str) -> tuple[str, list[Change]]:
     """-> (new_text, changes). Buffers each transaction WHOLE before deciding:
     the residual needs every explicit leg, and the bare counter-posting is
     not always last."""
     lines = path.read_text().splitlines(keepends=True)
-    out, changes = [], []
-    block = None  # [payee, ofx_type, [buffered lines]]
+    out: list[str] = []
+    changes: list[Change] = []
+    block: _Txn | None = None
     for line in lines:
         h = TXN_HEADER.match(line)
         indented = line[:1] in (" ", "\t") and bool(line.strip())
         if block is not None and not h and indented:
             mm = META.match(line)
             if mm:
-                block[1] = mm.group(1)
-            block[2].append(line)
+                block.ofx_type = mm.group(1)
+            block.body.append(line)
             continue
         if block is not None:
             _flush(block, target, out, changes)
             block = None
         if h:
-            block = [h.group(2), "", [line]]
+            block = _Txn(payee=h.group(2), body=[line])
         else:
             out.append(line)
     if block is not None:
@@ -92,7 +109,7 @@ def rewrite(path, target):
     return "".join(out), changes
 
 
-def main():
+def main() -> None:
     args = sys.argv[1:]
     write = "--write" in args
     target = "Expenses:Uncategorized"
@@ -102,7 +119,8 @@ def main():
         if not value or value.startswith("--"):
             sys.exit("--target needs an account name\n\n" + (__doc__ or ""))
         target = value
-    total, staged = 0, []
+    total = 0
+    staged: list[tuple[Path, str, str]] = []
     for f in sorted((VAULT / "ledger").glob("*.beancount")):
         original = f.read_text()
         new_text, changes = rewrite(f, target)
@@ -110,10 +128,12 @@ def main():
             total += len(changes)
             staged.append((f, original, new_text))
             print(f"{f.name}: {len(changes)} {'rewritten' if write else 'would change'}")
-            counts = {}
+            counts: dict[str, int] = {}
             for _payee, acct in changes:
                 counts[acct] = counts.get(acct, 0) + 1
-            for acct, n in sorted(counts.items(), key=lambda kv: -kv[1]):
+            def by_count(kv: tuple[str, int]) -> int:
+                return -kv[1]
+            for acct, n in sorted(counts.items(), key=by_count):
                 print(f"    {n:4}  -> {acct}")
     if total == 0:
         print(f"nothing to change — every {target} posting is still unmatched by rules.toml")
@@ -128,7 +148,7 @@ def main():
     for f, _original, new_text in staged:
         atomic_write(f, new_text)
     if BEAN_CHECK.exists():
-        out = subprocess.run([str(BEAN_CHECK), str(LEDGER)], capture_output=True, text=True)
+        out = subprocess.run([str(BEAN_CHECK), str(LEDGER)], capture_output=True, text=True, check=False)
         if out.returncode != 0:
             for f, original, _new_text in staged:
                 atomic_write(f, original)

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pyright: strict
 """Generate reports/home.html — the one-viewport PRINT GLANCE.
 
 Run:    tools/run home.py
@@ -48,22 +49,22 @@ from sara.advisor.builders import (  # noqa: F401
     Card,
     EduAccount,
     Pace,
-    _attribution_ctx,
-    _auto_tile,
-    _cheshbon_ctx,
+    attribution_ctx,
+    auto_tile,
+    cheshbon_ctx,
     _codespans,
-    _education_ctx,
-    _machine_ctx,
-    _moneymap_ctx,
-    _networth_ctx,
-    _next_ctx,
+    education_ctx,
+    machine_ctx,
+    moneymap_ctx,
+    networth_ctx,
+    next_ctx,
     _nw_chart_data,
     _pace_chart_data,
-    _pace_ctx,
-    _sparkline,
-    _spend_tile,
-    _thesis_ctx,
-    _wins_ctx,
+    pace_ctx,
+    sparkline,
+    spend_tile,
+    thesis_ctx,
+    wins_ctx,
     delta0,
     education_accounts,
     education_pace,
@@ -219,22 +220,22 @@ def build_page(now: datetime | None = None) -> str:
         if last_m < pace.cur:
             pace = spend_pace(today, asof, totals, month=last_m)
     series, baseline_cut = networth_series(liquid, asof)
-    nw = _networth_ctx(series, baseline_cut, liquid, asof)
+    nw = networth_ctx(series, baseline_cut, liquid, asof)
     cards, more, needs_state = needs_you(today)
     moves = [mv for mv in must_move(today) if not mv["plumbing"]]
     edu_accounts = education_accounts()
     edu_pace = education_pace(edu_accounts) if edu_accounts else None
-    edu = _education_ctx(edu_accounts, edu_pace, goals_config(), today)
-    mach = _machine_ctx(lane_status(today))
+    edu = education_ctx(edu_accounts, edu_pace, goals_config(), today)
+    mach = machine_ctx(lane_status(today))
 
     delta = nw["delta"]
     glance = {
-        "spend": _spend_tile(pace, under_streak(totals, pace.cur)),
+        "spend": spend_tile(pace, under_streak(totals, pace.cur)),
         "nw": {"v": m0(liquid),
                # the delta chip, tags stripped — <b> is a screen affordance
                "chip": re.sub(r"<[^>]+>", "", str(delta["body"])) if delta else "",
                "sub": "liquid + retirement · " + nw["asof"]},
-        "auto": _auto_tile(mach),
+        "auto": auto_tile(mach),
         "edu": edu["tile"],
     }
     names = household("names")
@@ -254,7 +255,7 @@ def build_page(now: datetime | None = None) -> str:
                       else "Ledger empty"),
         checks_stamp=checks_stamp,
         g=glance,
-        nxt=_ink(_next_ctx(needs_state, cards, more, moves)),
+        nxt=_ink(next_ctx(needs_state, cards, more, moves)),
         paper=m0(paper) if paper else None)
 
 

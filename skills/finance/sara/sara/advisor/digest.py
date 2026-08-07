@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pyright: strict
 """Generate reports/digest.html + digest.txt — Sara's weekly letter.
 
 Run:    tools/run digest.py
@@ -33,8 +34,8 @@ from sara.advisor.webview import latest_ledger_date
 from sara.advisor.checks import lane_status
 from sara.advisor.builders import (Pace, delta0, m0, mon_d, monthly_expense_totals,
                       must_move, needs_you, saras_wins, sara_line, spend_pace,
-                      under_streak, _auto_tile, _machine_ctx, _next_ctx,
-                      _spend_tile)
+                      under_streak, auto_tile, machine_ctx, next_ctx,
+                      spend_tile)
 
 WEEK_DAYS = 7          # the letter's window: the last 7 ledger-covered days
 WATCH_HORIZON = 45     # "watching next week": nearest dated item this far out
@@ -78,7 +79,7 @@ def _week_beat(today: date, asof: date | None, pace: Pace,
     # net of the ROUNDED pair, so the three displayed figures always agree
     # when a reader subtracts them (whole-dollar display drifts ≤ $1)
     net = round(inflow) - round(outflow)
-    tile = _spend_tile(pace, streak)
+    tile = spend_tile(pace, streak)
     pace_line = ""
     if pace.typical is not None:
         pace_line = f"{tile['verdict']} for the month — {tile['fig']} ({tile['sub']})."
@@ -144,9 +145,9 @@ def _delight_beat(today: date, totals: list, pace: Pace) -> dict | None:
 
 
 def _auto_beat(lanes: list[dict]) -> dict | None:
-    """Beat 4 — autopilot health in one line, the same _auto_tile the
+    """Beat 4 — autopilot health in one line, the same auto_tile the
     morning page shows. Nothing wired = nothing to report weekly."""
-    tile = _auto_tile(_machine_ctx(lanes))
+    tile = auto_tile(machine_ctx(lanes))
     if not tile["dots"]:
         return None
     return {"text": f"{tile['verdict']} — {tile['sub']}.", "cls": tile["cls"]}
@@ -260,7 +261,7 @@ def build_letter(now: datetime | None = None) -> tuple[str, str]:
 
     lanes = lane_status(today)
     week = _week_beat(today, asof, pace, streak)
-    needs = _needs_beat(_next_ctx(needs_state, cards, more, moves), lanes)
+    needs = _needs_beat(next_ctx(needs_state, cards, more, moves), lanes)
     delight = _delight_beat(today, totals, pace)
     auto = _auto_beat(lanes)
     watch = _watch_beat(today, needs["text_plain"] if needs else "")

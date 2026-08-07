@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# pyright: strict
 """The planner's checks. Deterministic; each returns a list of findings.
 
 A finding: {"check", "severity", "title", "detail"} — no side effects here.

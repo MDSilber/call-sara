@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pyright: strict
 """Scan $VAULT/inbox/ — the household drop zone — identify, file, hand off.
 
 Usage:
@@ -31,6 +32,7 @@ rules.toml fields, never echoed from the upload's own name.
 import re
 import shutil
 import sys
+from typing import Any
 from datetime import date, datetime
 from pathlib import Path
 
@@ -68,16 +70,16 @@ def _ofx_date(text: str) -> date:
     return date.today()
 
 
-def _dest_for(entry: dict) -> Path:
+def _dest_for(entry: dict[str, Any]) -> Path:
     """documents/<Assets|Liabilities>/<CC>/<Institution>/<Owner>/ mirrored
     from the routed ledger account + the [[accounts]] entry (fetching.md's
     filing convention)."""
     parts = str(entry.get("ledger_account", "")).split(":")
     root = parts[0] if parts and parts[0] in ("Assets", "Liabilities") else "Assets"
     country = parts[1] if len(parts) > 2 and re.fullmatch(r"[A-Z]{2}", parts[1] or "") else "US"
-    inst = _slug(entry.get("institution") or (parts[2] if len(parts) > 3 else "Unknown"),
+    inst = _slug(str(entry.get("institution") or (parts[2] if len(parts) > 3 else "Unknown")),
                  keep_case=True)
-    owner = _slug(entry.get("owner") or "shared")
+    owner = _slug(str(entry.get("owner") or "shared"))
     return DOCUMENTS / root / country / inst / owner
 
 
@@ -89,7 +91,7 @@ class Item:
     def __init__(self, path: Path, label: str, note: str,
                  dest: Path | None = None, name: str = "",
                  cmd: str = "", importer: str = "",
-                 import_args: tuple = ()):
+                 import_args: tuple[str, ...] = ()):
         self.path, self.label, self.note = path, label, note
         self.dest, self.name, self.cmd = dest, name, cmd
         self.importer, self.import_args = importer, import_args
@@ -188,9 +190,13 @@ def identify(path: Path) -> Item:
 
 
 def scan() -> list[Item]:
-    items, seen = [], {}
-    # shortest name first, so "x.qfx" is kept over "x (1).qfx" re-downloads
-    for p in sorted(INBOX.iterdir(), key=lambda x: (len(x.name), x.name)):
+    items: list[Item] = []
+    seen: dict[str, Path] = {}
+
+    def shortest_first(x: Path) -> tuple[int, str]:
+        # so "x.qfx" is kept over "x (1).qfx" re-downloads
+        return (len(x.name), x.name)
+    for p in sorted(INBOX.iterdir(), key=shortest_first):
         if p.name.startswith(".") or not p.is_file():
             continue
         h = md5(p)
@@ -217,7 +223,7 @@ def main() -> None:
     for i in items:
         print(f"{i.path.name:<{wide}}  {i.label}")
         note = i.note
-        if i.files and write:
+        if i.dest is not None and write:
             try:
                 target = file_document(i.path, i.dest, i.name)
                 note = f"filed → {target.relative_to(VAULT)}"

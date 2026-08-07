@@ -816,7 +816,7 @@ def under_streak(totals: list[tuple[YM, float]], cur: YM) -> int:
     return n
 
 
-def _sparkline(series: list[dict]) -> dict | None:
+def sparkline(series: list[dict]) -> dict | None:
     """The net-worth tile's little line: up to SPARK_MONTHS month-ends,
     normalized into a 100×30 viewBox in Python (JS never touches it)."""
     vals = [p["v"] for p in series][-SPARK_MONTHS:]
@@ -882,7 +882,7 @@ def _codespans(text: str) -> Markup:
 
 
 # ------------------------------------------------------- context builders
-def _pace_ctx(pace: Pace) -> dict:
+def pace_ctx(pace: Pace) -> dict:
     """The spend-pace card, framed as "is this month unusual?" — the hero is
     the delta vs the typical PATH, never a budget allowance."""
     cur_lbl = month_label(*pace.cur)
@@ -944,7 +944,7 @@ def _pace_ctx(pace: Pace) -> dict:
     }
 
 
-def _spend_tile(pace: Pace, streak: int) -> dict:
+def spend_tile(pace: Pace, streak: int) -> dict:
     """Verdict first, number second: Under pace / On pace / Running hot,
     judged against the typical path with a ±PACE_BAND band. The streak chip
     appears only when ≥ 2 closed months ran under their own typical."""
@@ -984,7 +984,7 @@ def _spend_tile(pace: Pace, streak: int) -> dict:
     return tile
 
 
-def _auto_tile(mach: dict) -> dict:
+def auto_tile(mach: dict) -> dict:
     """The machine, as one verdict + one dot per lane."""
     rows = mach["rows"]
     n = len(rows)
@@ -1009,7 +1009,7 @@ def _auto_tile(mach: dict) -> dict:
             "aria": f"{green} of {n} lanes green"}
 
 
-def _next_ctx(needs_state: str, cards: list[Card], more: int,
+def next_ctx(needs_state: str, cards: list[Card], more: int,
               moves_human: list[dict]) -> dict:
     """THE one next action under the tiles: the top alert, else the nearest
     dated obligation (deadline card or money that must move), else honest
@@ -1059,7 +1059,7 @@ LANE_DOT = {"ok": "ok", "intact": "ok", "pending": "watch",
             "overdue": "bad", "below": "bad", "invalid": "mut"}
 
 
-def _machine_ctx(rows: list[dict]) -> dict:
+def machine_ctx(rows: list[dict]) -> dict:
     """The machine panel, rendered from checks.lane_status() — the same
     detector the findings use, so panel and findings can never disagree."""
     out = []
@@ -1109,7 +1109,7 @@ def _machine_ctx(rows: list[dict]) -> dict:
             "summary": " · ".join(bits) if n else ""}
 
 
-def _education_ctx(accounts: list[EduAccount], pace: float | None,
+def education_ctx(accounts: list[EduAccount], pace: float | None,
                    goals: dict, today: date) -> dict:
     """The 529 card (Goals room) AND its glance tile, one source of truth.
     `tile` = {label, verdict, cls, fig, sub}; `grid` = the what-if slider's
@@ -1189,7 +1189,7 @@ def _education_ctx(accounts: list[EduAccount], pace: float | None,
     return ctx
 
 
-def _wins_ctx(wins: dict | None, today: date) -> dict | None:
+def wins_ctx(wins: dict | None, today: date) -> dict | None:
     if not wins:
         return None
     n = len(wins["items"])
@@ -1203,7 +1203,7 @@ def _wins_ctx(wins: dict | None, today: date) -> dict | None:
     }
 
 
-def _networth_ctx(series: list[dict], baseline_cut: int, liquid: float,
+def networth_ctx(series: list[dict], baseline_cut: int, liquid: float,
                   asof: date | None) -> dict:
     delta = None
     if len(series) >= 2:
@@ -1295,7 +1295,7 @@ def _boundary_staleness(boundary: date, held: list[tuple[str, float]],
     return share, worst, oldest
 
 
-def _attribution_ctx(series: list[dict], asof: date | None) -> dict | None:
+def attribution_ctx(series: list[dict], asof: date | None) -> dict | None:
     """"Why it moved": this month and the last closed month, each split into
     markets vs saved vs spent. Saved/spent come from the ledger's booked
     postings; the market effect is the residual of the valuation change
@@ -1368,7 +1368,7 @@ def _attribution_ctx(series: list[dict], asof: date | None) -> dict | None:
 
 
 # ---------------------------------------------------------- vs the thesis
-def _thesis_ctx(view, asof: date | None) -> dict:
+def thesis_ctx(view, asof: date | None) -> dict:
     """The drift strip: declared target mix vs the live portfolio, loud only
     when a class sits outside its band, plus the concentration line."""
     if view is None:
@@ -1434,7 +1434,7 @@ def _thesis_ctx(view, asof: date | None) -> dict:
     }
 
 
-def _cheshbon_ctx(pace: Pace) -> dict:
+def cheshbon_ctx(pace: Pace) -> dict:
     """This month's money in vs out and how last month closed. Categories
     live next door in the clickable rail, so this card stays three numbers.
     Follows the paced month so a stale ledger shows its latest real month,
@@ -1474,7 +1474,7 @@ def _cheshbon_ctx(pace: Pace) -> dict:
     }
 
 
-def _moneymap_ctx(balances: list[tuple[str, float]], liquid: float,
+def moneymap_ctx(balances: list[tuple[str, float]], liquid: float,
                   asof: date | None) -> dict | None:
     """The Money-map card: treemap payload + its window + the no-JS table
     (every liquid account, liabilities included; an Owner column joins it

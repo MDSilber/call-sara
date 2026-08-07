@@ -1,3 +1,4 @@
+# pyright: strict
 #!/usr/bin/env python3
 """Dual-computation gate — key report figures must agree across two
 independent code paths before any report is emitted.

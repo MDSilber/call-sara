@@ -1,3 +1,4 @@
+# pyright: strict
 #!/usr/bin/env python3
 """Cash-flow forecast — the next N days of KNOWN flows, per account and household.
 
@@ -25,6 +26,8 @@ The cadence machinery generalizes checks.py's subscription detector to ALL
 regular streams — income + expense + transfer — on cash (USD) accounts.
 Read-only: never writes to the vault.
 """
+from __future__ import annotations
+
 import calendar
 import re
 import sys

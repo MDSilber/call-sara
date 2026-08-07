@@ -1,3 +1,4 @@
+# pyright: strict
 """Allocation vs the thesis: declared targets, the live mix, concentration.
 
 The household declares its target mix once, in rules.toml:
@@ -29,6 +30,8 @@ A metadata class maps onto a declared class by exact name, else by prefix
 ("equity_us" rolls up into a declared "equity"). The class names "cash" and
 "other" are reserved: they are never drift-scored.
 """
+from __future__ import annotations
+
 import re
 from dataclasses import dataclass
 
