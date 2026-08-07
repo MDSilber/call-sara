@@ -45,6 +45,7 @@ BEAN_CHECK = VAULT / ".venv" / "bin" / "bean-check"
 
 Rules = dict[str, Any]
 _rules_cache: Rules | None = None
+_rules_mtime: float | None = None
 
 
 def require_vault() -> None:
@@ -56,9 +57,14 @@ def require_vault() -> None:
 
 def rules() -> Rules:
     """The parsed rules.toml (empty dict if the vault has none yet)."""
-    global _rules_cache
-    if _rules_cache is None:
+    global _rules_cache, _rules_mtime
+    # keyed on mtime so a long-lived server sees config edits (new Plaid
+    # items, rule changes) without a restart — same hot-reload contract as
+    # the summary snapshot
+    mtime = RULES_FILE.stat().st_mtime if RULES_FILE.exists() else None
+    if _rules_cache is None or mtime != _rules_mtime:
         _rules_cache = tomllib.loads(RULES_FILE.read_text()) if RULES_FILE.exists() else {}
+        _rules_mtime = mtime
     return _rules_cache
 
 
