@@ -1180,25 +1180,21 @@ def catch_all_lumps(rows=None):
     Expenses:Uncategorized silently corrupt every flow view — a lump that
     big always has a real name (transfer, maturity, opening equity).
     """
-    from vault import bean_query
+    from vault import amount, query
     LIMIT = 10_000
     out = []
-    q = ("SELECT date, account, payee, number(position) as amt "
+    q = ("SELECT date, account, payee, number AS amt "
          "WHERE account ~ 'Income:US:Other|Expenses:Uncategorized'")
-    for r in bean_query(q):
-        try:
-            amt = float(r[3])
-        except (TypeError, ValueError):
-            continue
+    for r in query(q):
+        amt = amount(r.get("amt", "") or "")
         if abs(amt) >= LIMIT:
-            out.append({
-                "check": "catch-all-lump",
-                "level": "alert",
-                "title": f"${abs(amt):,.0f} lump sitting in {r[1]} — name it",
-                "detail": (f"{r[0]} {(r[2] or 'no payee')}: a row this big is never "
-                           f"misc — it's a transfer, a maturity, or opening equity. "
-                           f"Rebook it so the flow numbers stay honest."),
-            })
+            out.append(finding(
+                "catch-all-lump", "alert",
+                f"${abs(amt):,.0f} is filed as \"miscellaneous\" — money that big has a real name",
+                f"{r.get('date', '?')} {(r.get('payee') or 'no payee')} sits in "
+                f"{r.get('account', '?')}. A lump like this is a transfer, a "
+                f"maturity, or opening money — tell Sara what it was and the "
+                f"flow numbers get honest again."))
     return out
 
 
