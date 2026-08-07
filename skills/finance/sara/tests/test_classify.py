@@ -44,7 +44,6 @@ from sara.classify import (
     parse_model_reply,
     run_classification,
 )
-from sara.vault import reset_rules_cache
 
 from .conftest import RULES_TOML, needs_venv
 
@@ -56,7 +55,6 @@ def vault(fresh_vault: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """The scratch vault with the rules.toml parse cache dropped, so tests
     that rewrite rules.toml are actually read (and the standard parse is
     restored for the rest of the suite afterwards)."""
-    monkeypatch.setattr("sara.vault._rules_cache", None)
     return fresh_vault
 
 
@@ -477,7 +475,6 @@ def test_apple_batches_bite_small_with_a_trimmed_briefing(vault: Path) -> None:
     (vault / "rules.toml").write_text(RULES_TOML + "".join(
         f'\n[[payee_rules]]\nmatch = "SHOP{i}"\naccount = "Expenses:Food:Dining"\n'
         for i in range(20)))
-    reset_rules_cache()
     seed(vault, *[txn(f"MYSTERY SANDWICHES #{i}", "-18.00", when="2026-07-02")
                   for i in range(APPLE_BATCH_SIZE + 1)])
     sizes: list[int] = []
@@ -625,7 +622,6 @@ def test_the_alicia_zelle_string_never_auto_applies(vault: Path) -> None:
 def test_guard_off_lets_the_model_apply(vault: Path) -> None:
     (vault / "rules.toml").write_text(
         RULES_TOML + "\n[classification]\np2p_guard = false\n")
-    reset_rules_cache()
     f = seed(vault, txn("Alicia Weiss", "-90.00"))
     rung = FakeBackend("apple", {"Alicia Weiss": J("Expenses:Food:Dining", "0.95")})
     s = run_classification(write=True, backends=_rungs(rung))
@@ -669,7 +665,6 @@ apple_min_confidence = 0.9
 ollama_url = "http://127.0.0.1:11435/"
 ollama_model = "qwen3:4b"
 ''')
-    reset_rules_cache()
     cfg = load_config()
     assert cfg.backends == ("ollama", "apple")  # order kept; dupes and unknowns dropped
     assert '"grok" ignored' in capsys.readouterr().err

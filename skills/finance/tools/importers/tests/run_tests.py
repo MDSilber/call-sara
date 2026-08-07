@@ -91,8 +91,15 @@ def make_vault(tmp, name="vault"):
     return vault, False
 
 
+SARA_SRC = TOOLS.parent / "sara"  # the package source; tools are entrypoints into it
+
+
 def run(vault, tool, *args, extra_env=None):
-    env = {**os.environ, "FINANCE_VAULT": str(vault), **(extra_env or {})}
+    # production runs through the vault venv (sara installed editable); the
+    # hermetic harness points the bare interpreter at the in-repo source
+    pypath = os.pathsep.join(p for p in (str(SARA_SRC), os.environ.get("PYTHONPATH", "")) if p)
+    env = {**os.environ, "FINANCE_VAULT": str(vault), "PYTHONPATH": pypath,
+           **(extra_env or {})}
     return subprocess.run([sys.executable, str(TOOLS / tool), *args],
                           capture_output=True, text=True, env=env)
 

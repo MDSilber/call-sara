@@ -87,6 +87,11 @@ OWNER_CONVENTION = ("owner: metadata on each account's open directive; "
                     f"'{OWNER_JOINT}' is shared, '{OWNER_UNASSIGNED}' means untagged")
 
 
+def _owned_rows(balances):
+    owners = account_owners()  # one bean-query for the whole table
+    return [{"account": a, "usd": v, "owner": owners.get(a)} for a, v in balances]
+
+
 def _owners(balances, asof):
     """The owner lens: per-owner liquid + account counts from the SAME
     balances rows as the headline (crosscheck holds the slice sum to liquid
@@ -370,8 +375,7 @@ def build_summary(now: datetime | None = None) -> dict:
         "owners": _owners(balances, asof),
         "balances": {
             "window": f"through {asof.isoformat()}" if asof else "ledger empty",
-            "accounts": [{"account": a, "usd": v,
-                          "owner": account_owners().get(a)} for a, v in balances],
+            "accounts": _owned_rows(balances),
         },
         "positions": {
             "window": f"through {asof.isoformat()}" if asof else "ledger empty",

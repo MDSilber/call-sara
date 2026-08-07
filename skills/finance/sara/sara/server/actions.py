@@ -29,7 +29,6 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import cast
 
-import sara.vault
 from checks import goals as goals_config
 from dismissals import DISMISSALS_FILE, load_dismissals
 from sara.ledger.queries import opened_accounts
@@ -37,8 +36,7 @@ from sara.ledger.writer import rewrite_ledger_files
 from vault import (
     RULES_FILE,
     VAULT,
-    query,  # pyright: ignore[reportUnknownVariableType] — typed by _query below
-    reset_rules_cache,
+    query,
 )
 
 from . import TOOLS_DIR
@@ -68,11 +66,6 @@ def _atomic_write(path: Path, text: str) -> None:
         raise
 
 
-def _query(sql: str) -> list[dict[str, str]]:
-    """vault.query with its true type made explicit (the tools are untyped)."""
-    return cast(list[dict[str, str]], query(sql))
-
-
 def _goals() -> dict[str, object]:
     return cast(dict[str, object], goals_config())
 
@@ -94,7 +87,7 @@ class ActionError(ValueError):
 def _open_accounts() -> set[str]:
     # the #accounts table lists every OPENED account, zero-posting ones
     # included — the teach picker (DB accounts dim) shows those too
-    rows = _query("SELECT account FROM #accounts")
+    rows = query("SELECT account FROM #accounts")
     return {r["account"] for r in rows}
 
 
@@ -229,11 +222,9 @@ def categorize(payee_pattern: str, account: str | None,
 
 
 def _reset_rules_caches() -> None:
-    """Both rules.toml parse caches (the flat tools module AND sara.vault —
-    two modules, one file) plus the suggest endpoint's per-payee cache, so
-    a just-taught rule shows up in every surface immediately."""
-    reset_rules_cache()
-    sara.vault.reset_rules_cache()
+    """rules.toml is read fresh everywhere (no parse cache exists); only the
+    suggest endpoint's per-payee model cache must forget, so a just-taught
+    rule outranks a stale model suggestion immediately."""
     from . import suggest  # local: suggest imports classify (heavier module)
     suggest.reset_cache()
 

@@ -219,11 +219,7 @@ def disable(alias: str) -> dict[str, object]:
     if alias in still:
         raise ActionError(f"refusing to write rules.toml — {alias} would still "
                           f"be active after the edit")
-    import sara.vault
     from importers.common import atomic_write  # tools module, path set by __init__
-    from vault import reset_rules_cache  # tools/vault.py — the assemble side's cache
-    atomic_write(RULES_FILE, new_text)
-    reset_rules_cache()
-    sara.vault.reset_rules_cache()
+    atomic_write(RULES_FILE, new_text)  # rules() reads fresh — nothing to reset
     return {"alias": alias, "disabled": True, "lines_commented": touched,
             "note": "config commented out; the Plaid slot and token are preserved"}
