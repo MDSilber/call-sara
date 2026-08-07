@@ -73,7 +73,7 @@ pythonVersion = "3.11"
 # package — at which point `strict` becomes ["sara", "tests"] again and the
 # ignore list disappears.
 typeCheckingMode = "basic"
-strict = ["sara/*.py", "sara/cli", "sara/ledger", "sara/sources", "sara/server", "tests"]
+strict = ["sara/*.py", "sara/cli", "sara/ledger", "sara/sources", "sara/server", "sara/advisor/snapshot.py", "tests"]
 # plaid-python is generated OpenAPI code without a py.typed marker; the two
 # modules that touch it confine every value to a typed boundary immediately.
 reportMissingTypeStubs = false

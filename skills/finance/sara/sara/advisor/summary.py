@@ -12,7 +12,6 @@ Window labels ride every figure group; consumers must show them.
 """
 import json
 import re
-import sys
 from datetime import date, datetime
 
 from sara.advisor.crosscheck import ensure_crosschecks
@@ -322,16 +321,10 @@ def _glance(pace, totals, lanes, edu_tile, nw_delta_plain, liquid, asof,
 
 
 def _app_snapshot(now):
-    """The Sara App read model (sara.server.assemble.app_snapshot) — the same
-    verified builders, rendered once here so the app server never parses the
-    ledger on a GET. Omitted (with a note) when the sara package predates the
-    app schema; the app then asks for a report regeneration."""
-    try:
-        from sara.server import assemble
-    except ImportError as e:
-        print(f"note: summary.json app section skipped ({e})", file=sys.stderr)
-        return None
-    return assemble.app_snapshot(now)
+    """The Sara App read model — the same verified builders, rendered once
+    here (write side) so the app server never parses the ledger on a GET."""
+    from sara.advisor.snapshot import app_snapshot
+    return app_snapshot(now)
 
 
 # ------------------------------------------------------------------ build

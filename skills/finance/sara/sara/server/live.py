@@ -28,10 +28,7 @@ from sara.advisor.home import (
     must_move,
     needs_you,
 )
-from sara.advisor.webview import action_queue, milestone_state, parse_findings
-from sara.vault import household
-
-from .assemble import (
+from sara.advisor.snapshot import (
     GOAL_KEYS,
     _card,
     _friendly_date,
@@ -41,6 +38,8 @@ from .assemble import (
     clean,
     spotlight_tile,
 )
+from sara.advisor.webview import action_queue, milestone_state, parse_findings
+from sara.vault import household
 
 
 def daypart(now: datetime) -> str:
