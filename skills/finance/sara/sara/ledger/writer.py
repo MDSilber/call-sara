@@ -695,8 +695,14 @@ def _bean_check_or_rollback(backups: dict[Path, str | None], main: Path) -> None
         out = subprocess.run([str(BEAN_CHECK), str(main)], capture_output=True, text=True)
         if out.returncode != 0:
             _restore(backups)
-            raise SystemExit("bean-check rejected the import — rolled back:\n"
-                             + (out.stderr or out.stdout).strip())
+            err = (out.stderr or out.stdout).strip()
+            if "Ambiguous matches" in err:
+                # strict booking can't pick lots for a sell; the fix is an
+                # account-level booking method, which strangers won't guess
+                err += ("\nhint: a sell matched multiple lots and the account has no"
+                        "\n      booking method — reopen it with one, e.g."
+                        '\n      2020-01-01 open Assets:...:Brokerage "FIFO"')
+            raise SystemExit("bean-check rejected the import — rolled back:\n" + err)
     else:
         print(f"; warning: bean-check not found at {BEAN_CHECK} — appended without validation",
               file=sys.stderr)
