@@ -4,11 +4,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
 import { Card, CardSkeleton, LoadError } from '../components/ui'
-import { useOwner } from '../ownerLens'
 import type { Register } from '../types'
 
 export function RegisterRoom(props: { account: string; onBack: () => void }) {
-  const owner = useOwner()
   const [data, setData] = useState<Register | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -16,10 +14,10 @@ export function RegisterRoom(props: { account: string; onBack: () => void }) {
   const load = useCallback(() => {
     setData(null)
     setError(null)
-    api.register(props.account, owner)
+    api.register(props.account)
       .then(setData)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [props.account, owner])
+  }, [props.account])
 
   useEffect(() => {
     load()
@@ -28,7 +26,7 @@ export function RegisterRoom(props: { account: string; onBack: () => void }) {
   const more = () => {
     if (!data?.cursor || loadingMore) return
     setLoadingMore(true)
-    api.register(props.account, owner, data.cursor)
+    api.register(props.account, data.cursor)
       .then((page) => {
         setData((d) => d ? { ...d, rows: [...d.rows, ...page.rows], cursor: page.cursor } : page)
         setLoadingMore(false)
@@ -50,20 +48,6 @@ export function RegisterRoom(props: { account: string; onBack: () => void }) {
       </div>
     )
   }
-  if (data.foreign_owner !== undefined && data.foreign_owner !== null) {
-    return (
-      <div className="grid g-solo">
-        <Card k="Register">
-          <button className="regback" onClick={props.onBack}>← back</button>
-          <p className="empty">
-            <b>{leaf}</b> belongs to {data.foreign_owner} — flip the owner lens
-            (or set it to All) to read this statement.
-          </p>
-        </Card>
-      </div>
-    )
-  }
-
   return (
     <div className="grid g-solo">
       <Card>

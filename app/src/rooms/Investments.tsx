@@ -1,15 +1,17 @@
 /** The Investments room v2: positions at the latest prices, per-lot
  * holdings with LT/ST badges and unrealized G/L, the dividends timeline,
  * contribution pace against the IRS limits (year named), and the
- * allocation mix vs the declared targets. Owner-lens aware: positions,
- * lots, dividends, and pace re-slice; the thesis stays household-level. */
+ * allocation mix vs the declared targets. The room's owner filter
+ * re-slices positions, lots, dividends, and pace; the mix and invested
+ * total stay household-level and say so. */
 import { useCallback, useState } from 'react'
 import { api } from '../api'
 import { EChart } from '../charts/EChart'
 import type { EChartsCoreOption } from '../charts/echarts'
 import { FONT, baseOption, tipHtml } from '../charts/options'
 import { Card, CardSkeleton, Empty, LoadError, Track } from '../components/ui'
-import { useOwner, ownerLabel } from '../ownerLens'
+import { OwnerFilter } from '../components/OwnerFilter'
+import { ownerTitle } from '../owners'
 import { cssv } from '../theme'
 import type { DividendsTimeline, Investments } from '../types'
 import { useFetch } from '../useFetch'
@@ -17,13 +19,20 @@ import { useFetch } from '../useFetch'
 const DONUT_VARS = ['--map-1', '--map-2', '--map-3', '--map-4', '--map-5', '--map-6']
 
 export function InvestmentsRoom() {
-  const owner = useOwner()
+  // whose holdings: room-local, starts at All every visit
+  const [owner, setOwner] = useState('all')
   const { data, error, loading, reload } = useFetch(
     `investments:${owner}`, () => api.investments(owner))
-  if (loading) return <div className="grid g-nwt"><CardSkeleton lines={7} /><CardSkeleton lines={5} /></div>
-  if (error) return <LoadError error={error} retry={reload} />
-  if (!data) return null
-  return <InvestBody data={data} owner={owner} />
+  return (
+    <>
+      <OwnerFilter owner={owner} onPick={setOwner} />
+      {loading
+        ? <div className="grid g-nwt"><CardSkeleton lines={7} /><CardSkeleton lines={5} /></div>
+        : error
+          ? <LoadError error={error} retry={reload} />
+          : data && <InvestBody data={data} owner={owner} />}
+    </>
+  )
 }
 
 interface DonutParams {
@@ -36,7 +45,7 @@ const LOTS_PREVIEW = 24
 function InvestBody({ data, owner }: { data: Investments; owner: string }) {
   const [allLots, setAllLots] = useState(false)
   const alloc = data.allocation
-  const lensOn = owner !== 'all'
+  const filtered = owner !== 'all'
   const lots = allLots ? data.lots : data.lots.slice(0, LOTS_PREVIEW)
 
   const buildDonut = useCallback((width: number): EChartsCoreOption | null => {
@@ -78,12 +87,12 @@ function InvestBody({ data, owner }: { data: Investments; owner: string }) {
       <div className="grid g-nwt">
         <div className="sidecol">
           <Card
-            k={lensOn ? `Positions · ${ownerLabel(owner)}` : 'Positions'}
+            k={filtered ? `Positions · ${ownerTitle(owner)}` : 'Positions'}
             sub="Every holding, valued at the latest price on file — the same numbers the reports carry."
             window={data.window}
           >
             {data.positions.length === 0 ? (
-              <Empty><b>No holdings {lensOn ? `under ${ownerLabel(owner)}` : 'on file'}.</b> Import a brokerage statement and the table fills in.</Empty>
+              <Empty><b>No holdings {filtered ? `under ${ownerTitle(owner)}` : 'on file'}.</b> Import a brokerage statement and the table fills in.</Empty>
             ) : (
               <table className="postable">
                 <thead>
@@ -108,11 +117,11 @@ function InvestBody({ data, owner }: { data: Investments; owner: string }) {
                 </tbody>
               </table>
             )}
-            <p className="goalfoot">Invested total <b className="num">{data.invested_total}</b> at the latest prices on file{lensOn ? ' (household)' : ''}.</p>
+            <p className="goalfoot">Invested total <b className="num">{data.invested_total}</b> at the latest prices on file{filtered ? ' (household)' : ''}.</p>
             {data.paper_note && <p className="goalfoot">{data.paper_note}</p>}
           </Card>
           <Card
-            k={lensOn ? `Lots · ${ownerLabel(owner)}` : 'Lots'}
+            k={filtered ? `Lots · ${ownerTitle(owner)}` : 'Lots'}
             sub="Each purchase lot as the ledger booked it. LT lots (held a year+) sell at the kinder tax rate."
             window={data.window}
           >
@@ -161,7 +170,7 @@ function InvestBody({ data, owner }: { data: Investments; owner: string }) {
         </div>
         <div className="sidecol">
           <Card k="The mix" sub={alloc ? undefined : 'Declared targets light this up.'}
-            window={alloc ? `scored over ${alloc.invested}${lensOn ? ' · household' : ''}` : undefined}>
+            window={alloc ? `scored over ${alloc.invested}${filtered ? ' · household' : ''}` : undefined}>
             {alloc ? (
               <>
                 <EChart className="chart chart-donut" build={buildDonut} ariaLabel="allocation by class" />
@@ -183,7 +192,7 @@ function InvestBody({ data, owner }: { data: Investments; owner: string }) {
               </Empty>
             )}
           </Card>
-          <DividendsCard data={data.dividends_timeline} lens={lensOn ? ownerLabel(owner) : null} />
+          <DividendsCard data={data.dividends_timeline} who={filtered ? ownerTitle(owner) : null} />
           <Card k="Contribution pace"
             sub={pace.note}
             window={`${pace.year} YTD`}>
@@ -247,7 +256,7 @@ interface BarParams {
   dataIndex: number
 }
 
-function DividendsCard({ data, lens }: { data: DividendsTimeline; lens: string | null }) {
+function DividendsCard({ data, who }: { data: DividendsTimeline; who: string | null }) {
   const build = useCallback((width: number): EChartsCoreOption | null => {
     if (data.months.length < 2) return null
     void width
@@ -283,7 +292,7 @@ function DividendsCard({ data, lens }: { data: DividendsTimeline; lens: string |
   }, [data])
 
   return (
-    <Card k={lens ? `Dividends · ${lens}` : 'Dividends'} window={`${data.ytd_count} payment${data.ytd_count === 1 ? '' : 's'} YTD`}>
+    <Card k={who ? `Dividends · ${who}` : 'Dividends'} window={`${data.ytd_count} payment${data.ytd_count === 1 ? '' : 's'} YTD`}>
       <div className="heromini num">{data.ytd}</div>
       <div className="herolab">dividend income booked this year</div>
       {data.months.length >= 2 ? (

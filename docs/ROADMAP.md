@@ -58,9 +58,11 @@ the design; if yours doesn't fit, open an issue and describe its shape.
   books. Foundation shipped: `owner:` metadata on ledger accounts,
   per-owner rollups (`networth --by-owner`, the summary.json owners
   section, owner labels across the money map and balances views), all
-  held to the headline by the cross-check gate. Remaining: a per-person
-  lens UI (filter any room to one owner) and owner-routed notifications
-  once the notification layer lands.
+  held to the headline by the cross-check gate. The app tried a global
+  owner picker and simplified it away — the household view IS the top
+  level; owner survives as quiet in-room filters (Spending, Activity,
+  Investments) over the same tested `?owner=` read paths. Remaining:
+  owner-routed notifications once the notification layer lands.
 - **Multi-entity books:** an LLC/business ledger beside the household
   one, same skill and tooling driving both, work-vs-personal splits that
   survive an accountant's questions.

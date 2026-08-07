@@ -6,9 +6,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
 import { useToast } from '../components/toastContext'
 import { Card, CardSkeleton, LoadError } from '../components/ui'
-import { useOwner } from '../ownerLens'
 import { watchRegeneration } from '../refresh'
-import type { ActivityFilters, ActivityPage, ActivityRow, Category } from '../types'
+import type { ActivityFilters, ActivityPage, ActivityRow, Category, OwnerDef } from '../types'
 import { invalidate } from '../useFetch'
 
 const AMOUNT_DEBOUNCE = 350
@@ -20,6 +19,7 @@ interface FeedState {
   matched: number
   totals: { spent: string; received: string } | null
   categories: Category[]
+  owners: OwnerDef[]
   uncat: { count: number; amount: string } | null
   loading: boolean
   more: boolean
@@ -28,11 +28,12 @@ interface FeedState {
 
 const EMPTY_FEED: FeedState = {
   rows: [], cursor: null, matched: 0, totals: null, categories: [],
-  uncat: null, loading: true, more: false, error: null,
+  owners: [], uncat: null, loading: true, more: false, error: null,
 }
 
 export function ActivityRoom(props: { initialQ?: string }) {
-  const owner = useOwner()
+  // whose rows: room-local, starts at all owners every visit
+  const [owner, setOwner] = useState('all')
   const [q, setQ] = useState(props.initialQ ?? '')
   const [debouncedQ, setDebouncedQ] = useState(q)
   const [uncatOnly, setUncatOnly] = useState(false)
@@ -65,7 +66,9 @@ export function ActivityRoom(props: { initialQ?: string }) {
 
   const load = useCallback((cursor: string | null) => {
     const my = ++seq.current
-    setFeed((f) => cursor ? { ...f, loading: true } : { ...EMPTY_FEED, categories: f.categories })
+    setFeed((f) => cursor
+      ? { ...f, loading: true }
+      : { ...EMPTY_FEED, categories: f.categories, owners: f.owners })
     api.activity(filters, owner, cursor)
       .then((page: ActivityPage) => {
         if (my !== seq.current) return
@@ -75,6 +78,7 @@ export function ActivityRoom(props: { initialQ?: string }) {
           matched: page.matched ?? f.matched,
           totals: page.totals ?? f.totals,
           categories: page.categories ?? f.categories,
+          owners: page.owners ?? f.owners,
           uncat: page.uncategorized ?? f.uncat,
           loading: false,
           more: page.cursor !== null,
@@ -129,7 +133,7 @@ export function ActivityRoom(props: { initialQ?: string }) {
 
   const filtersOn = Boolean(filters.q || filters.uncategorized_only
     || filters.category || filters.amount_min !== undefined
-    || filters.amount_max !== undefined)
+    || filters.amount_max !== undefined) || owner !== 'all'
 
   if (feed.error && feed.rows.length === 0) {
     return <LoadError error={feed.error} retry={() => load(null)} />
@@ -175,6 +179,16 @@ export function ActivityRoom(props: { initialQ?: string }) {
               ))}
             </select>
           </label>
+          {feed.owners.length > 0 && (
+            <label className="fchip" aria-label="owner filter">
+              <select value={owner} onChange={(e) => setOwner(e.target.value)}>
+                <option value="all">Everyone</option>
+                {feed.owners.map((o) => (
+                  <option key={o.owner} value={o.owner}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="fchip" aria-label="amount range">
             $<input type="number" min="0" placeholder="min" value={amountMin}
               onChange={(e) => setAmountMin(e.target.value)} aria-label="minimum amount" />

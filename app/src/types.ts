@@ -134,7 +134,6 @@ export interface OwnerDef {
 
 export interface Owners {
   owners: OwnerDef[]
-  slices: { owner: string; liquid: string; accounts: number }[]
 }
 
 // -------------------------------------------------------------- register
@@ -153,7 +152,6 @@ export interface RegisterRow {
 export interface Register {
   account: string
   found: boolean
-  foreign_owner?: string | null
   owner?: string | null
   institution?: string | null
   is_open?: boolean
@@ -287,11 +285,11 @@ export interface SpendRooms {
 }
 
 export interface Spend {
-  /** Present when the payload was computed under a person/joint lens. */
+  /** Present when the payload was computed under a person/joint filter. */
   owner?: string
   pace: {
     empty: boolean
-    /** Owner-lens payloads title the card ("Danny’s spending"). */
+    /** Owner-filtered payloads title the card ("Danny’s spending"). */
     title?: string
     window: string
     sub: string
@@ -328,7 +326,7 @@ export interface MapNode {
   value: number
   amt: string
   pct: string
-  /** Owner chip (household lens) — present when the node's accounts share one owner. */
+  /** Owner label — present when the node's accounts share one owner. */
   own?: string
   cvar?: string
   children?: MapNode[]
@@ -469,25 +467,6 @@ export interface Investments {
       last_amount: string | null
     }[]
   }
-}
-
-// ---------------------------------------------------------- owner map
-export interface OwnerMapNode {
-  name: string
-  account?: string
-  value: number
-  amt: string
-  pct: string
-  children?: OwnerMapNode[]
-}
-
-export interface OwnerMap {
-  owner: string
-  tree: OwnerMapNode[]
-  assets: string
-  owed: string | null
-  net: string
-  caption: string
 }
 
 // --------------------------------------------------------------- goals

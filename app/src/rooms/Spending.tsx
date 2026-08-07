@@ -9,23 +9,31 @@ import { areaGrad, baseOption, catAxis, legendBox, nowDot, tipHtml, valAxis } fr
 import { cssv } from '../theme'
 import type { Spend, SpendCat, Tip } from '../types'
 import { Card, CardSkeleton, Empty, LoadError, Track } from '../components/ui'
-import { useOwner, ownerLabel } from '../ownerLens'
+import { OwnerFilter } from '../components/OwnerFilter'
+import { ownerTitle } from '../owners'
 import { useFetch } from '../useFetch'
 
 type PeriodKey = 'cur' | 'prev' | 'six'
 
 export function SpendingRoom() {
-  const owner = useOwner()
+  // whose spending: room-local, starts at All every visit
+  const [owner, setOwner] = useState('all')
   const { data, error, loading, reload } = useFetch(`spend:${owner}`, () => api.spend(owner))
-  if (loading) return <div className="grid g-pace"><CardSkeleton lines={7} /><CardSkeleton lines={5} /></div>
-  if (error) return <LoadError error={error} retry={reload} />
-  if (!data) return null
-  // key by owner so a lens flip re-enters the room (the entrance motion
-  // marks what changed; prefers-reduced-motion already gates it)
-  return <SpendingBody key={owner} data={data} />
+  return (
+    <>
+      <OwnerFilter owner={owner} onPick={setOwner} />
+      {loading
+        ? <div className="grid g-pace"><CardSkeleton lines={7} /><CardSkeleton lines={5} /></div>
+        : error
+          ? <LoadError error={error} retry={reload} />
+          // key by owner so a filter flip re-enters the room (the entrance
+          // motion marks what changed; prefers-reduced-motion gates it)
+          : data && <SpendingBody key={owner} data={data} owner={owner} />}
+    </>
+  )
 }
 
-function SpendingBody({ data }: { data: Spend }) {
+function SpendingBody({ data, owner }: { data: Spend; owner: string }) {
   const rooms = data.rooms
   const [period, setPeriod] = useState<PeriodKey>(() => {
     if (!rooms) return 'cur'
@@ -217,16 +225,16 @@ function SpendingBody({ data }: { data: Spend }) {
           </Card>
         </div>
       )}
-      <InsightsStrip />
+      <InsightsStrip owner={owner} />
     </>
   )
 }
 
 
 /** The insights strip: a small-multiple sparkline per top category, drawn
- * from the analytics DB's monthly_flows — the exploratory read path. */
-function InsightsStrip() {
-  const owner = useOwner()
+ * from the analytics DB's monthly_flows — the exploratory read path.
+ * Follows the room's owner filter. */
+function InsightsStrip({ owner }: { owner: string }) {
   const { data, error, loading, reload } = useFetch(
     `insights:${owner}`, () => api.insights(owner))
   if (loading) return <div className="grid g-solo"><CardSkeleton lines={3} /></div>
@@ -235,7 +243,7 @@ function InsightsStrip() {
   return (
     <div className="grid g-solo">
       <Card
-        k={owner !== 'all' ? `Category trends · ${ownerLabel(owner)}` : 'Category trends'}
+        k={owner !== 'all' ? `Category trends · ${ownerTitle(owner)}` : 'Category trends'}
         sub="Each spark is one category's monthly spend — the quiet way to spot a bill creeping."
         window={data.window}
       >

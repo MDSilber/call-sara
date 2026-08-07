@@ -6,12 +6,12 @@
  * write surface stays local even while the server runs.
  *
  * v2: exploratory reads take query params (search filters, keyset cursors,
- * the owner lens); two actions stream plain text (sync, upload confirm).
+ * the in-room owner filters); two actions stream text (sync, upload confirm).
  */
 import type {
   AccountRow, ActivityFilters, ActivityPage, Autopilot, CategorizeResult,
   Connections, DismissResult, FreshnessV2, Glance, Goals, Insights,
-  Investments, LinkUpdate, Networth, OwnerMap, Owners, Register,
+  Investments, LinkUpdate, Networth, Owners, Register,
   SearchResults, SetGoalResult, Spend, SpendDrill, UploadPlan,
 } from './types'
 
@@ -94,35 +94,31 @@ async function postStream(
   if (tail) onChunk(tail)
 }
 
-/** The lens rider: "all" (or unset) sends nothing. */
-const lens = (owner?: string) => (owner && owner !== 'all' ? owner : undefined)
+/** The owner-filter rider: "all" (or unset) sends nothing. */
+const who = (owner?: string) => (owner && owner !== 'all' ? owner : undefined)
 
 export const api = {
   glance: () => get<Glance>('/api/glance'),
-  spend: (owner?: string) => get<Spend>(`/api/spend${qs({ owner: lens(owner) })}`),
+  spend: (owner?: string) => get<Spend>(`/api/spend${qs({ owner: who(owner) })}`),
   networth: () => get<Networth>('/api/networth'),
   investments: (owner?: string) =>
-    get<Investments>(`/api/investments${qs({ owner: lens(owner) })}`),
+    get<Investments>(`/api/investments${qs({ owner: who(owner) })}`),
   goals: () => get<Goals>('/api/goals'),
   autopilot: () => get<Autopilot>('/api/autopilot'),
   freshness: () => get<FreshnessV2>('/api/freshness'),
 
   activity: (filters: ActivityFilters, owner?: string, cursor?: string | null) =>
     get<ActivityPage>(`/api/activity${qs({
-      ...filters, owner: lens(owner), cursor: cursor ?? undefined,
+      ...filters, owner: who(owner), cursor: cursor ?? undefined,
     })}`),
-  register: (account: string, owner?: string, cursor?: string | null) =>
-    get<Register>(`/api/register${qs({
-      account, owner: lens(owner), cursor: cursor ?? undefined,
-    })}`),
+  register: (account: string, cursor?: string | null) =>
+    get<Register>(`/api/register${qs({ account, cursor: cursor ?? undefined })}`),
   owners: () => get<Owners>('/api/owners'),
-  accounts: (owner?: string) =>
-    get<{ accounts: AccountRow[] }>(`/api/accounts${qs({ owner: lens(owner) })}`),
+  accounts: () => get<{ accounts: AccountRow[] }>('/api/accounts'),
   search: (q: string) => get<SearchResults>(`/api/search${qs({ q })}`),
-  insights: (owner?: string) => get<Insights>(`/api/insights${qs({ owner: lens(owner) })}`),
+  insights: (owner?: string) => get<Insights>(`/api/insights${qs({ owner: who(owner) })}`),
   spendDrill: (category: string, month: string, owner?: string) =>
-    get<SpendDrill>(`/api/spend/drill${qs({ category, month, owner: lens(owner) })}`),
-  ownerMap: (owner: string) => get<OwnerMap>(`/api/map${qs({ owner })}`),
+    get<SpendDrill>(`/api/spend/drill${qs({ category, month, owner: who(owner) })}`),
   connections: () => get<Connections>('/api/connections'),
 
   categorize: (payee_pattern: string, account: string, apply_history: boolean) =>

@@ -1,11 +1,12 @@
 /** Sara App — the glance over seven rooms plus the register.
  *
- * The glance (hero + tiles + Next) is always up; one room opens at a time
- * under the tab bar, hash-routed so links land where they point
- * (`#register?account=…`, `#activity?q=…`). ⌘K opens the palette; the
- * owner lens re-slices the rooms that know how. Rooms fetch lazily and
- * cache; write actions invalidate and the freshness poller closes the loop
- * once the background regeneration lands.
+ * The glance (hero + tiles + Next) is always up and always household-wide;
+ * one room opens at a time under the tab bar, hash-routed so links land
+ * where they point (`#register?account=…`, `#activity?q=…`). ⌘K opens the
+ * palette; Spending, Activity, and Investments carry their own quiet
+ * owner filters. Rooms fetch lazily and cache; write actions invalidate
+ * and the freshness poller closes the loop once the background
+ * regeneration lands.
  */
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { api } from './api'

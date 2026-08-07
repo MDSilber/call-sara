@@ -191,8 +191,7 @@ def create_app(port: int = 8787) -> FastAPI:
 
     @app.get("/api/owners")
     def owners() -> JSONResponse:
-        return _read(lambda: {"owners": dbq.owners(),
-                              "slices": dbq.owner_slices()})
+        return _read(lambda: {"owners": dbq.owners()})
 
     @app.get("/api/search")
     def search(q: str) -> JSONResponse:

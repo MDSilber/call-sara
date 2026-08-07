@@ -71,9 +71,21 @@ def ledger_range() -> tuple[str | None, str | None]:
 def owners() -> list[dict[str, str]]:
     """Distinct declared owners (people first, then joint) — the lens menu.
     Empty when the ledger declares none; the lens stays hidden then."""
+    # an owner earns a pill with material holdings or material flow — $1 of
+    # balance or $100 of trailing-year movement. Existence isn't enough: an
+    # all-but-empty slice (pennies of interest on a dormant joint account)
+    # would filter every room to furniture.
     rows = DB.rows(
-        "SELECT DISTINCT owner FROM accounts "
-        "WHERE owner IS NOT NULL AND owner NOT IN ('', $transit) ORDER BY owner",
+        "SELECT DISTINCT a.owner FROM accounts a "
+        "WHERE a.owner IS NOT NULL AND a.owner NOT IN ('', $transit) "
+        "AND a.root IN ('Assets', 'Liabilities') "
+        "AND ((SELECT coalesce(sum(abs(b.value_home)), 0) FROM balances_daily b "
+        "      WHERE b.account IN (SELECT account FROM accounts WHERE owner = a.owner AND root IN ('Assets', 'Liabilities')) "
+        "      AND b.date = (SELECT max(date) FROM balances_daily)) >= 1 "
+        "  OR (SELECT coalesce(sum(abs(p.amount_home)), 0) FROM postings p "
+        "      WHERE p.account IN (SELECT account FROM accounts WHERE owner = a.owner AND root IN ('Assets', 'Liabilities')) "
+        "      AND p.date >= (SELECT max(date) - INTERVAL 365 DAY FROM postings)) >= 100) "
+        "ORDER BY a.owner",
         {"transit": OWNER_TRANSIT})
     names = [_s(r["owner"]) for r in rows]
     people = [n for n in names if n != "joint"]
@@ -678,24 +690,6 @@ def map_tree(owner: str) -> dict[str, object]:
                     f"{'s' if len(rows) != 1 else ''}"
                     + (f" · {money0(owed)} owed" if liab else "")),
     }
-
-
-def owner_slices() -> list[dict[str, object]]:
-    """Per-owner liquid totals at the latest snapshot (the lens header)."""
-    rows = DB.rows("""
-        SELECT coalesce(a.owner, 'unassigned') AS owner,
-               sum(b.value_home) AS value, count(DISTINCT b.account) AS n
-        FROM balances_daily b
-        JOIN accounts a ON a.account = b.account
-        WHERE b.date = (SELECT max(date) FROM balances_daily)
-          AND (b.account LIKE 'Assets:%' OR b.account LIKE 'Liabilities:%')
-        GROUP BY ALL HAVING abs(sum(b.value_home)) > 0.5
-        ORDER BY value DESC
-    """)
-    return [{"owner": _s(r["owner"]),
-             "liquid": money0(_f(r["value"])),
-             "accounts": int(_f(r["n"]))} for r in rows
-            if _s(r["owner"]) != OWNER_TRANSIT]
 
 
 def month_span(months: int, end: str) -> list[str]:

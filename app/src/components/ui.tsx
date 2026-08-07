@@ -5,7 +5,7 @@ export function Card(props: {
   k?: string
   sub?: string
   window?: string
-  /** Tiny neutral chip beside the key — e.g. "household" under a person lens. */
+  /** Tiny neutral chip beside the key — e.g. "household" under a person filter. */
   badge?: string
   className?: string
   children: ReactNode

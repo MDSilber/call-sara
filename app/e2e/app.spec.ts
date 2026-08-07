@@ -37,6 +37,9 @@ test('the glance loads with verdicts and the Next line', async ({ page }) => {
   await expect(page.locator('.say')).not.toBeEmpty()
   await expect(page.locator('.tile')).toHaveCount(4)
   await expect(page.locator('.next .nk')).toBeVisible()
+  // the hero is household-only: no owner pills, no slice chip, no badges
+  await expect(page.locator('.lens, .lenschip, .hero .roomlens')).toHaveCount(0)
+  await expect(page.locator('.tiles .hbadge')).toHaveCount(0)
   await settled(page)
   await page.screenshot({ path: `${SHOTS}/e2e-glance.png` })
 })
@@ -72,62 +75,70 @@ test('activity search narrows the feed server-side', async ({ page }) => {
   await expect(page.locator('.feed li').first()).toBeVisible()
 })
 
-test('the owner lens re-slices activity and the map', async ({ page }) => {
-  await page.goto('/')
-  await page.waitForSelector('.tiles .tv-big', { timeout: 30_000 })
-  const lens = page.locator('.lens')
-  await expect(lens).toBeVisible()
-  await lens.locator('button', { hasText: 'Alex' }).click()
-  await expect(page.locator('.lenschip')).toContainText('Alex’s slice')
-  await page.click('.tab:has-text("Activity")')
+test('the Activity owner chip filters the feed on its own', async ({ page }) => {
+  await page.goto('/#activity')
   await page.waitForSelector('.feed li', { timeout: 30_000 })
-  await expect(page.locator('.feed li .ownerchip').first()).toHaveText('alex')
-  await page.click('.tab:has-text("Money map")')
-  await settled(page)
-  await expect(page.locator('.chart-map')).toBeVisible()
-  await page.screenshot({ path: `${SHOTS}/e2e-lens-map.png`, fullPage: true })
-  await lens.locator('button', { hasText: 'All' }).click()
-  await expect(page.locator('.lenschip')).toHaveCount(0)
+  const before = await page.locator('.feedcount').innerText()
+  const chip = page.locator('.fchip[aria-label="owner filter"] select')
+  await chip.selectOption('alex')
+  await expect(page.locator('.feedcount')).not.toHaveText(before, { timeout: 15_000 })
+  await expect(page.locator('.feed li .ownerchip').first()).toHaveText('alex', {
+    timeout: 15_000,
+  })
+  const chips = await page.locator('.feed li .ownerchip').allTextContents()
+  expect(chips.length).toBeGreaterThan(0)
+  expect(chips.every((c) => c === 'alex')).toBe(true)
+  await page.screenshot({ path: `${SHOTS}/e2e-activity-owner.png` })
+  await chip.selectOption('all')
+  await expect(page.locator('.feedcount')).toHaveText(before, { timeout: 15_000 })
 })
 
-test('the owner lens re-slices Spending and the glance tiles', async ({ page }) => {
+test('the Spending owner control flips the pace headline', async ({ page }) => {
   await page.goto('/')
   await page.waitForSelector('.tiles .tv-big', { timeout: 30_000 })
-  await page.click('.tab:has-text("Spending")')
   await settled(page)
   // household baseline: the untitled pace card and its typical-path line
   await expect(page.locator('.room .ck').first()).toHaveText('Is this month unusual?')
   const householdLab = await page.locator('.herolab').innerText()
   await page.waitForTimeout(700)
-  await page.screenshot({ path: `${SHOTS}/e2e-lens-spend-before.png`, fullPage: true })
-  // flip the lens: the chip appears, the card retitles, the pace re-slices
-  const lens = page.locator('.lens')
-  await lens.locator('button', { hasText: 'Alex' }).click()
+  await page.screenshot({ path: `${SHOTS}/e2e-spend-owner-before.png`, fullPage: true })
+  // flip the room's filter: the card retitles, the pace re-slices
+  const filter = page.locator('.roomlens')
+  await expect(filter).toBeVisible()
+  await filter.locator('button', { hasText: 'Alex' }).click()
   await settled(page)
-  await expect(page.locator('.lenschip')).toContainText('Alex’s slice')
   await expect(page.locator('.room .ck').first()).toHaveText('Alex’s spending')
   await expect(page.locator('.phero')).toBeVisible()
   await expect(page.locator('.herolab')).not.toHaveText(householdLab)
-  // the glance: Spending and Net worth re-slice, household-only tiles badge
-  await expect(page.locator('.tile').nth(0).locator('.tk')).toContainText('Alex’s spending')
-  await expect(page.locator('.tile').nth(1).locator('.tsub')).toContainText('household')
-  await expect(page.locator('.tile').nth(2).locator('.hbadge')).toHaveText('household')
-  await expect(page.locator('.tile').nth(3).locator('.hbadge')).toHaveText('household')
+  // the glance above stays household — no re-slicing, no badges
+  await expect(page.locator('.tile').nth(0).locator('.tk')).toHaveText('Spending')
+  await expect(page.locator('.tiles .hbadge')).toHaveCount(0)
   await page.waitForTimeout(700)
-  await page.screenshot({ path: `${SHOTS}/e2e-lens-spend-after.png`, fullPage: true })
-  // the same pair in dark
+  await page.screenshot({ path: `${SHOTS}/e2e-spend-owner-after.png`, fullPage: true })
+  // the same view in dark
   await page.click('.themebtn') // auto -> light
   await page.click('.themebtn') // light -> dark
   await settled(page)
   await page.waitForTimeout(700)
-  await page.screenshot({ path: `${SHOTS}/e2e-lens-spend-after-dark.png`, fullPage: true })
-  await lens.locator('button', { hasText: 'All' }).click()
-  await settled(page)
-  await expect(page.locator('.lenschip')).toHaveCount(0)
-  await expect(page.locator('.room .ck').first()).toHaveText('Is this month unusual?')
-  await page.waitForTimeout(700)
-  await page.screenshot({ path: `${SHOTS}/e2e-lens-spend-before-dark.png`, fullPage: true })
+  await page.screenshot({ path: `${SHOTS}/e2e-spend-owner-after-dark.png`, fullPage: true })
   await page.click('.themebtn') // dark -> auto, leave the session tidy
+  // back to All: the household card returns
+  await filter.locator('button', { hasText: 'All' }).click()
+  await settled(page)
+  await expect(page.locator('.room .ck').first()).toHaveText('Is this month unusual?')
+})
+
+test('the Investments owner control retitles the tables', async ({ page }) => {
+  await page.goto('/#investments')
+  await settled(page)
+  await expect(page.locator('.room .ck').first()).toHaveText('Positions')
+  const filter = page.locator('.roomlens')
+  await filter.locator('button', { hasText: 'Jordan' }).click()
+  await settled(page)
+  await expect(page.locator('.room .ck').first()).toHaveText('Positions · Jordan')
+  await filter.locator('button', { hasText: 'All' }).click()
+  await settled(page)
+  await expect(page.locator('.room .ck').first()).toHaveText('Positions')
 })
 
 test('teaching a rule categorizes the planted transaction', async ({ page }) => {
