@@ -518,7 +518,8 @@ def main(argv: list[str] | None = None) -> None:
     if not items:
         raise SystemExit(
             "no [sources.plaid.items.<alias>] configured in rules.toml — link an "
-            "institution first: python -m sara.link <alias>  (see references/fetching.md)")
+            f"institution first: {sys.executable} -m sara.link <alias>  "
+            "(see references/fetching.md)")
     if item_filter:
         if item_filter not in items:
             raise SystemExit(f"no [sources.plaid.items.{item_filter}] in rules.toml "

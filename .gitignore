@@ -6,3 +6,4 @@ app/node_modules/
 app/test-results/
 app/playwright-report/
 app/e2e/shots/
+app/*.tsbuildinfo

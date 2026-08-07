@@ -19,7 +19,8 @@ Examples:
     tools/run calc.py "min(6500, 0.06 * 91000)"          # the binding limit
     tools/run calc.py "1234.56 * (1 + 0.0435) ** 3"      # 3y compound growth
 
-The MCP twin is `finance_calc` (danny-mcp src/calc.ts) — same grammar, same
+The MCP twin is `finance_calc` (integrations/cloudflare-mcp/src/calc.ts) —
+same grammar, same
 refusal wording; keep them in sync.
 """
 import ast

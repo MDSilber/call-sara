@@ -7,17 +7,18 @@ the design; if yours doesn't fit, open an issue and describe its shape.
 
 ## Now — in flight
 
-- **Automated ingestion:** hub-and-spoke sources over one gated writer —
-  every format (OFX, CSV, aggregator APIs) maps into canonical typed
-  records, one write path applies dedupe, continuity gates, and
-  validation. Plaid first (bring your own free keys — the walkthrough is
-  included), aggregator-agnostic config so SimpleFIN/SnapTrade slot in as
-  mappers. Report-only until you've read one run, autonomous after.
-- **Three-tier classification:** your payee rules always win → Plaid's
-  category signal fills the gaps → a cheap batched model call judges the
-  weak-signal residue. Everything provenance-tagged and re-doable; the
-  review queue trends toward zero.
-- **The strict dialect:** the whole engine as a real typed package —
+- ~~**Automated ingestion**~~ — **shipped** as the `sara` package +
+  `tools/run ingest.py`: hub-and-spoke sources over one gated writer,
+  every format (OFX, CSV, Plaid) mapped into canonical typed records,
+  dedupe + continuity gates, report-only until you've read one run.
+  Still open here: the aggregator-agnostic config so SimpleFIN/SnapTrade
+  slot in as mappers.
+- ~~**Three-tier classification**~~ — **shipped** as `tools/run
+  classify.py`: your payee rules always win → Plaid's category signal
+  fills the gaps → a cheap batched model call judges the weak-signal
+  residue. Everything provenance-tagged and re-doable; the review queue
+  trends toward zero.
+- ~~**The strict dialect**~~ — **shipped** as `skills/finance/sara/`:
   pyright strict, pydantic at every boundary, Decimal-only money paths
   with a lint that bans float, property tests on the invariants, dual
   computation gates that refuse to publish disagreeing numbers.

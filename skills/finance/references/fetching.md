@@ -103,6 +103,10 @@ and when a connection breaks, ALWAYS repair it in place:
 
     python -m sara.link --repair <alias>     # update mode, costs nothing
 
+(`sara.link` and every command below run under the vault's venv python —
+`$VAULT/.venv/bin/python` — where init installed the `sara` package;
+`tools/run` already does this for the tools.)
+
 Never re-link a broken institution fresh; that burns a slot forever. The
 link tool enforces this (it refuses to double-link an alias and announces
 which slot a new link will spend).

@@ -117,7 +117,7 @@ honest exceptions, in full:
 Account numbers are last-4 only. Statements never enter git. A
 fail-closed gitleaks scanner blocks any commit that breaks the rules.
 Sara never needs a password, SSN, or full account number typed into
-chat, ever. If any of the seven is a dealbreaker for you, don't use this!
+chat, ever. If any of the eight is a dealbreaker for you, don't use this!
 
 ## Sara in your pocket (optional)
 

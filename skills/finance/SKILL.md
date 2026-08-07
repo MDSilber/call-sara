@@ -220,7 +220,8 @@ session starts already knowing them.
   dry-run), `--all` (disable dedupe), and `--since YYYY-MM-DD` (trim
   pre-snapshot history); `ingest.py` syncs every configured Plaid item
   (report-only default, `--write` applies + commits) and
-  `python -m sara.link <alias>` links an institution locally —
+  `python -m sara.link <alias>` (the vault venv's python) links an
+  institution locally —
   `references/fetching.md` is the reference for both lanes.
 - `scripts/init_vault.sh` — scaffold a new vault from `vault-template/`.
 - `scripts/doctor.sh` — install/vault health check; run it when anything

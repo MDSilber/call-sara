@@ -98,7 +98,10 @@ Money is DECIMAL end to end (never floats); `*_home` columns are converted
 to the vault's home currency — the ledger's `operating_currency`, USD by
 default — at the latest price on or before the transaction date.
 `docs/notebooks/first-questions.ipynb` (repo root) is the worked intro:
-three questions and two charts against the demo vault.
+three questions and two charts against the demo vault. Run it on the
+vault venv's kernel (`$VAULT/.venv/bin/python`); the charts need
+`$VAULT/.venv/bin/pip install matplotlib` once — the only dep the venv
+doesn't already carry.
 
 Reading list for contributors (the prior art this schema follows):
 [beanquery](https://github.com/beancount/beanquery) (the postings-table

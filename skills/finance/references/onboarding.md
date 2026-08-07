@@ -392,7 +392,8 @@ use-case paragraph to paste.
    the 10-slot rule OUT LOUD before linking: 10 links for life,
    removing one does NOT refund it, and a broken connection always
    repairs free (`python -m sara.link --repair <alias>`), never
-   re-links fresh. Then `python -m sara.link ally`: a local page
+   re-links fresh. Then `python -m sara.link ally` (the vault venv's
+   python): a local page
    hands off to Plaid's own window, they approve at the bank, and the
    exact rules.toml block prints with the discovered accounts — paste
    it, name each `ledger_account`, done.

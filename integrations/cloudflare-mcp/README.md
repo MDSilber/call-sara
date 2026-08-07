@@ -32,7 +32,7 @@ github.com/you/your-vault-repo (PRIVATE)   reports/summary.json · facts/ · rep
 The design rule: **computed answers are tools, owner documents are
 resources, method rides in the domain's ask tool.**
 
-Thirteen tools. Two front doors — `finance_overview` (the whole picture
+Fourteen tools. Two front doors — `finance_overview` (the whole picture
 in one call, for vague/basic questions) and `finance_ask_sara(question)`
 (advice mode: returns an advisory *briefing* — voice rules, the written
 thesis, and the numbers relevant to the question — so the calling
@@ -40,7 +40,9 @@ assistant answers as the household's advisor without inventing figures).
 Then the specifics: `finance_networth` · `finance_balances` ·
 `finance_positions` · `finance_spend(period)` · `finance_cashflow` ·
 `finance_findings` · `finance_forecast` · `finance_autopilot` ·
-`finance_goals_529` · `finance_calendar` · `finance_freshness`.
+`finance_goals_529` · `finance_calendar` · `finance_freshness` —
+plus `finance_calc`, pure Decimal arithmetic that touches no vault data
+(the twin of the skill's `tools/calc.py`, same grammar).
 
 Every answer leads with a human-readable block (window labels and the
 snapshot stamp always included, a loud warning when the snapshot is over
@@ -149,7 +151,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST "$URL" \
   -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 
-# with token → the 13 tools
+# with token → the 14 tools
 curl -s -X POST "$URL" \
   -H "authorization: Bearer $TOKEN" \
   -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
@@ -241,7 +243,7 @@ That's the whole pattern. Smart-home next? `home_lights_status` awaits.
 - `src/github.ts` — GitHub Contents fetcher, ETag + 60s TTL cache,
   dev-fixture fallback
 - `src/server.ts` — the domain registry
-- `src/domains/finance.ts` — the 13 finance tools + the `finance://` resources
+- `src/domains/finance.ts` — the 14 finance tools + the `finance://` resources
 - `src/types.ts` — `Env` + the `summary.json` schema
 - `dev/fixture-summary.json` — the demo household's snapshot (synthetic)
 - `dev/fixture-vault.json` — demo thesis/facts/report documents for the
