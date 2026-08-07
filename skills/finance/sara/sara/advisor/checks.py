@@ -1,4 +1,5 @@
 # pyright: strict
+#!/usr/bin/env python3
 """The planner's checks. Deterministic; each returns a list of findings.
 
 A finding: {"check", "severity", "title", "detail"} — no side effects here.
@@ -942,10 +943,11 @@ def lane_status(today: date | None = None) -> list[dict[str, Any]]:
         account_name = str(lane.get("account") or "")
         cadence = str(lane.get("cadence") or "monthly")
         amt = _lane_amount(lane.get("amount"))
-        row: dict[str, Any] = {"name": name, "kind": kind, "account": account_name,
-               "cadence": cadence, "day": lane.get("day"), "amount": amt,
-               "status": "invalid", "last": None, "last_amount": None,
-               "expected": None, "balance": None, "floor": None, "note": ""}
+        row: dict[str, Any] = {
+            "name": name, "kind": kind, "account": account_name,
+            "cadence": cadence, "day": lane.get("day"), "amount": amt,
+            "status": "invalid", "last": None, "last_amount": None,
+            "expected": None, "balance": None, "floor": None, "note": ""}
         out.append(row)
         if kind not in ("deposit", "invest", "floor") or not account_name:
             row["note"] = "kind must be deposit/invest/floor and account is required"
@@ -1040,8 +1042,7 @@ def projected_shortfall() -> list[Finding]:
     """
     from sara.advisor.forecast import DEFAULT_DAYS, build_forecast  # deferred: forecast
     # imports this module's helpers, so a top-level import would be circular
-    forecast: dict[str, Any] = build_forecast()
-    warns: list[dict[str, Any]] = forecast["household"]["warns"]
+    warns = build_forecast()["household"]["warns"]
     lanes_cfg: list[dict[str, Any]] = rules().get("lanes", [])
     lane_funded = {str(lane.get("account")) for lane in lanes_cfg
                    if lane.get("kind") == "invest" and lane.get("account")}
@@ -1317,10 +1318,10 @@ def transfers_drift() -> list[Finding]:
 
 
 ALL: list[Callable[[], list[Finding]]] = [
-       concentration, deadlines, inbox, anomaly, subscriptions, reconciliation,
-       coverage, review_queue, milestones, fixed_balances, lanes,
-       projected_shortfall, cash_drag, plaid_freshness,
-       catch_all_lumps, transfers_drift]
+    concentration, deadlines, inbox, anomaly, subscriptions, reconciliation,
+    coverage, review_queue, milestones, fixed_balances, lanes,
+    projected_shortfall, cash_drag, plaid_freshness,
+    catch_all_lumps, transfers_drift]
 
 
 

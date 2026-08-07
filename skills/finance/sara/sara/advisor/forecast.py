@@ -33,10 +33,13 @@ import re
 import sys
 from collections import Counter
 from datetime import date, datetime, timedelta
-from typing import Any, NotRequired, TypedDict, cast
+from typing import Any, Literal, NotRequired, TypedDict, cast
 
 from sara.vault import (amount, dated_bullets, illiquid_currency_regex,
                    money, query, rules)
+# checks.py's cycle/merchant helpers are underscore-named but shared with this
+# module by design (its subscription radar and card-cycle parser ARE the spec):
+# pyright: reportPrivateUsage=false
 from sara.advisor.checks import (FIXED_DRIFT_TOLERANCE, _closed_accounts,
                     _cycle_anchors, _cycle_day, _matches_segments,
                     _normalize_merchant)
@@ -156,13 +159,25 @@ class AccountForecast(TypedDict):
     mmf: Money
 
 
-class Warn(TypedDict):
+class _WarnBase(TypedDict):
     account: str
-    kind: str           # below_zero | below_floor
     min: Money
     date: date
-    floor: Money | None
-    drivers: str
+    drivers: str        # the biggest outflows before the minimum, pre-rendered
+
+
+class BelowZero(_WarnBase):
+    kind: Literal["below_zero"]
+    floor: None
+
+
+class BelowFloor(_WarnBase):
+    kind: Literal["below_floor"]
+    floor: Money
+
+
+Warn = BelowZero | BelowFloor
+"""Discriminated on kind, so `w["floor"]` is Money once kind != below_zero."""
 
 
 class DatedNote(TypedDict):
@@ -354,16 +369,16 @@ def recurring_streams(posts: list[Post], today: date | None = None) -> list[Stre
 
 
 # ------------------------------------------------- declared card cycles
-def _declared_cards():
+def _declared_cards() -> dict[str, DeclaredCard]:
     """rules.toml [[accounts]] entries declaring a card cycle (OPTIONAL keys
     bill_day / statement_close / autopay_from on Liabilities accounts) ->
     {ledger_account: {"bill", "close", "from", "label"}}. bill_day is the
     trigger — statement_close alone belongs to checks.coverage(). Malformed
     day values parse to None and drop the entry: a typo'd hint must never
     crash a read-only tool."""
-    out = {}
+    out: dict[str, DeclaredCard] = {}
     for a in rules().get("accounts", []):
-        acct = a.get("ledger_account") or ""
+        acct: str = a.get("ledger_account") or ""
         bill = _cycle_day(a.get("bill_day"))
         if not acct.startswith("Liabilities") or bill is None:
             continue
@@ -374,7 +389,7 @@ def _declared_cards():
     return out
 
 
-def _cycle_spend(card_posts, close_day, today):
+def _cycle_spend(card_posts: list[Post], close_day: int, today: date) -> Money | None:
     """~estimated autopay amount for a card with no autopay stream yet: the
     median NET non-transfer spend over its last DECLARED_SPEND_CYCLES CLOSED
     statement cycles (anchored on close_day; a cycle is closed only when data
@@ -391,7 +406,7 @@ def _cycle_spend(card_posts, close_day, today):
     # (62d back guarantees an anchor precedes `first`, so windows cover it)
     anchors = _cycle_anchors(close_day, first - timedelta(days=62), max(newest, today))
     closed = [a for a in anchors if a <= newest]
-    spends = []
+    spends: list[Money] = []
     for lo, hi in zip(closed, closed[1:]):
         if hi < first:
             continue  # cycle closed before the card existed — absence, not history
@@ -403,7 +418,8 @@ def _cycle_spend(card_posts, close_day, today):
     return est if est >= MIN_STREAM_AMOUNT else None
 
 
-def declared_autopay_streams(streams, posts, asof, today):
+def declared_autopay_streams(streams: list[Stream], posts: list[Post],
+                             asof: dict[str, date], today: date) -> list[Stream]:
     """Declared card-cycle metadata as a HINT layer over inference: each
     [[accounts]] card with a bill_day takes over that ONE card's autopay
     projection; every other stream stays purely inferred.
@@ -486,7 +502,7 @@ MMF_PRICE_BAND = (0.98, 1.02)  # a $1-NAV fund's latest price sits inside this b
                                # real stock/bond funds never hold that peg
 
 
-def _money_market_cash():
+def _money_market_cash() -> dict[str, Money]:
     """{account: usd} of $1-NAV money-market positions (VMFXX/VUSXX-style) —
     settlement cash wearing a fund ticker. Counted into starting balances:
     a sweep account holding seven figures of MMF is not about to crunch just
@@ -497,7 +513,7 @@ def _money_market_cash():
     prices = price_history()
     excl = illiquid_currency_regex()
     lo, hi = MMF_PRICE_BAND
-    out = {}
+    out: dict[str, Money] = {}
     for r in query("SELECT account, currency, sum(number) AS u "
                    "WHERE account ~ '^Assets' AND currency != 'USD' "
                    "GROUP BY account, currency"):
@@ -514,13 +530,13 @@ def _money_market_cash():
 
 
 # ------------------------------------------------------------- projection
-def _add_months(d, months, anchor_day):
+def _add_months(d: date, months: int, anchor_day: int) -> date:
     y = d.year + (d.month - 1 + months) // 12
     m = (d.month - 1 + months) % 12 + 1
     return date(y, m, min(anchor_day, calendar.monthrange(y, m)[1]))
 
 
-def _future_dates(stream, floor, end):
+def _future_dates(stream: Stream, floor: date, end: date) -> list[date]:
     """Projected occurrence dates in (floor, end].
 
     floor is the account's newest ledger date, NOT today: when the feed lags,
@@ -529,7 +545,8 @@ def _future_dates(stream, floor, end):
     last hit's day-of-month; semimonthly projects both observed days-of-month;
     weekly/biweekly step by the stream's own median gap.
     """
-    out, last = [], stream["last"]
+    out: list[date] = []
+    last = stream["last"]
     if stream["cadence"] == "semimonthly":
         days = sorted({d.day for d in stream["dates"]})
         d = last.replace(day=1)
@@ -543,8 +560,8 @@ def _future_dates(stream, floor, end):
     anchor = stream.get("anchor_day") or last.day  # declared card cycles carry their own
     #        anchor ("last" -> 31); _add_months clamps it to short months
     for k in range(1, (end - last).days + 2):  # generous bound; the break below governs
-        nxt = (_add_months(last, months * k, anchor) if months
-               else last + timedelta(days=stream["step"] * k))
+        nxt = (_add_months(last, months * k, anchor) if months  # day-stepped cadences
+               else last + timedelta(days=cast(int, stream["step"]) * k))  # always carry a step
         if nxt > end:
             break
         if nxt > floor:
@@ -552,7 +569,8 @@ def _future_dates(stream, floor, end):
     return out
 
 
-def known_oneoffs(today, end):
+def known_oneoffs(today: date, end: date
+                  ) -> tuple[list[Oneoff], list[Oneoff], list[DatedNote]]:
     """Dated facts/ bullets inside the horizon, three buckets.
 
     quantified: amount + clear cash direction — in the math. ambiguous: amount
@@ -561,7 +579,10 @@ def known_oneoffs(today, end):
     Household-level only — a bullet doesn't say which account pays, so
     per-account minimums exclude one-offs (stated in the output).
     """
-    quantified, ambiguous, unquantified, seen = [], [], [], set()
+    quantified: list[Oneoff] = []
+    ambiguous: list[Oneoff] = []
+    unquantified: list[DatedNote] = []
+    seen: set[tuple[date, str]] = set()
     for d, text, relpath in dated_bullets():
         if not (today <= d <= end):
             continue
@@ -572,7 +593,7 @@ def known_oneoffs(today, end):
         if ONEOFF_CHORE.match(text):
             continue
         m = ONEOFF_AMOUNT.search(text)
-        entry = {"date": d, "text": text, "source": str(relpath)}
+        entry: DatedNote = {"date": d, "text": text, "source": str(relpath)}
         if m:
             v = float(m.group(1).replace(",", ""))
             v *= {"k": 1e3, "m": 1e6}.get((m.group(2) or "").lower(), 1)
@@ -587,7 +608,7 @@ def known_oneoffs(today, end):
     return quantified, ambiguous, unquantified
 
 
-def build_forecast(days=DEFAULT_DAYS, today=None):
+def build_forecast(days: int = DEFAULT_DAYS, today: date | None = None) -> Forecast:
     """The whole projection as data; main() renders it, checks.py reads it.
 
     Returns {"today", "end", "accounts": [...], "household": {...}}. Each
@@ -598,7 +619,8 @@ def build_forecast(days=DEFAULT_DAYS, today=None):
     today = today or date.today()
     end = today + timedelta(days=days)
     posts = _cash_postings()
-    balances, asof = {}, {}
+    balances: dict[str, Money] = {}
+    asof: dict[str, date] = {}
     for p in posts:
         balances[p["account"]] = balances.get(p["account"], 0.0) + p["amt"]
         asof[p["account"]] = max(asof.get(p["account"], date.min), p["date"])
@@ -608,14 +630,15 @@ def build_forecast(days=DEFAULT_DAYS, today=None):
             balances[acct] += extra
     streams = recurring_streams(posts, today)
     streams = declared_autopay_streams(streams, posts, asof, today)
-    floors = {a: float(t) for a, t in rules().get("fixed_balances", {}).items()}
-    flows_by_account = {}
+    floors: dict[str, Money] = {a: float(t) for a, t
+                                in rules().get("fixed_balances", {}).items()}
+    flows_by_account: dict[str, list[Flow]] = {}
     for s in streams:
         for d in _future_dates(s, asof[s["account"]], end):
             flows_by_account.setdefault(s["account"], []).append({
                 "date": d, "amount": s["amount"], "label": s["label"],
                 "kind": s["kind"], "cadence": s["cadence"], "overdue": d < today})
-    accounts = []
+    accounts: list[AccountForecast] = []
     for acct in sorted(set(flows_by_account) | (set(floors) & set(balances))):
         flows = flows_by_account.get(acct, [])
         # same-day outflows apply before inflows — the conservative intraday minimum
@@ -632,12 +655,12 @@ def build_forecast(days=DEFAULT_DAYS, today=None):
                          "end_balance": bal, "floor": floors.get(acct),
                          "mmf": round(mmf.get(acct, 0.0), 2)})
     oneoffs, ambiguous, unquantified = known_oneoffs(today, end)
-    totals = {"income": 0.0, "expense": 0.0, "transfer": 0.0}
+    totals: dict[str, Money] = {"income": 0.0, "expense": 0.0, "transfer": 0.0}
     for a in accounts:
         for f in a["flows"]:
             totals[f["kind"]] += f["amount"]
     oneoff_total = sum(o["amount"] for o in oneoffs)
-    warns = []
+    warns: list[Warn] = []
     for a in accounts:
         drivers = sorted((f for f in a["flows"]
                           if f["amount"] < 0 and f["date"] <= a["min_date"]),
@@ -655,7 +678,7 @@ def build_forecast(days=DEFAULT_DAYS, today=None):
             warns.append({"account": a["account"], "kind": "below_floor",
                           "min": a["min"], "date": a["min_date"], "floor": a["floor"],
                           "drivers": named})
-    household = {"start": sum(a["start"] for a in accounts),
+    household: Household = {"start": sum(a["start"] for a in accounts),
                  "income": totals["income"], "expense": totals["expense"],
                  "transfer_net": totals["transfer"], "oneoffs": oneoffs,
                  "oneoff_total": oneoff_total, "ambiguous": ambiguous,
@@ -665,7 +688,7 @@ def build_forecast(days=DEFAULT_DAYS, today=None):
 
 
 # -------------------------------------------------------------------- CLI
-def main(argv):
+def main(argv: list[str]) -> None:
     try:
         days = int(argv[0]) if argv else DEFAULT_DAYS
     except ValueError:
@@ -690,7 +713,8 @@ def main(argv):
             overdue_seen = overdue_seen or f["overdue"]
             print(f"  {f['date']}{mark} {'~' + money(f['amount']):>11}  "
                   f"{f['label'][:34]:<34} {f['kind'] + '/' + f['cadence']:<19} "
-                  f"→ {money(f['running'])}")
+                  # every flow build_forecast hands back has been walked: running is set
+                  f"→ {money(f['running'])}")  # pyright: ignore[reportTypedDictNotRequiredAccess]
         if not a["flows"]:
             print("  (no regular flows detected — balance held flat)")
         at = ("at start — no projected dip" if a["min"] >= a["start"]

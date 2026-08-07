@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pyright: strict
 """Emit reports/summary.json — the machine-readable twin of the generated reports.
 
 Run:    tools/run summary.py         (also runs inside tools/run reports.py)
@@ -344,7 +345,7 @@ def build_summary(now: datetime | None = None) -> dict:
         last_m = max(ym for ym, _ in totals)     # as home.build_page
         if last_m < pace.cur:
             pace = spend_pace(today, asof, totals, month=last_m)
-    spend_tile = spend_tile(pace, under_streak(totals, pace.cur))
+    tile = spend_tile(pace, under_streak(totals, pace.cur))
     months, cats = spend_matrix()
 
     lanes = lane_status(today)
@@ -372,7 +373,7 @@ def build_summary(now: datetime | None = None) -> dict:
             "window": f"through {asof.isoformat()}" if asof else "ledger empty",
             "holdings": _positions(),
         },
-        "spend": _spend(pace, spend_tile, months, cats),
+        "spend": _spend(pace, tile, months, cats),
         "cashflow": _cashflow(),
         "findings": _findings(),
         "forecast": _forecast(today),
