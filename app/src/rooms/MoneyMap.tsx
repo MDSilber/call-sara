@@ -7,16 +7,160 @@ import { EChart } from '../charts/EChart'
 import type { EChartsCoreOption } from '../charts/echarts'
 import { FONT, areaGrad, baseOption, catAxis, legendBox, nowDot, tipHtml, valAxis } from '../charts/options'
 import { Card, CardSkeleton, Empty, LoadError, Track } from '../components/ui'
+import { useOwner, ownerLabel } from '../ownerLens'
 import { cssv } from '../theme'
-import type { MapNode, Networth } from '../types'
+import type { MapNode, Networth, OwnerMapNode } from '../types'
 import { useFetch } from '../useFetch'
 
-export function MoneyMapRoom() {
+export function MoneyMapRoom(props: { onRegister: (account: string) => void }) {
+  const owner = useOwner()
   const { data, error, loading, reload } = useFetch('networth', api.networth)
   if (loading) return <div className="grid g-nwt"><CardSkeleton lines={8} /><CardSkeleton lines={6} /></div>
   if (error) return <LoadError error={error} retry={reload} />
   if (!data) return null
-  return <MapBody data={data} />
+  if (owner !== 'all') {
+    return <OwnerMapBody owner={owner} household={data} onRegister={props.onRegister} />
+  }
+  return (
+    <>
+      <MapBody data={data} />
+      <AccountsCard onRegister={props.onRegister} />
+    </>
+  )
+}
+
+/** The lens view: one person's institutions and accounts, every tile a
+ * door into that account's register. Household-level cards (thesis, the
+ * net-worth line) stay in the All view — they are the household's. */
+function OwnerMapBody(props: {
+  owner: string
+  household: Networth
+  onRegister: (account: string) => void
+}) {
+  const { owner } = props
+  const { data, error, loading, reload } = useFetch(
+    `ownermap:${owner}`, () => api.ownerMap(owner))
+
+  const build = useCallback((width: number): EChartsCoreOption | null => {
+    if (!data || data.tree.length === 0) return null
+    void width
+    const opt = baseOption()
+    const tooltip = opt.tooltip as Record<string, unknown>
+    tooltip.trigger = 'item'
+    tooltip.formatter = (p: TreemapParams) => {
+      const d = p.data ?? {}
+      if (!d.amt) return ''
+      const path = p.treePathInfo
+        ? p.treePathInfo.map((x) => x.name).filter(Boolean).join(' › ')
+        : (d.name ?? '')
+      return tipHtml({ t: path, rows: [[d.amt, `${d.pct ?? ''} of ${ownerLabel(owner)}'s assets`]] })
+    }
+    const colored = data.tree.map((g, i) => ownerNode(g, cssv(OWNER_MAP_VARS[i % OWNER_MAP_VARS.length] ?? '--map-6')))
+    opt.series = [{
+      type: 'treemap', name: ownerLabel(owner),
+      data: colored,
+      roam: false, nodeClick: false, leafDepth: 2,
+      left: 0, right: 0, top: 4, bottom: 8,
+      breadcrumb: { show: false },
+      label: {
+        show: true, fontFamily: FONT, fontSize: 12,
+        formatter: (p: TreemapParams) => {
+          const d = p.data ?? {}
+          return d.amt ? `${d.name ?? ''}\n${d.amt} · ${d.pct ?? ''}` : p.name
+        },
+      },
+      itemStyle: { borderColor: cssv('--surface'), borderWidth: 2, gapWidth: 2 },
+      levels: [
+        { itemStyle: { borderWidth: 0, gapWidth: 3 } },
+        {
+          colorAlpha: [0.92, 1],
+          itemStyle: { gapWidth: 2, borderWidth: 2, borderColorSaturation: 0.55 },
+          upperLabel: { show: true, height: 22, fontFamily: FONT, fontSize: 11.5, fontWeight: 600, color: '#fff' },
+        },
+        { colorAlpha: [0.68, 0.88] },
+      ],
+      emphasis: { label: { show: true } },
+    }]
+    return opt as EChartsCoreOption
+  }, [data, owner])
+
+  if (loading) return <div className="grid g-solo"><CardSkeleton lines={8} /></div>
+  if (error) return <LoadError error={error} retry={reload} />
+  if (!data) return null
+
+  const onClick = (params: unknown) => {
+    const d = (params as { data?: { account?: string } }).data
+    if (d?.account) props.onRegister(d.account)
+  }
+
+  return (
+    <>
+      <div className="grid g-solo">
+        <Card
+          k={`Where ${ownerLabel(owner)}'s money sits`}
+          sub="Owned and joint accounts under this lens. Click an account tile to open its register."
+          window={props.household.window}
+        >
+          {data.tree.length === 0 ? (
+            <Empty><b>No accounts under {ownerLabel(owner)}.</b> Tag opens with owner metadata and the lens lights up.</Empty>
+          ) : (
+            <>
+              <EChart className="chart chart-map" build={build}
+                onEvent={['click', onClick]} ariaLabel={`asset treemap for ${owner}`} />
+              <p className="mapcap">{data.caption} · net <b className="num">{data.net}</b></p>
+              <p className="maphint">The thesis and the net-worth line are household-level — flip the lens to All for those.</p>
+            </>
+          )}
+        </Card>
+      </div>
+      <AccountsCard onRegister={props.onRegister} />
+    </>
+  )
+}
+
+const OWNER_MAP_VARS = ['--map-1', '--map-3', '--map-5', '--map-2', '--map-4', '--map-6']
+
+function ownerNode(n: OwnerMapNode, color: string | null): Record<string, unknown> {
+  const out: Record<string, unknown> = { name: n.name, value: n.value, amt: n.amt, pct: n.pct }
+  if (n.account) out.account = n.account
+  if (color) out.itemStyle = { color }
+  if (n.children) out.children = n.children.map((k) => ownerNode(k, null))
+  return out
+}
+
+/** Every account with its latest balance — each row opens the register. */
+function AccountsCard(props: { onRegister: (account: string) => void }) {
+  const owner = useOwner()
+  const { data, error, loading, reload } = useFetch(
+    `accounts:${owner}`, () => api.accounts(owner).then((r) => r.accounts))
+  if (loading) return <div className="grid g-solo"><CardSkeleton lines={5} /></div>
+  if (error) return <LoadError error={error} retry={reload} />
+  const rows = (data ?? []).filter((a) => a.owner !== 'transit')
+  if (rows.length === 0) return null
+  return (
+    <div className="grid g-solo">
+      <Card k="Accounts" sub="Latest balances; open any statement." >
+        <table className="regtable">
+          <thead>
+            <tr><th>Account</th><th className="rother">Owner</th><th className="r">Balance</th></tr>
+          </thead>
+          <tbody>
+            {rows.map((a) => (
+              <tr key={a.account} onClick={() => props.onRegister(a.account)}
+                style={{ cursor: 'pointer' }}>
+                <td>
+                  <span className="rp">{a.account.split(':').slice(2).join(' · ') || a.account}</span>
+                  <div className="rn">{a.account}{a.is_open ? '' : ' · closed'}</div>
+                </td>
+                <td className="rother">{a.owner ?? '—'}</td>
+                <td className="r num"><b>{a.balance}</b></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+    </div>
+  )
 }
 
 interface TreemapParams {

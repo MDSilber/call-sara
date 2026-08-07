@@ -4,8 +4,14 @@ Set FINANCE_TEST_VAULT to any initialized vault directory (init_vault.sh
 --demo makes a rich one). The suite copies it to a temp dir, points the
 server there, and drives the real FastAPI app with TestClient:
 
-  * every GET endpoint answers 200
-  * eight-plus dollar figures match tools/run query.py to the dollar
+  * every GET endpoint answers 200 (snapshot rooms AND the DuckDB
+    exploratory surface: activity search, register, insights, owners, map)
+  * eight-plus dollar figures match tools/run query.py to the dollar —
+    including a register running balance, a per-lot value, and the owner
+    lens conservation sum
+  * the drag-drop upload flow lands a fixture OFX through the gated writer
+    (plan → confirm → bean-check green), with the traversal/cap/sniff
+    refusals exercised
   * categorize posts a rule into rules.toml, recategorize rewrites the
     planted postings, and bean-check still passes
   * set-goal edits facts/goals and survives a re-read; dismiss silences a
@@ -14,6 +20,8 @@ server there, and drives the real FastAPI app with TestClient:
 Without FINANCE_TEST_VAULT the whole module skips (same convention as the
 FINANCE_TEST_VENV-gated importer paths).
 """
+# The suite exercises untyped TestClient/json boundaries end to end:
+# pyright: basic
 from __future__ import annotations
 
 import json
@@ -67,13 +75,27 @@ with PLANT_FILE.open("a") as fh:
              f"  {PLANT_ACCOUNT}   -4.50 USD\n"
              f"  Expenses:Uncategorized\n")
 
+# The v2 server reads from summary.json + analytics.duckdb (never the
+# ledger), so the planted rows must be materialized the same way the write
+# side does it: regenerate both artifacts on the copy before the app boots.
+for _argv in (["-m", "sara.analytics"],
+              [str(Path(__file__).resolve().parents[2] / "tools" / "summary.py")]):
+    _proc = subprocess.run([str(VENV_PY), *_argv], capture_output=True, text=True,
+                           env={**os.environ, "FINANCE_VAULT": str(VAULT)},
+                           cwd=str(VAULT))
+    assert _proc.returncode == 0, f"read-model regen failed: {_proc.stderr[-800:]}"
+
 import httpx  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from sara.typed import as_dict, as_dicts, as_list  # noqa: E402
 
 GET_ENDPOINTS = ["ping", "glance", "activity", "spend", "networth",
-                 "investments", "goals", "autopilot", "findings", "freshness"]
+                 "investments", "goals", "autopilot", "findings", "freshness",
+                 "activity?q=trader&limit=10", "accounts", "owners",
+                 "search?q=chase", "insights", "connections",
+                 "spend/drill?category=Food&month=2026-07",
+                 "map?owner=alex", "investments?owner=jordan"]
 _token = ""  # filled by the client fixture (per-launch server token)
 
 
@@ -199,8 +221,9 @@ def test_uncategorized_count_matches_query_py(client: TestClient) -> None:
     m = re.search(r"(\d+) uncategorized postings", cli)
     assert m
     api = _body(client.get("/api/activity"))
-    assert api["uncategorized_total"] == int(m.group(1))                # count
-    assert int(str(api["uncategorized_total"])) >= 2  # the planted pair shows
+    uncat = as_dict(api["uncategorized"])
+    assert uncat["count"] == int(m.group(1))                            # count
+    assert int(str(uncat["count"])) >= 2  # the planted pair shows
 
 
 def test_positions_match_query_py(client: TestClient) -> None:
@@ -325,3 +348,181 @@ def test_dismiss_end_to_end(client: TestClient) -> None:
     assert r.status_code == 200 and _body(r)["removed"] is True
     restored = as_dicts(_body(client.get("/api/autopilot"))["queue"])
     assert any(q["id"] == fid for q in restored)
+
+
+# ------------------------------------------------- v2: the exploratory reads
+def _sql_cell(bql: str, col: str) -> str:
+    """One value out of query.py sql's TSV output."""
+    out = _cli("query.py", "sql", bql)
+    lines = out.strip().splitlines()
+    assert len(lines) >= 2, out
+    header = lines[0].split("\t")
+    return lines[1].split("\t")[header.index(col)]
+
+
+def test_activity_search_matches_query_py(client: TestClient) -> None:
+    """The ILIKE payee filter, held to bean-query's regex count + sum."""
+    n = int(float(_sql_cell(
+        "SELECT count(*) AS n WHERE account ~ '^(Income|Expenses)' "
+        "AND payee ~ 'Trader'", "n")))
+    spent_cell = _sql_cell(
+        "SELECT sum(convert(position,'USD')) AS v "
+        "WHERE account ~ '^Expenses' AND payee ~ 'Trader'", "v")
+    spent = float(re.sub(r"[^\d.-]", "", spent_cell.split(" USD")[0]))
+    api = _body(client.get("/api/activity?q=trader&limit=200"))
+    assert api["matched"] == n and n >= 4                               # count
+    assert _close(_dollars(str(as_dict(api["totals"])["spent"])), spent)  # fig 9
+    for row in as_dicts(api["rows"]):
+        blob = f"{row['payee']} {row['narration']}".lower()
+        assert "trader" in blob
+
+
+def test_activity_amount_filter(client: TestClient) -> None:
+    api = _body(client.get("/api/activity?amount_min=1000&limit=200"))
+    n = int(float(_sql_cell(
+        "SELECT count(*) AS n WHERE account ~ '^(Income|Expenses)' "
+        "AND (number >= 1000 OR number <= -1000)", "n")))
+    assert api["matched"] == n and n > 0
+
+
+def test_register_running_balance_matches_query_py(client: TestClient) -> None:
+    """The newest register row's running balance IS the account balance."""
+    account = "Assets:US:Chase:Checking4321"
+    cell = _sql_cell(
+        f"SELECT sum(convert(position,'USD')) AS v WHERE account = '{account}'", "v")
+    truth = float(re.sub(r"[^\d.-]", "", cell.split(" USD")[0]))
+    api = _body(client.get(f"/api/register?account={account}"))
+    assert api["found"] is True and len(as_dicts(api["rows"])) > 0
+    newest = as_dicts(api["rows"])[0]
+    got = float(re.sub(r"[^\d.-]", "", str(newest["balance"])))
+    assert abs(got - truth) < 0.01                                      # fig 10 (cents)
+    assert _close(_dollars(str(api["balance"])), truth)                 # header, whole $
+
+
+def test_lots_sum_matches_positions(client: TestClient) -> None:
+    """Per-lot values sum to the symbol's position value (independent path:
+    DB lots x latest price vs bean-query convert)."""
+    api = _body(client.get("/api/investments"))
+    lots = as_dicts(api["lots"])
+    assert lots, "demo vault should carry cost-basis lots"
+    for lot in lots:
+        assert lot["term"] in ("LT", "ST") and lot["acquired"]
+    agg: dict[str, float] = {}
+    for lot in lots:
+        agg[str(lot["symbol"])] = agg.get(str(lot["symbol"]), 0.0) + float(str(lot["valueN"]))
+    by_symbol = {str(p["symbol"]): p for p in as_dicts(api["positions"])}
+    checked = 0
+    for sym, total in agg.items():
+        if sym in by_symbol and by_symbol[sym]["value"] is not None:
+            assert _close(total, _dollars(str(by_symbol[sym]["value"])))  # fig 11+
+            checked += 1
+    assert checked >= 2
+
+
+def test_owner_lens_conserves_totals(client: TestClient) -> None:
+    """Per-owner spend slices sum to the household total (every demo account
+    carries an owner, so nothing leaks out of the lens)."""
+    total = _dollars(str(as_dict(_body(client.get(
+        "/api/activity?date_to=2026-07-31"))["totals"])["spent"]))
+    sliced = 0.0
+    for owner in ("alex", "jordan", "joint"):
+        api = _body(client.get(f"/api/activity?owner={owner}&date_to=2026-07-31"))
+        sliced += _dollars(str(as_dict(api["totals"])["spent"]))
+        for row in as_dicts(api["rows"]):
+            assert row["owner"] == owner
+    assert abs(sliced - total) <= 3.0  # three whole-dollar renderings
+
+
+def test_insights_categories_match_summary(client: TestClient) -> None:
+    api = _body(client.get("/api/insights"))
+    cats = as_dicts(api["cats"])
+    assert cats and all(len(as_list(c["series"])) >= 3 for c in cats)
+    summary = json.loads((VAULT / "reports" / "summary.json").read_text())
+    top = max(
+        as_dict(as_dict(as_dict(summary["spend"])["monthly_by_category"])["categories"]).items(),
+        key=lambda kv: sum(float(x) for x in as_list(kv[1])))[0]
+    names = {str(c["name"]) for c in cats}
+    assert str(top).split(":")[0] in {n.split(" ")[0] for n in names} or top in names
+
+
+def test_connections_payload_shape(client: TestClient) -> None:
+    api = _body(client.get("/api/connections"))
+    assert api["configured"] is True
+    slots = as_dict(api["slots"])
+    assert slots["used"] == 1 and slots["total"] == 10
+    item = next(i for i in as_dicts(api["items"]) if i["alias"] == "demo")
+    assert item["status"] in ("fresh", "stale", "dead", "never", "no-token")
+    assert item["token_present"] is True
+    routed = {str(a["ledger_account"]) for a in as_dicts(item["accounts"])}
+    assert routed == {"Assets:US:Chase:Checking4321", "Liabilities:US:Chase:Card5678"}
+
+
+# --------------------------------------------------- v2: the upload flow
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
+
+def test_upload_plan_and_confirm_end_to_end(client: TestClient) -> None:
+    """Drop a fixture OFX: plan (dry importer run shown) → confirm (filed,
+    imported through the gated writer, bean-check green, feed sees it)."""
+    payload = (FIXTURES / "upload.checking4321.qfx").read_bytes()
+    r = client.post("/api/actions/upload", headers=_auth(),
+                    files={"file": ("../../evil-name.qfx", payload,
+                                    "application/octet-stream")})
+    assert r.status_code == 200, r.text
+    plan = _body(r)
+    assert plan["recognized"] is True
+    assert "Chase" in str(plan["files_to"]) and ".." not in str(plan["files_to"])
+    assert "BLUE HERON BOOKS" in str(plan["report"])       # the dry-run report
+    assert not (VAULT.parent / "evil-name.qfx").exists()   # name discarded
+    assert not (VAULT / "evil-name.qfx").exists()
+    staged = list((VAULT / "inbox").glob("upload-*.qfx"))
+    assert len(staged) == 1                                # server-named stage
+
+    r = client.post("/api/actions/upload-confirm", headers=_auth(),
+                    json={"upload_id": str(plan["upload_id"])})
+    assert r.status_code == 200
+    stream = r.text
+    assert "✓ imported and verified" in stream, stream
+    check = subprocess.run([str(SOURCE / ".venv" / "bin" / "bean-check"),
+                            str(VAULT / "ledger" / "main.beancount")],
+                           capture_output=True, text=True)
+    assert check.returncode == 0, check.stderr
+    ledger = "".join(f.read_text() for f in (VAULT / "ledger").glob("*.beancount"))
+    assert "BLUE HERON BOOKS" in ledger and "UPLD-0001" in ledger
+    # the confirm regenerated the read model — the feed can find the row
+    api = _body(client.get("/api/activity?q=blue+heron&limit=10"))
+    assert int(str(api["matched"])) >= 1
+    # a second confirm of the same plan is refused
+    r = client.post("/api/actions/upload-confirm", headers=_auth(),
+                    json={"upload_id": str(plan["upload_id"])})
+    assert "unknown or already-applied" in r.text
+
+
+def test_upload_refusals(client: TestClient) -> None:
+    r = client.post("/api/actions/upload", headers=_auth(),
+                    files={"file": ("evil.sh", b"#!/bin/sh\nrm -rf /\n",
+                                    "text/plain")})
+    assert r.status_code == 422                       # extension not accepted
+    r = client.post("/api/actions/upload", headers=_auth(),
+                    files={"file": ("fake.csv", b"%PDF-1.4 not a csv",
+                                    "text/csv")})
+    assert r.status_code == 422                       # content sniff disagrees
+    r = client.post("/api/actions/upload",
+                    files={"file": ("x.qfx", b"OFXHEADER:100", "text/plain")})
+    assert r.status_code == 403                       # no token, no upload
+
+
+def test_plaid_disable_comments_config_out(client: TestClient) -> None:
+    r = client.post("/api/actions/plaid-disable", headers=_auth(),
+                    json={"item": "demo"})
+    assert r.status_code == 200, r.text
+    assert _body(r)["disabled"] is True
+    rules_text = (VAULT / "rules.toml").read_text()
+    assert "# disabled in Sara App" in rules_text
+    assert 'PLAID_DEMO_ACCESS_TOKEN' in (VAULT / ".secrets" / "plaid.env").read_text()
+    api = _body(client.get("/api/connections"))
+    assert all(i["alias"] != "demo" for i in as_dicts(api["items"]))
+    assert as_dict(api["slots"])["used"] == 1          # the slot is preserved
+    r = client.post("/api/actions/plaid-sync", headers=_auth(),
+                    json={"item": "demo"})
+    assert r.status_code == 422                        # disabled item refuses

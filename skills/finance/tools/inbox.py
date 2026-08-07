@@ -84,13 +84,17 @@ def _dest_for(entry: dict) -> Path:
 
 
 class Item:
-    """One inbox file, identified — filable when a destination is known."""
+    """One inbox file, identified — filable when a destination is known.
+    `importer`/`import_args` are the structured form of `cmd` (the Sara App
+    upload flow drives the same importer without parsing the display line)."""
 
     def __init__(self, path: Path, label: str, note: str,
                  dest: Path | None = None, name: str = "",
-                 cmd: str = ""):
+                 cmd: str = "", importer: str = "",
+                 import_args: tuple = ()):
         self.path, self.label, self.note = path, label, note
         self.dest, self.name, self.cmd = dest, name, cmd
+        self.importer, self.import_args = importer, import_args
 
     @property
     def files(self) -> bool:
@@ -123,7 +127,8 @@ def _identify_ofx(path: Path) -> Item:
     if importer != "importers/holdings_ofx.py":
         cmd += "   # review, then re-run with --write"
     return Item(path, f"OFX {label} · {entry['ledger_account']}",
-                f"→ {filed.relative_to(VAULT)}", dest, name, cmd)
+                f"→ {filed.relative_to(VAULT)}", dest, name, cmd,
+                importer=importer)
 
 
 def _csv_date(lines: list[str]) -> date:
@@ -166,7 +171,9 @@ def _identify_csv(path: Path) -> Item:
     cmd = (f"{RUN} importers/chase_csv.py '{filed}' "
            f"{entry['ledger_account']}   # review, then re-run with --write")
     return Item(path, f"Chase card CSV · {entry['ledger_account']}",
-                f"→ {filed.relative_to(VAULT)}", dest, name, cmd)
+                f"→ {filed.relative_to(VAULT)}", dest, name, cmd,
+                importer="importers/chase_csv.py",
+                import_args=(str(entry["ledger_account"]),))
 
 
 def identify(path: Path) -> Item:

@@ -203,6 +203,10 @@ def glance(now: datetime | None = None) -> dict[str, object]:
         "generated_at": now,
         "greet": f"Good {daypart}, {names}" if names else f"Good {daypart}",
         "sara": sara_line(pace, needs_state, cards, more, daypart),
+        # every daypart, so the snapshot-served glance greets in the
+        # requester's part of day (sara/server/live.py picks one)
+        "sara_by_daypart": {dp: sara_line(pace, needs_state, cards, more, dp)
+                            for dp in ("morning", "afternoon", "evening")},
         "ledger_stamp": (f"Ledger through {mon_d(asof)}" if asof
                          else "Ledger empty"),
         "checks_stamp": (f"checks from {checks_from}" if checks_from else ""),
@@ -596,3 +600,27 @@ def freshness(now: datetime | None = None) -> dict[str, object]:
         "accounts": accounts,
         "reports_dir": str(REPORTS),
     }))
+
+
+# ------------------------------------------------------------ app snapshot
+def app_snapshot(now: datetime | None = None) -> dict[str, object]:
+    """Every ledger-derived room payload, materialized at report time.
+
+    tools/summary.py embeds this under summary.json's ``app`` key — the CQRS
+    write side. The server (sara.server.app) serves these payloads verbatim
+    and overlays only the file-backed live parts (findings, dismissals,
+    goals, facts calendars) plus the request-time greeting; it never parses
+    the ledger on a GET. Activity/register/search/insights come from
+    reports/analytics.duckdb instead and are not snapshotted.
+    """
+    now = now or datetime.now()
+    return {
+        "schema": 1,
+        "generated_at": now.isoformat(timespec="seconds"),
+        "glance": glance(now),
+        "spend": spend(now),
+        "networth": networth(),
+        "investments": investments(now),
+        "goals": goals_payload(now),
+        "autopilot": autopilot(now),
+    }

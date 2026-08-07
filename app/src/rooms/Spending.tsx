@@ -9,6 +9,7 @@ import { areaGrad, baseOption, catAxis, legendBox, nowDot, tipHtml, valAxis } fr
 import { cssv } from '../theme'
 import type { Spend, SpendCat, Tip } from '../types'
 import { Card, CardSkeleton, Empty, LoadError, Track } from '../components/ui'
+import { useOwner, ownerLabel } from '../ownerLens'
 import { useFetch } from '../useFetch'
 
 type PeriodKey = 'cur' | 'prev' | 'six'
@@ -211,6 +212,61 @@ function SpendingBody({ data }: { data: Spend }) {
           </Card>
         </div>
       )}
+      <InsightsStrip />
     </>
+  )
+}
+
+
+/** The insights strip: a small-multiple sparkline per top category, drawn
+ * from the analytics DB's monthly_flows — the exploratory read path. */
+function InsightsStrip() {
+  const owner = useOwner()
+  const { data, error, loading, reload } = useFetch(
+    `insights:${owner}`, () => api.insights(owner))
+  if (loading) return <div className="grid g-solo"><CardSkeleton lines={3} /></div>
+  if (error) return <LoadError error={error} retry={reload} />
+  if (!data || data.cats.length === 0) return null
+  return (
+    <div className="grid g-solo">
+      <Card
+        k={owner !== 'all' ? `Category trends · ${ownerLabel(owner)}` : 'Category trends'}
+        sub="Each spark is one category's monthly spend — the quiet way to spot a bill creeping."
+        window={data.window}
+      >
+        <div className="insights">
+          {data.cats.map((c) => (
+            <div className="insight" key={c.name}>
+              <div className="iname">{c.name}</div>
+              <div className="icur num">{c.cur}</div>
+              <Sparkline series={c.series} />
+              <div className="imeta">
+                <span className={`idelta ${c.delta_cls} num`}>{c.delta}</span>
+                <span className="num">avg {c.avg}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+/** Plain-SVG sparkline: geometry only, no money math. */
+function Sparkline({ series }: { series: number[] }) {
+  const max = Math.max(...series, 1)
+  const w = 100
+  const h = 30
+  const step = series.length > 1 ? w / (series.length - 1) : w
+  const pts = series
+    .map((v, i) => `${(i * step).toFixed(1)},${(h - 2 - (v / max) * (h - 6)).toFixed(1)}`)
+    .join(' ')
+  const area = `0,${h} ${pts} ${w},${h}`
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden>
+      <line x1="0" y1={h - 0.5} x2={w} y2={h - 0.5} />
+      <polygon points={area} />
+      <polyline points={pts} />
+    </svg>
   )
 }

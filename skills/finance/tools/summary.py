@@ -318,6 +318,19 @@ def _glance(pace, totals, lanes, edu_tile, nw_delta_plain, liquid, asof,
     }
 
 
+def _app_snapshot(now):
+    """The Sara App read model (sara.server.assemble.app_snapshot) — the same
+    verified builders, rendered once here so the app server never parses the
+    ledger on a GET. Omitted (with a note) when the sara package predates the
+    app schema; the app then asks for a report regeneration."""
+    try:
+        from sara.server import assemble
+    except ImportError as e:
+        print(f"note: summary.json app section skipped ({e})", file=sys.stderr)
+        return None
+    return assemble.app_snapshot(now)
+
+
 # ------------------------------------------------------------------ build
 def build_summary(now: datetime | None = None) -> dict:
     now = now or datetime.now().astimezone()
@@ -375,6 +388,7 @@ def build_summary(now: datetime | None = None) -> dict:
         "thesis_rules": _thesis_rules(),
         "glance": _glance(pace, totals, lanes, edu_tile, nw_delta_plain,
                           liquid, asof, today, daypart),
+        "app": _app_snapshot(now),
     })
     assert isinstance(cleaned, dict)  # _clean maps dict -> dict
     return cleaned

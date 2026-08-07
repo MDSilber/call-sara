@@ -203,12 +203,12 @@ def render_page(alias: str, link_token: str, nonce: str, repair: bool) -> str:
                                  else "linking a new institution"))
 
 
-def _token_var(alias: str) -> str:
+def token_var(alias: str) -> str:
     clean = "".join(c for c in alias.upper().replace("-", "_") if c.isalnum() or c == "_")
     return f"PLAID_{clean}_ACCESS_TOKEN"
 
 
-def _slots_used(env: dict[str, str]) -> int:
+def slots_used(env: dict[str, str]) -> int:
     return sum(1 for k in env if k.startswith("PLAID_") and k.endswith("_ACCESS_TOKEN"))
 
 
@@ -233,7 +233,7 @@ def _suggest_ledger_account(alias: str, acct: dict[str, object]) -> str:
 def print_rules_snippet(alias: str, accounts: list[dict[str, object]], products: list[str]) -> None:
     print("\nPaste into $VAULT/rules.toml (then route each account):\n")
     print(f"[sources.plaid.items.{alias}]")
-    print(f'access_token_env = "{_token_var(alias)}"')
+    print(f'access_token_env = "{token_var(alias)}"')
     print(f'products = [{", ".join(repr(p) for p in products)}]')
     print(f"[sources.plaid.items.{alias}.accounts]")
     for a in accounts:
@@ -333,19 +333,19 @@ def main(argv: list[str] | None = None) -> None:
     creds = PlaidCreds(client_id=env["PLAID_CLIENT_ID"], secret=env["PLAID_SECRET"],
                        environment=env.get("PLAID_ENV", "production"))
 
-    token_var = _token_var(alias)
-    existing = env.get(token_var, "")
+    var_name = token_var(alias)
+    existing = env.get(var_name, "")
     if repair and not existing:
-        raise SystemExit(f"nothing to repair: {token_var} is not in plaid.env — "
+        raise SystemExit(f"nothing to repair: {var_name} is not in plaid.env — "
                          f"link it first: python -m sara.link {alias}")
-    used = _slots_used(env)
+    used = slots_used(env)
     if not repair:
         if existing:
             raise SystemExit(
-                f"{alias} already has a token ({token_var}). A broken connection is fixed\n"
+                f"{alias} already has a token ({var_name}). A broken connection is fixed\n"
                 f"FREE with:  python -m sara.link --repair {alias}\n"
                 f"Re-linking fresh burns one of your {LIFETIME_ITEMS} lifetime slots — if you truly "
-                f"want that, remove the {token_var} line from plaid.env first.")
+                f"want that, remove the {var_name} line from plaid.env first.")
         err("┌─ HEADS UP — Plaid Trial slots are LIFETIME ─────────────────────┐")
         err(f"│ This link will occupy slot {used + 1} of {LIFETIME_ITEMS}. Removing an Item never   │")
         err("│ refunds a slot, and broken connections repair FREE with --repair.│")
@@ -384,9 +384,9 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(f"token exchange failed — {api_error_summary(e)}") from e
     if not access_token:
         raise SystemExit("Plaid returned no access token — nothing changed")
-    upsert_env_var(token_var, access_token)
+    upsert_env_var(var_name, access_token)
     print(f"\n✓ {alias} linked ({'repaired, no slot spent' if repair else f'slot {used + 1} of {LIFETIME_ITEMS}'})"
-          f" — token saved to {PLAID_ENV_FILE.name} as {token_var} (item ...{item_id[-4:]})")
+          f" — token saved to {PLAID_ENV_FILE.name} as {var_name} (item ...{item_id[-4:]})")
     try:
         accounts = get_accounts(client, access_token)
     except Exception as e:

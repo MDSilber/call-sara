@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# E2E harness: copy a built vault, plant one uncategorized transaction for
-# the categorize flow, and serve Sara App on a scratch port. Never touches
-# the source vault; the copy leans on its .venv (bean-query/bean-check).
+# E2E harness: copy a built vault, plant uncategorized transactions for the
+# teach flows (one lone merchant for the chip teach, one merchant twice for
+# bulk teach), point the Plaid lane at the offline fixture seam, and serve
+# Sara App on a scratch port. Never touches the source vault; the copy
+# leans on its .venv (bean-query/bean-check).
 #   SARA_E2E_VAULT=/path/to/vault (init_vault.sh --demo makes a rich one)
 set -euo pipefail
 SRC="${SARA_E2E_VAULT:?set SARA_E2E_VAULT to a built vault (init_vault.sh --demo makes one)}"
 PORT="${SARA_E2E_PORT:-8793}"
 WORK="${TMPDIR:-/tmp}/sara-e2e-vault"
+REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 rm -rf "$WORK"
 mkdir -p "$WORK"
 ( cd "$SRC" && tar cf - --exclude .venv --exclude .git . ) | ( cd "$WORK" && tar xf - )
@@ -22,6 +25,24 @@ cat >> "$LEDGER_FILE" <<PLANT
 $TODAY * "PLANTED COFFEE 042" ""
   $CARD   -6.75 USD
   Expenses:Uncategorized
+
+$TODAY * "PLANTED BAGEL 101" ""
+  $CARD   -4.25 USD
+  Expenses:Uncategorized
+
+$TODAY * "PLANTED BAGEL 205" ""
+  $CARD   -5.10 USD
+  Expenses:Uncategorized
 PLANT
 
-exec env FINANCE_VAULT="$WORK" "$SRC/.venv/bin/python" -m sara.server --port "$PORT"
+# The v2 server reads summary.json + analytics.duckdb — materialize the
+# planted rows the same way the write side would.
+export FINANCE_VAULT="$WORK"
+"$SRC/.venv/bin/python" -m sara.analytics >/dev/null
+"$SRC/.venv/bin/python" "$REPO/skills/finance/tools/summary.py" >/dev/null
+
+# Plaid "sync now" rides the offline fixture seam (alias `demo` maps to
+# tests/fixtures/demo.sync.json) — a real pipeline run, no network.
+export SARA_PLAID_FIXTURE="$REPO/app/e2e/fixtures"
+
+exec "$SRC/.venv/bin/python" -m sara.server --port "$PORT"

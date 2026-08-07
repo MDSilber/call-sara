@@ -120,3 +120,10 @@ def check_secret_permissions(path: Path) -> str | None:
         return (f"{path} is mode {mode:o} — it holds credentials and should be 0600 "
                 f"(fix: chmod 600 {path})")
     return None
+
+
+def reset_rules_cache() -> None:
+    """Forget the parsed rules.toml — call after writing it so a long-lived
+    process (the Sara App server) sees the change without a restart."""
+    global _rules_cache
+    _rules_cache = None

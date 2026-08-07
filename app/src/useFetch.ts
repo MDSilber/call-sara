@@ -12,6 +12,16 @@ export function invalidate(...keys: string[]): void {
   listeners.forEach((fn) => fn())
 }
 
+/** Invalidate every cached key EXCEPT the named ones — for refreshes fired
+ * from inside a room that must not unmount itself (its own key stays warm,
+ * so its useFetch reload swaps data in place with no skeleton flash). */
+export function invalidateExcept(...keep: string[]): void {
+  for (const k of [...cache.keys()]) {
+    if (!keep.includes(k)) cache.delete(k)
+  }
+  listeners.forEach((fn) => fn())
+}
+
 export interface Fetched<T> {
   data: T | null
   error: string | null

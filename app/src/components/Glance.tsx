@@ -1,12 +1,21 @@
-/** The glance: aurora hero (greeting, Sara's line, stamps, theme toggle),
- * four verdict tiles floating over the band, and the ONE Next line.
- * Verdict words lead; numbers are second — the density law from Sara Home. */
+/** The glance: aurora hero (greeting, Sara's line, the owner lens, ⌘K,
+ * theme, stamps), four verdict tiles floating over the band, and the ONE
+ * Next line. Verdict words lead; numbers are second — Sara Home's law. */
 import { useState } from 'react'
+import { api } from '../api'
+import { ownerLabel, setOwner, useOwner } from '../ownerLens'
 import { cycleTheme, themeLabel } from '../theme'
 import type { Glance as GlanceData } from '../types'
+import { useFetch } from '../useFetch'
 import { CodeText, Skeleton } from './ui'
 
-export function Hero(props: { data: GlanceData | null }) {
+const IS_MAC = navigator.platform.toUpperCase().includes('MAC')
+
+export function Hero(props: {
+  data: GlanceData | null
+  refreshing?: boolean
+  onPalette?: () => void
+}) {
   const [themeName, setThemeName] = useState(themeLabel())
   const d = props.data
   return (
@@ -19,6 +28,13 @@ export function Hero(props: { data: GlanceData | null }) {
               <p className="say">{d ? d.sara : '\u2026'}</p>
             </div>
             <div className="hero-side">
+              <OwnerLens />
+              {props.onPalette && (
+                <button className="herobtn" onClick={props.onPalette}
+                  aria-label="open the command palette">
+                  Jump <kbd>{IS_MAC ? '⌘K' : 'ctrl K'}</kbd>
+                </button>
+              )}
               <button
                 className="themebtn"
                 onClick={() => setThemeName(cycleTheme() === 'auto' ? 'Auto theme' : themeLabel())}
@@ -28,7 +44,9 @@ export function Hero(props: { data: GlanceData | null }) {
               {d && (
                 <div className="stamp">
                   {d.ledger_stamp}
-                  {d.checks_stamp ? <><br />{d.checks_stamp}</> : null}
+                  {props.refreshing
+                    ? <><br />refreshing the numbers…</>
+                    : d.checks_stamp ? <><br />{d.checks_stamp}</> : null}
                 </div>
               )}
             </div>
@@ -40,6 +58,27 @@ export function Hero(props: { data: GlanceData | null }) {
         <NextLine data={d} />
       </div>
     </>
+  )
+}
+
+/** All / per-person / Joint — rendered only once the ledger declares
+ * owners; the choice persists and every lens-aware room re-slices. */
+function OwnerLens() {
+  const owner = useOwner()
+  const { data } = useFetch('owners', api.owners)
+  if (!data || data.owners.length === 0) return null
+  return (
+    <div className="lens" role="group" aria-label="owner lens">
+      <button aria-pressed={owner === 'all'} onClick={() => setOwner('all')}>
+        All
+      </button>
+      {data.owners.map((o) => (
+        <button key={o.owner} aria-pressed={owner === o.owner}
+          onClick={() => setOwner(o.owner)}>
+          {ownerLabel(o.owner)}
+        </button>
+      ))}
+    </div>
   )
 }
 

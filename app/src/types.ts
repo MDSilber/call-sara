@@ -83,25 +83,180 @@ export interface Glance {
   next: { label: string; quiet: boolean; text: string; meta: string }
 }
 
-// ------------------------------------------------------------ activity
+// ------------------------------------------------------------ activity v2
 export interface ActivityRow {
+  id: number
+  date: string
+  day: string
   payee: string
   narration: string
   account: string
+  source_account: string
+  owner: string | null
   category: string
   amt: string
   kind: 'expense' | 'income' | 'uncategorized'
+  classifier: string
 }
 
-export interface Activity {
-  months: { ym: string; label: string }[]
-  month: string | null
-  label?: string
-  totals?: { spent: string; received: string; window: string }
-  days: { date: string; label: string; rows: ActivityRow[] }[]
-  categories: { account: string; label: string }[]
-  uncategorized_month?: number
-  uncategorized_total: number
+export interface Category {
+  account: string
+  label: string
+}
+
+export interface ActivityPage {
+  rows: ActivityRow[]
+  cursor: string | null
+  /** First page only. */
+  matched?: number
+  totals?: { spent: string; received: string }
+  categories?: Category[]
+  uncategorized?: { count: number; amount: string }
+  owners?: OwnerDef[]
+}
+
+export interface ActivityFilters {
+  q?: string
+  amount_min?: number
+  amount_max?: number
+  category?: string
+  account?: string
+  date_from?: string
+  date_to?: string
+  uncategorized_only?: boolean
+}
+
+// --------------------------------------------------------------- owners
+export interface OwnerDef {
+  owner: string
+  label: string
+}
+
+export interface Owners {
+  owners: OwnerDef[]
+  slices: { owner: string; liquid: string; accounts: number }[]
+}
+
+// -------------------------------------------------------------- register
+export interface RegisterRow {
+  id: number
+  date: string
+  day: string
+  payee: string
+  narration: string
+  other: string
+  amt: string
+  neg: boolean
+  balance: string
+}
+
+export interface Register {
+  account: string
+  found: boolean
+  foreign_owner?: string | null
+  owner?: string | null
+  institution?: string | null
+  is_open?: boolean
+  opened?: string | null
+  postings?: number
+  balance?: string
+  balances?: { currency: string; units: string; value: string | null }[]
+  rows: RegisterRow[]
+  cursor: string | null
+}
+
+export interface AccountRow {
+  account: string
+  owner: string | null
+  institution: string | null
+  is_open: boolean
+  balance: string
+}
+
+// -------------------------------------------------------------- insights
+export interface InsightCat {
+  name: string
+  series: number[]
+  cur: string
+  avg: string
+  delta: string
+  delta_cls: 'good' | 'bad'
+}
+
+export interface Insights {
+  cats: InsightCat[]
+  months: string[]
+  window: string
+}
+
+export interface SpendDrill {
+  category: string
+  month: string
+  total: string
+  merchants: { name: string; amt: string; n: number }[]
+  more: number
+}
+
+// ----------------------------------------------------------- connections
+export interface ConnectionItem {
+  alias: string
+  products: string[]
+  token_var: string
+  token_present: boolean
+  accounts: { tail: string; ledger_account: string }[]
+  status: 'fresh' | 'stale' | 'dead' | 'never' | 'no-token'
+  last_synced: string | null
+  last_synced_lbl: string | null
+  silent_days: number | null
+}
+
+export interface Connections {
+  configured: boolean
+  items: ConnectionItem[]
+  slots: { used: number; total: number; line: string }
+  keys_present: boolean
+  fixture: boolean
+}
+
+export interface LinkUpdate {
+  alias: string
+  link_token: string
+  mode: string
+}
+
+// --------------------------------------------------------------- uploads
+export interface UploadPlan {
+  upload_id: string
+  kind: string
+  display: string
+  label: string
+  note: string
+  recognized: boolean
+  files_to: string
+  import_cmd: string | null
+  report: string
+  unknown_note: string
+}
+
+// ---------------------------------------------------------------- search
+export interface SearchResults {
+  accounts: AccountRow[]
+  txns: ActivityRow[]
+}
+
+// ------------------------------------------------------------- freshness
+export interface FreshnessV2 {
+  summary_generated_at: string | null
+  ledger_through: string | null
+  db_built_at: string
+  db_txns: number
+  regen: {
+    running: boolean
+    last_started: string | null
+    last_finished: string | null
+    last_ok: boolean | null
+    last_error: string
+  }
 }
 
 // --------------------------------------------------------------- spend
@@ -246,8 +401,49 @@ export interface Position {
   share: string
 }
 
+export interface Lot {
+  account: string
+  symbol: string
+  units: string
+  acquired: string | null
+  acquired_lbl: string
+  term: 'LT' | 'ST'
+  basis: string
+  value: string | null
+  valueN: number
+  gain: string | null
+  gain_cls: 'good' | 'bad' | ''
+  gain_pct: string | null
+}
+
+export interface DividendsTimeline {
+  months: { month: string; label: string; value: number; amt: string; n: number }[]
+  ytd: string
+  ytd_count: number
+}
+
+export interface ContributionPace {
+  year: number
+  rows: {
+    key: string
+    label: string
+    contributed: string
+    contributedN: number
+    limit?: string
+    limit_year?: string
+    pct?: number
+    room?: string
+  }[]
+  source: string | null
+  note: string
+}
+
 export interface Investments {
   window: string
+  owner?: string
+  lots: Lot[]
+  dividends_timeline: DividendsTimeline
+  contribution_pace: ContributionPace
   positions: Position[]
   paper_note: string | null
   invested_total: string
@@ -269,6 +465,25 @@ export interface Investments {
       last_amount: string | null
     }[]
   }
+}
+
+// ---------------------------------------------------------- owner map
+export interface OwnerMapNode {
+  name: string
+  account?: string
+  value: number
+  amt: string
+  pct: string
+  children?: OwnerMapNode[]
+}
+
+export interface OwnerMap {
+  owner: string
+  tree: OwnerMapNode[]
+  assets: string
+  owed: string | null
+  net: string
+  caption: string
 }
 
 // --------------------------------------------------------------- goals
@@ -346,16 +561,6 @@ export interface Autopilot {
   errors: string[]
   checks_from: string | null
   findings_ran: boolean
-}
-
-// ----------------------------------------------------------- freshness
-export interface Freshness {
-  generated_at: string
-  vault: string
-  ledger_through: string | null
-  checks_from: string | null
-  prices_through: string | null
-  accounts: { account: string; last_posting: string; days_quiet: number }[]
 }
 
 // ------------------------------------------------------------- actions

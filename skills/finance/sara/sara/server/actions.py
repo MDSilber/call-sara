@@ -56,8 +56,9 @@ class ActionError(ValueError):
 
 
 def _open_accounts() -> set[str]:
-    rows = _query("SELECT account, open_date(account) AS opened "
-                  "GROUP BY account, opened")
+    # the #accounts table lists every OPENED account, zero-posting ones
+    # included — the teach picker (DB accounts dim) shows those too
+    rows = _query("SELECT account FROM #accounts")
     return {r["account"] for r in rows}
 
 

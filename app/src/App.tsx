@@ -1,72 +1,126 @@
-/** Sara App — the glance over six rooms.
+/** Sara App — the glance over seven rooms plus the register.
  *
  * The glance (hero + tiles + Next) is always up; one room opens at a time
- * under the tab bar, hash-routed so links land where they point. Rooms
- * fetch lazily and cache; write actions invalidate so numbers move.
+ * under the tab bar, hash-routed so links land where they point
+ * (`#register?account=…`, `#activity?q=…`). ⌘K opens the palette; the
+ * owner lens re-slices the rooms that know how. Rooms fetch lazily and
+ * cache; write actions invalidate and the freshness poller closes the loop
+ * once the background regeneration lands.
  */
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { api } from './api'
 import { Hero } from './components/Glance'
+import { Palette } from './components/Palette'
 import { TabBar } from './components/TabBar'
+import { LoadError } from './components/ui'
+import { ownerLabel, useOwner } from './ownerLens'
+import { isRefreshing, onRefreshChange } from './refresh'
 import { ActivityRoom } from './rooms/Activity'
 import { AutopilotRoom } from './rooms/Autopilot'
+import { ConnectionsRoom } from './rooms/Connections'
 import { GoalsRoom } from './rooms/Goals'
 import { InvestmentsRoom } from './rooms/Investments'
 import { MoneyMapRoom } from './rooms/MoneyMap'
+import { RegisterRoom } from './rooms/Register'
 import { SpendingRoom } from './rooms/Spending'
-import { LoadError } from './components/ui'
 import { useFetch } from './useFetch'
 
-const ROOM_IDS = ['spending', 'activity', 'map', 'investments', 'goals', 'autopilot'] as const
+const ROOM_IDS = ['spending', 'activity', 'map', 'investments', 'goals',
+  'autopilot', 'connections', 'register'] as const
 type RoomId = (typeof ROOM_IDS)[number]
 
-function hashRoom(): RoomId {
-  const h = window.location.hash.replace('#', '')
-  return (ROOM_IDS as readonly string[]).includes(h) ? (h as RoomId) : 'spending'
+const TABS: { id: RoomId; label: string }[] = [
+  { id: 'spending', label: 'Spending' },
+  { id: 'activity', label: 'Activity' },
+  { id: 'map', label: 'Money map' },
+  { id: 'investments', label: 'Investments' },
+  { id: 'goals', label: 'Goals' },
+  { id: 'autopilot', label: 'Autopilot' },
+  { id: 'connections', label: 'Connections' },
+]
+
+interface Route {
+  room: RoomId
+  params: URLSearchParams
+}
+
+function parseHash(): Route {
+  const raw = window.location.hash.replace(/^#/, '')
+  const [path, query = ''] = raw.split('?')
+  const room = (ROOM_IDS as readonly string[]).includes(path ?? '')
+    ? (path as RoomId)
+    : 'spending'
+  return { room, params: new URLSearchParams(query) }
 }
 
 export default function App() {
-  const [room, setRoom] = useState<RoomId>(hashRoom)
+  const [route, setRoute] = useState<Route>(parseHash)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const owner = useOwner()
   const glance = useFetch('glance', api.glance)
+  const refreshing = useSyncExternalStore(onRefreshChange, isRefreshing)
 
   useEffect(() => {
-    const onHash = () => setRoom(hashRoom())
+    const onHash = () => setRoute(parseHash())
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
-  const pick = (id: string) => {
-    window.location.hash = id
-    setRoom(id as RoomId)
-  }
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen((o) => !o)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
-  const uncat = glance.data ? undefined : undefined
-  void uncat
+  const go = useCallback((hash: string) => {
+    setPaletteOpen(false)
+    if (`#${window.location.hash.replace(/^#/, '')}` === hash) {
+      setRoute(parseHash())
+      return
+    }
+    window.location.hash = hash
+  }, [])
+
+  const pick = (id: string) => go(`#${id}`)
+  const openRegister = useCallback(
+    (account: string) => go(`#register?account=${encodeURIComponent(account)}`),
+    [go],
+  )
+
+  const { room, params } = route
+  const activeTab = room === 'register' ? 'map' : room
+  const registerAccount = params.get('account') ?? ''
+  const activityQ = params.get('q') ?? undefined
 
   return (
     <>
-      <Hero data={glance.data} />
-      <TabBar
-        rooms={[
-          { id: 'spending', label: 'Spending' },
-          { id: 'activity', label: 'Activity' },
-          { id: 'map', label: 'Money map' },
-          { id: 'investments', label: 'Investments' },
-          { id: 'goals', label: 'Goals' },
-          { id: 'autopilot', label: 'Autopilot' },
-        ]}
-        active={room}
-        onPick={pick}
-      />
+      <Hero data={glance.data} refreshing={refreshing}
+        onPalette={() => setPaletteOpen(true)} />
+      <TabBar rooms={TABS} active={activeTab} onPick={pick} />
+      {owner !== 'all' && room !== 'connections' && (
+        <p className="lensnote wrap" role="status">
+          Owner lens: <b>{ownerLabel(owner)}</b> — activity, accounts,
+          holdings, and trends re-slice; verdict cards stay household-wide.
+        </p>
+      )}
       <main className="wrap">
         {glance.error && <LoadError error={glance.error} retry={glance.reload} />}
-        <div className="room" role="tabpanel" id={`room-${room}`}>
+        <div className="room" role="tabpanel" id={`room-${activeTab}`}>
           {room === 'spending' && <SpendingRoom />}
-          {room === 'activity' && <ActivityRoom />}
-          {room === 'map' && <MoneyMapRoom />}
+          {room === 'activity' && <ActivityRoom key={activityQ ?? ''} initialQ={activityQ} />}
+          {room === 'map' && <MoneyMapRoom onRegister={openRegister} />}
+          {room === 'register' && (
+            <RegisterRoom account={registerAccount} onBack={() => pick('map')} />
+          )}
           {room === 'investments' && <InvestmentsRoom />}
           {room === 'goals' && <GoalsRoom />}
           {room === 'autopilot' && <AutopilotRoom onGoActivity={() => pick('activity')} />}
+          {room === 'connections' && <ConnectionsRoom />}
         </div>
         <footer>
           <p>
@@ -79,6 +133,13 @@ export default function App() {
           </p>
         </footer>
       </main>
+      {paletteOpen && (
+        <Palette
+          rooms={TABS}
+          onClose={() => setPaletteOpen(false)}
+          onGo={go}
+        />
+      )}
     </>
   )
 }

@@ -1,0 +1,76 @@
+[
+ {
+  "accounts": [
+   {
+    "account_id": "plaid-acct-checking",
+    "name": "Demo Checking",
+    "mask": "4321",
+    "type": "depository",
+    "subtype": "checking",
+    "balances": {"current": 14200.55, "available": 14150.00, "iso_currency_code": "USD"}
+   },
+   {
+    "account_id": "plaid-acct-card",
+    "name": "Demo Card",
+    "mask": "5678",
+    "type": "credit",
+    "subtype": "credit card",
+    "balances": {"current": 3702.14, "available": 1297.86, "iso_currency_code": "USD"}
+   }
+  ],
+  "added": [
+   {
+    "transaction_id": "e2e-txn-001",
+    "account_id": "plaid-acct-card",
+    "date": "2026-08-02",
+    "amount": 58.4,
+    "name": "MAPLE & MAIN BISTRO",
+    "merchant_name": "Maple & Main",
+    "pending": false,
+    "payment_channel": "in store",
+    "iso_currency_code": "USD",
+    "personal_finance_category": {"primary": "FOOD_AND_DRINK", "detailed": "FOOD_AND_DRINK_RESTAURANTS", "confidence_level": "VERY_HIGH"}
+   },
+   {
+    "transaction_id": "e2e-txn-002",
+    "account_id": "plaid-acct-card",
+    "date": "2026-08-03",
+    "amount": 24.99,
+    "name": "CLOUDSTREAM MONTHLY",
+    "merchant_name": "Cloudstream",
+    "pending": false,
+    "payment_channel": "online",
+    "iso_currency_code": "USD",
+    "personal_finance_category": {"primary": "ENTERTAINMENT", "detailed": "ENTERTAINMENT_TV_AND_MOVIES", "confidence_level": "VERY_HIGH"}
+   },
+   {
+    "transaction_id": "e2e-txn-003",
+    "account_id": "plaid-acct-checking",
+    "date": "2026-08-04",
+    "amount": -125.0,
+    "name": "CITY UTILITIES REFUND",
+    "merchant_name": "City Utilities",
+    "pending": false,
+    "payment_channel": "other",
+    "iso_currency_code": "USD",
+    "personal_finance_category": {"primary": "INCOME", "detailed": "INCOME_OTHER_INCOME", "confidence_level": "HIGH"}
+   },
+   {
+    "transaction_id": "e2e-txn-004-pending",
+    "account_id": "plaid-acct-card",
+    "date": "2026-08-05",
+    "amount": 12.5,
+    "name": "PENDING COFFEE HOLD",
+    "merchant_name": "Coffee",
+    "pending": true,
+    "payment_channel": "in store",
+    "iso_currency_code": "USD",
+    "personal_finance_category": {"primary": "FOOD_AND_DRINK", "detailed": "FOOD_AND_DRINK_COFFEE", "confidence_level": "HIGH"}
+   }
+  ],
+  "modified": [],
+  "removed": [],
+  "next_cursor": "e2e-cursor-2",
+  "has_more": false
+ }
+]
