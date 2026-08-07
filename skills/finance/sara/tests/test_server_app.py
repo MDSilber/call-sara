@@ -5,7 +5,8 @@ Set FINANCE_TEST_VAULT to any initialized vault directory (init_vault.sh
 server there, and drives the real FastAPI app with TestClient:
 
   * every GET endpoint answers 200 (snapshot rooms AND the DuckDB
-    exploratory surface: activity search, register, insights, owners, map)
+    exploratory surface: activity search, register, accounts, owners) —
+    and the cut surfaces (findings/insights/drill/map) answer 404
   * eight-plus dollar figures match tools/run query.py to the dollar —
     including a register running balance, a per-lot value, and the owner
     lens conservation sum
@@ -75,6 +76,21 @@ with PLANT_FILE.open("a") as fh:
              f"  {PLANT_ACCOUNT}   -4.50 USD\n"
              f"  Expenses:Uncategorized\n")
 
+# The Connections surface needs one configured item on the copy: the demo
+# alias, routed at the template's Chase accounts, token present offline.
+with (VAULT / "rules.toml").open("a") as fh:
+    fh.write('\n[sources.plaid.items.demo]\n'
+             'access_token_env = "PLAID_DEMO_ACCESS_TOKEN"\n'
+             'products = ["transactions"]\n'
+             '[sources.plaid.items.demo.accounts]\n'
+             'checking = "Assets:US:Chase:Checking4321"\n'
+             'card = "Liabilities:US:Chase:Card5678"\n')
+_SECRETS = VAULT / ".secrets"
+_SECRETS.mkdir(exist_ok=True)
+(_SECRETS / "plaid.env").write_text(
+    "PLAID_CLIENT_ID=demo-client\nPLAID_SECRET=demo-secret\n"
+    "PLAID_DEMO_ACCESS_TOKEN=access-demo-offline\n")
+
 # The v2 server reads from summary.json + analytics.duckdb (never the
 # ledger), so the planted rows must be materialized the same way the write
 # side does it: regenerate both artifacts on the copy before the app boots.
@@ -91,12 +107,13 @@ from fastapi.testclient import TestClient  # noqa: E402
 from sara.typed import as_dict, as_dicts, as_list  # noqa: E402
 
 GET_ENDPOINTS = ["ping", "glance", "activity", "spend", "networth",
-                 "investments", "goals", "autopilot", "findings", "freshness",
+                 "investments", "goals", "autopilot", "freshness",
                  "activity?q=trader&limit=10", "accounts", "owners",
-                 "search?q=chase", "insights", "connections",
-                 "spend/drill?category=Food&month=2026-07",
-                 "map?owner=alex", "investments?owner=jordan",
+                 "search?q=chase", "connections",
+                 "investments?owner=jordan",
                  "spend?owner=alex", "spend?owner=joint"]
+CUT_ENDPOINTS = ["findings", "insights", "spend/drill?category=Food&month=2026-07",
+                 "map?owner=alex"]
 _token = ""  # filled by the client fixture (per-launch server token)
 
 
@@ -159,6 +176,58 @@ def test_every_get_returns_200(client: TestClient) -> None:
         r = client.get(f"/api/{ep}")
         assert r.status_code == 200, f"/api/{ep} -> {r.status_code}"
         assert _body(r) is not None
+
+
+def test_cut_endpoints_are_gone(client: TestClient) -> None:
+    """The simplicity cuts: findings, insights, drill, and map-by-owner
+    answered their last request — anything under /api that isn't served is
+    a hard 404, never the SPA fallback."""
+    for ep in CUT_ENDPOINTS:
+        r = client.get(f"/api/{ep}")
+        assert r.status_code == 404, f"/api/{ep} -> {r.status_code}"
+
+
+def test_glance_spotlight_and_hero_agree(client: TestClient) -> None:
+    """The adaptive fourth tile is always present with a declared kind, and
+    the hero line's decision count derives from the same live needs cards
+    the autopilot queue renders."""
+    glance = _body(client.get("/api/glance"))
+    tiles = as_dict(glance["tiles"])
+    assert "education" not in tiles
+    spot = as_dict(tiles["spotlight"])
+    assert spot["kind"] in ("win", "event", "edu")
+    assert str(spot["label"])
+    # a spotlight has ONE big slot: verdict or fig, never neither
+    assert str(spot["verdict"]) or str(spot["fig"])
+    line = str(glance["sara"])
+    cards = as_dicts(as_dict(_body(client.get("/api/autopilot"))["needs"])["cards"])
+    n_alerts = sum(1 for c in cards if c["kind"] == "alert")
+    m = re.match(r"(\w+) things? wants? a decision", line)
+    words = {"One": 1, "Two": 2, "Three": 3, "Four": 4, "Five": 5,
+             "Six": 6, "Seven": 7, "Eight": 8, "Nine": 9}
+    if m:
+        counted = words.get(m.group(1), None)
+        if counted is None and m.group(1).isdigit():
+            counted = int(m.group(1))
+        assert counted == n_alerts
+    else:
+        assert n_alerts == 0
+
+
+def test_activity_bad_cursor_is_ignored(client: TestClient) -> None:
+    """A mangled keyset cursor serves the first page, never a 500."""
+    clean_page = _body(client.get("/api/activity?limit=5"))
+    for bad in ("not-a-date:12", "2026-13-99:7", "::", "2026-01-01:abc"):
+        r = client.get(f"/api/activity?limit=5&cursor={bad}")
+        assert r.status_code == 200, f"cursor {bad!r} -> {r.status_code}"
+        assert _body(r)["rows"] == clean_page["rows"]
+
+
+def test_register_bad_cursor_is_ignored(client: TestClient) -> None:
+    account = "Assets:US:Chase:Checking4321"
+    r = client.get(f"/api/register?account={account}&cursor=9999-99-99:1")
+    assert r.status_code == 200
+    assert _body(r)["found"] is True
 
 
 def test_networth_figures_match_query_py(client: TestClient) -> None:
@@ -420,6 +489,51 @@ def test_lots_sum_matches_positions(client: TestClient) -> None:
     assert checked >= 2
 
 
+def test_lots_verdict_matches_the_numbers(client: TestClient) -> None:
+    """The one-sentence harvest verdict is computed from the same gainN
+    numbers the table carries — no second arithmetic path."""
+    api = _body(client.get("/api/investments"))
+    lots = as_dicts(api["lots"])
+    verdict = api.get("lots_verdict")
+    if not lots:
+        assert verdict is None
+        return
+    assert isinstance(verdict, str) and verdict
+    losses = [float(str(lot["gainN"])) for lot in lots
+              if isinstance(lot.get("gainN"), (int, float))
+              and float(str(lot["gainN"])) < 0]
+    if not losses or abs(min(losses)) < 250:
+        assert verdict.startswith("Nothing worth harvesting")
+    else:
+        assert "harvesting look" in verdict
+
+
+def test_goals_room_is_education_only(client: TestClient) -> None:
+    """The walk-away/retirement framing is gone: the app's writable goal
+    surface is the college target, nothing else."""
+    api = _body(client.get("/api/goals"))
+    keys = [str(s["key"]) for s in as_dicts(api["settings"])]
+    assert keys == ["education_target"]
+    ask = api.get("ask")
+    if ask is not None:
+        a = as_dict(ask)
+        assert re.fullmatch(r"[0-9a-f]{12}", str(a["id"]))
+        assert isinstance(a["dismissed"], bool)
+    for gone in ("retirement_target", "show_walkaway"):
+        r = client.post("/api/actions/set-goal", headers=_auth(),
+                        json={"key": gone, "value": 1})
+        assert r.status_code in (403, 422)
+
+
+def test_networth_carries_cash_story_not_thesis(client: TestClient) -> None:
+    api = _body(client.get("/api/networth"))
+    assert "thesis" not in api
+    cash = api.get("cash")
+    if cash is not None:
+        c = as_dict(cash)
+        assert "$" in str(c["line"]) and c["cls"] in ("", "bad")
+
+
 def test_owner_lens_conserves_totals(client: TestClient) -> None:
     """Per-owner spend slices sum to the household total (every demo account
     carries an owner, so nothing leaks out of the lens)."""
@@ -432,18 +546,6 @@ def test_owner_lens_conserves_totals(client: TestClient) -> None:
         for row in as_dicts(api["rows"]):
             assert row["owner"] == owner
     assert abs(sliced - total) <= 3.0  # three whole-dollar renderings
-
-
-def test_insights_categories_match_summary(client: TestClient) -> None:
-    api = _body(client.get("/api/insights"))
-    cats = as_dicts(api["cats"])
-    assert cats and all(len(as_list(c["series"])) >= 3 for c in cats)
-    summary = json.loads((VAULT / "reports" / "summary.json").read_text())
-    top = max(
-        as_dict(as_dict(as_dict(summary["spend"])["monthly_by_category"])["categories"]).items(),
-        key=lambda kv: sum(float(x) for x in as_list(kv[1])))[0]
-    names = {str(c["name"]) for c in cats}
-    assert str(top).split(":")[0] in {n.split(" ")[0] for n in names} or top in names
 
 
 DEMO_OWNERS = ("alex", "jordan", "joint")
@@ -552,15 +654,6 @@ def test_sara_line_verdict_only_with_night_daypart(client: TestClient) -> None:
         low = str(line).lower()
         assert "next line" not in low and "below" not in low
         assert "autopilot" not in low
-
-
-def test_insights_owner_lens_flows_through(client: TestClient) -> None:
-    """/api/insights?owner= re-slices end to end (the strip the Spending
-    room renders under the lens)."""
-    household = _body(client.get("/api/insights"))
-    alex = _body(client.get("/api/insights?owner=alex"))
-    assert as_dicts(household["cats"]) and as_dicts(alex["cats"])
-    assert household != alex
 
 
 def test_connections_payload_shape(client: TestClient) -> None:

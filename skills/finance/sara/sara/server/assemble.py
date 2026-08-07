@@ -21,7 +21,7 @@ of this module is fully typed.
 # pyright: reportPrivateUsage=false
 import html as html_mod
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import cast
 
 from allocation import allocation_view
@@ -46,7 +46,6 @@ from home import (
     _pace_ctx,
     _sparkline,
     _spend_tile,
-    _thesis_ctx,
     _wins_ctx,
     education_accounts,
     education_pace,
@@ -76,7 +75,10 @@ from webview import (
 )
 
 ACTIVITY_UNCAT = ("Expenses:Uncategorized", "Expenses:FIXME")
-GOAL_KEYS = ("education_target", "retirement_target", "show_walkaway")
+GOAL_KEYS = ("education_target",)
+SPARK_MIN_POINTS = 4   # fewer month-ends than this draw noise, not a shape
+SINCE_DAYS = 7
+ASK_529 = ("goals", "set-college-target")  # the one-time Goals question card
 
 # ------------------------------------------------------------- sanitizing
 _CODE_TAG = re.compile(r"<code>(.*?)</code>", re.S)
@@ -185,6 +187,89 @@ def _milestones(liquid: float) -> dict[str, object] | None:
 
 
 # ------------------------------------------------------------------ glance
+def _event_short(text: str, limit: int = 40) -> str:
+    """A must-move bullet's short name: the first clause, word-boundary
+    trimmed ('DUOL vest: 170 sh gross …' -> 'DUOL vest')."""
+    head = re.split(r"[:;(]", text, maxsplit=1)[0].strip()
+    if len(head) <= limit:
+        return head
+    cut = head[:limit].rsplit(" ", 1)[0].rstrip(",.–- ")  # noqa: RUF001 — strips a trailing en dash too
+    return f"{cut}…"
+
+
+def spotlight_tile(edu_tile: dict[str, object],
+                   today: date) -> dict[str, object]:
+    """The glance's adaptive fourth tile. Priority: the biggest realized win
+    this year -> the next dated money event -> the 529's status. The 529
+    ASK (pick a target) lives in Goals now — up here it reads as status."""
+    wins = saras_wins(today)
+    if wins and wins["items"]:
+        best = wins["items"][0]
+        return {"kind": "win", "label": "Found money",
+                "verdict": m0(best["amt"]) + ("/yr" if best["peryr"] else ""),
+                "cls": "good", "fig": "",
+                "sub": _text(best["label"])}
+    moves = [mv for mv in must_move(today) if not mv["plumbing"]]
+    if moves:
+        mv = moves[0]
+        return {"kind": "event", "label": "Coming up",
+                "verdict": "", "cls": "", "fig": str(mv["amt"]),
+                "sub": f"{_event_short(str(mv['text']))} · "
+                       f"{mv['day_lbl']} · {mv['when']}"}
+    tile: dict[str, object] = {
+        "kind": "edu", **{k: _text(v) for k, v in edu_tile.items()}}
+    if tile.get("verdict") == "Needs a target":  # the ask moved into Goals
+        tile.update(verdict="", cls="", sub="no college target set yet")
+    return tile
+
+
+def _since_line(lanes: list[dict[str, object]], today: date) -> str | None:
+    """What the machine landed while you were gone — one plain sentence
+    from lane_status's own rows, or nothing when the week was quiet."""
+    floor_d = today - timedelta(days=SINCE_DAYS)
+    paychecks = 0
+    invested = 0.0
+    for r in lanes:
+        last = r.get("last")
+        if not isinstance(last, date) or last < floor_d or r["status"] != "ok":
+            continue
+        if r["kind"] == "deposit":
+            paychecks += 1
+        elif r["kind"] == "invest" and r.get("last_amount"):
+            invested += float(cast(float, r["last_amount"]))
+    bits: list[str] = []
+    if paychecks:
+        bits.append(f"{paychecks} paycheck{'s' if paychecks != 1 else ''} landed")
+    if invested >= 1:
+        bits.append(f"{m0(invested)} auto-invested")
+    if not bits:
+        return None
+    return f"Since {mon_d(floor_d)}: {', '.join(bits)}."
+
+
+def _autopilot_tile(mach: dict[str, object]) -> dict[str, object]:
+    """_auto_tile with the copy in civilian words: every count carries a
+    noun, and 'watching for a first arrival' says what is being watched."""
+    tile = _auto_tile(mach)
+    rows = cast("list[dict[str, object]]", mach["rows"])
+    n = len(rows)
+    if not n:
+        return tile
+    green = sum(1 for r in rows if r["dot"] == "ok")
+    broken = sum(1 for r in rows if r["dot"] == "bad")
+    watching = sum(1 for r in rows if r["dot"] == "watch")
+    if broken:
+        tile["sub"] = "a money move misfired — details in Autopilot"
+    elif watching:
+        tile["verdict"] = f"{green} of {n} landing"
+        tile["sub"] = (f"{watching} new transfer"
+                       f"{'s' if watching != 1 else ''} being watched")
+    else:
+        tile["verdict"] = "All landing"
+        tile["sub"] = "paychecks, auto-invests, floors — all on schedule"
+    return tile
+
+
 def glance(now: datetime | None = None) -> dict[str, object]:
     now = now or datetime.now()
     today = now.date()
@@ -195,7 +280,8 @@ def glance(now: datetime | None = None) -> dict[str, object]:
     totals = monthly_expense_totals()
     pace = _paced(today, asof, totals)
     cards, more, needs_state = needs_you(today)
-    mach = _machine_ctx(lane_status(today))
+    lanes = lane_status(today)
+    mach = _machine_ctx(lanes)
     series, cut = networth_series(liquid, asof)
     nw = _networth_ctx(series, cut, liquid, asof)
     edu_accounts = education_accounts()
@@ -224,13 +310,18 @@ def glance(now: datetime | None = None) -> dict[str, object]:
                 "delta": ({"cls": nw["delta"]["cls"],
                            "text": _text(nw["delta"]["body"])}
                           if nw["delta"] else None),
-                "spark": _sparkline(series),
+                # under four month-ends a sparkline is noise — number + delta
+                # carry the tile until the history earns a shape
+                "spark": (_sparkline(series)
+                          if len(series) >= SPARK_MIN_POINTS else None),
                 "sub": "liquid · " + nw["asof"],
                 "glow": bool(nw["delta"] and nw["delta"]["cls"] == "good"),
             },
-            "autopilot": _auto_tile(mach),
-            "education": edu["tile"],
+            "autopilot": _autopilot_tile(mach),
+            "spotlight": spotlight_tile(cast("dict[str, object]", edu["tile"]),
+                                        today),
         },
+        "since": _since_line(lanes, today),
         "next": _next_ctx(needs_state, cards, more, moves),
     }))
 
@@ -366,6 +457,25 @@ def spend(now: datetime | None = None) -> dict[str, object]:
 
 
 # ---------------------------------------------------------------- networth
+def _cash_story() -> dict[str, object] | None:
+    """One plain sentence about parked cash, from the allocation view the
+    mix card already scores — the map room's whole cash surface."""
+    alloc = allocation_view()
+    if alloc is None or alloc.reserve_usd <= 0:
+        return None
+    if alloc.reserve_short > 0.5:
+        return {"cls": "bad",
+                "line": (f"Cash is {m0(alloc.reserve_short)} short of your "
+                         f"{m0(alloc.reserve_usd)} reserve.")}
+    if alloc.cash_above_reserve <= 0.5:
+        return {"cls": "",
+                "line": (f"Cash sits right at your {m0(alloc.reserve_usd)} "
+                         f"reserve — nothing extra parked.")}
+    return {"cls": "",
+            "line": (f"{m0(alloc.cash_above_reserve)} parked in cash above "
+                     f"your {m0(alloc.reserve_usd)} reserve.")}
+
+
 def networth() -> dict[str, object]:
     today = date.today()
     balances, unpriced = liquid_balances()
@@ -379,7 +489,7 @@ def networth() -> dict[str, object]:
         "spark": _sparkline(series),
         "attribution": _attribution_ctx(series, asof),
         "map": _moneymap_ctx(balances, liquid, asof),
-        "thesis": _thesis_ctx(allocation_view(), asof),
+        "cash": _cash_story(),
         "paper": m0(paper) if paper else None,
         "unpriced": [a for a, _ in unpriced],
         "milestones": _milestones(liquid),
@@ -442,21 +552,24 @@ def investments(now: datetime | None = None) -> dict[str, object]:
     div_total = -amount(div_rows[0]["v"]) if div_rows and div_rows[0].get("v") else 0.0
     div_n = int(float(div_rows[0]["n"] or 0)) if div_rows else 0
 
-    buy_rows = query(f"SELECT sum(cost(position)) AS v "
-                     f"WHERE account ~ '^Assets' AND currency != 'USD' "
-                     f"AND number > 0 AND year = {year}")
-    bought = amount(buy_rows[0]["v"]) if buy_rows and buy_rows[0].get("v") else 0.0
-
-    lanes = [r for r in lane_status(now.date()) if r["kind"] == "invest"]
     alloc = allocation_view()
     donut = None
     if alloc and alloc.invested > 0:
+        def _drift(value: float, target_pct: float) -> str | None:
+            # dollars to move to sit on target — the drift line the old
+            # map-room strip carried, absorbed into the one mix card
+            diff = value - target_pct / 100.0 * alloc.invested
+            if abs(diff) < 0.5:
+                return None
+            return f"≈{m0(abs(diff))} {'over' if diff > 0 else 'under'}"
         donut = {
             "invested": m0(alloc.invested),
             "rows": [{"label": r.label, "value": round(r.value, 2),
                       "amt": m0(r.value), "pct": f"{r.share_pct:.0f}%",
                       "target": f"{r.target_pct:g}%",
-                      "out": r.out_of_band}
+                      "out": r.out_of_band,
+                      "drift": (_drift(r.value, r.target_pct)
+                                if r.out_of_band else None)}
                      for r in alloc.rows],
             "cash_above_reserve": (m0(alloc.cash_above_reserve)
                                    if alloc.reserve_usd > 0 else None),
@@ -478,20 +591,21 @@ def investments(now: datetime | None = None) -> dict[str, object]:
                       "window": ytd_win,
                       "note": ("no dividend income booked this year"
                                if div_total < 0.005 else "")},
-        "contributions": {
-            "bought": m0(bought), "window": ytd_win,
-            "note": "securities bought this year, valued at cost",
-            "lanes": [{"name": ln["name"], "cadence": ln["cadence"],
-                       "status": ln["status"],
-                       "last": mon_d(ln["last"]) if ln["last"] else None,
-                       "last_amount": (m0(ln["last_amount"])
-                                       if ln["last_amount"] else None)}
-                      for ln in lanes],
-        },
     }))
 
 
 # ------------------------------------------------------------------- goals
+def ask_529(education: dict[str, object], goals: dict[str, object],
+            today: date) -> dict[str, object] | None:
+    """The one-time Goals question card: a 529 exists but no target does.
+    'Not now' sticks through the dismissals chokepoint; setting the target
+    retires the question for good."""
+    if education.get("empty") or goals.get("education_target"):
+        return None
+    fid = finding_id(*ASK_529)
+    return {"id": fid, "dismissed": fid in active_ids(today)}
+
+
 def goals_payload(now: datetime | None = None) -> dict[str, object]:
     now = now or datetime.now()
     today = now.date()
@@ -509,9 +623,10 @@ def goals_payload(now: datetime | None = None) -> dict[str, object]:
 
     return cast(dict[str, object], clean({
         "education": edu,
+        "ask": ask_529(cast("dict[str, object]", edu), goals, today),
         "milestones": _milestones(liquid),
         "settings": [_setting(k) for k in GOAL_KEYS],
-        "window": "targets from facts/goals · balances at latest prices",
+        "window": "targets you set · balances at the latest prices",
     }))
 
 
@@ -554,29 +669,6 @@ def autopilot(now: datetime | None = None) -> dict[str, object]:
     }))
 
 
-# ---------------------------------------------------------------- findings
-def findings_payload(now: datetime | None = None) -> dict[str, object]:
-    now = now or datetime.now()
-    today = now.date()
-    findings, counts, errors = parse_findings()
-    silenced = active_ids(today)
-    items: list[dict[str, object]] = []
-    for f in findings or []:
-        fid = finding_id(f["check"], f["title"])
-        items.append({**f, "id": fid, "dismissed": fid in silenced})
-    uncat = query("SELECT count(*) AS n, sum(convert(position,'USD')) AS v "
-                  "WHERE account = 'Expenses:Uncategorized'")
-    n_uncat = int(float(uncat[0]["n"] or 0)) if uncat else 0
-    return cast(dict[str, object], clean({
-        "ran": findings is not None,
-        "generated": findings_date(),
-        "counts": counts,
-        "items": items,
-        "errors": errors,
-        "review": {"count": n_uncat},
-    }))
-
-
 # --------------------------------------------------------------- freshness
 def freshness(now: datetime | None = None) -> dict[str, object]:
     now = now or datetime.now()
@@ -616,7 +708,7 @@ def app_snapshot(now: datetime | None = None) -> dict[str, object]:
     write side. The server (sara.server.app) serves these payloads verbatim
     and overlays only the file-backed live parts (findings, dismissals,
     goals, facts calendars) plus the request-time greeting; it never parses
-    the ledger on a GET. Activity/register/search/insights come from
+    the ledger on a GET. Activity/register/search come from
     reports/analytics.duckdb instead and are not snapshotted.
     """
     now = now or datetime.now()

@@ -10,9 +10,9 @@
  */
 import type {
   AccountRow, ActivityFilters, ActivityPage, Autopilot, CategorizeResult,
-  Connections, DismissResult, FreshnessV2, Glance, Goals, Insights,
+  Connections, DismissResult, FreshnessV2, Glance, Goals,
   Investments, LinkUpdate, Networth, Owners, Register,
-  SearchResults, SetGoalResult, Spend, SpendDrill, UploadPlan,
+  SearchResults, SetGoalResult, Spend, UploadPlan,
 } from './types'
 
 function token(): string {
@@ -116,9 +116,6 @@ export const api = {
   owners: () => get<Owners>('/api/owners'),
   accounts: () => get<{ accounts: AccountRow[] }>('/api/accounts'),
   search: (q: string) => get<SearchResults>(`/api/search${qs({ q })}`),
-  insights: (owner?: string) => get<Insights>(`/api/insights${qs({ owner: who(owner) })}`),
-  spendDrill: (category: string, month: string, owner?: string) =>
-    get<SpendDrill>(`/api/spend/drill${qs({ category, month, owner: who(owner) })}`),
   connections: () => get<Connections>('/api/connections'),
 
   categorize: (payee_pattern: string, account: string, apply_history: boolean) =>

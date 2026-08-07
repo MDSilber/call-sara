@@ -1,12 +1,13 @@
 /** The Money map room: where every liquid dollar sits (treemap with
  * drill-down), the net-worth line with why-it-moved attribution, and the
- * vs-the-thesis drift strip. Sums tie to the headline by construction. */
-import { useCallback } from 'react'
+ * one-sentence cash story. Allocation lives in Investments — the mix card
+ * is the one drift surface. Sums tie to the headline by construction. */
+import { useCallback, useState } from 'react'
 import { api } from '../api'
 import { EChart } from '../charts/EChart'
 import type { EChartsCoreOption } from '../charts/echarts'
 import { FONT, areaGrad, baseOption, catAxis, legendBox, nowDot, tipHtml, valAxis } from '../charts/options'
-import { Card, CardSkeleton, Empty, LoadError, Track } from '../components/ui'
+import { Card, CardSkeleton, Empty, LoadError } from '../components/ui'
 import { cssv } from '../theme'
 import type { MapNode, Networth } from '../types'
 import { useFetch } from '../useFetch'
@@ -24,14 +25,19 @@ export function MoneyMapRoom(props: { onRegister: (account: string) => void }) {
   )
 }
 
-/** Every account with its latest balance — each row opens the register. */
+/** Every account with its latest balance — each row opens the register.
+ * Empty and closed accounts fold behind one quiet line. */
 function AccountsCard(props: { onRegister: (account: string) => void }) {
   const { data, error, loading, reload } = useFetch(
     'accounts', () => api.accounts().then((r) => r.accounts))
+  const [showQuiet, setShowQuiet] = useState(false)
   if (loading) return <div className="grid g-solo"><CardSkeleton lines={5} /></div>
   if (error) return <LoadError error={error} retry={reload} />
   const rows = (data ?? []).filter((a) => a.owner !== 'transit')
   if (rows.length === 0) return null
+  const quiet = rows.filter((a) => !a.is_open || a.balance === '$0')
+  const active = rows.filter((a) => a.is_open && a.balance !== '$0')
+  const shown = showQuiet ? [...active, ...quiet] : active
   return (
     <div className="grid g-solo">
       <Card k="Accounts" sub="Latest balances; open any statement." >
@@ -40,12 +46,14 @@ function AccountsCard(props: { onRegister: (account: string) => void }) {
             <tr><th>Account</th><th className="rother">Owner</th><th className="r">Balance</th></tr>
           </thead>
           <tbody>
-            {rows.map((a) => (
+            {shown.map((a) => (
               <tr key={a.account} onClick={() => props.onRegister(a.account)}
                 style={{ cursor: 'pointer' }}>
                 <td>
-                  <span className="rp">{a.account.split(':').slice(2).join(' · ') || a.account}</span>
-                  <div className="rn">{a.account}{a.is_open ? '' : ' · closed'}</div>
+                  <span className="rp">
+                    {a.account.split(':').slice(2).join(' · ') || a.account}
+                    {a.is_open ? '' : <span className="closedtag"> · closed</span>}
+                  </span>
                 </td>
                 <td className="rother">{a.owner ?? '—'}</td>
                 <td className="r num"><b>{a.balance}</b></td>
@@ -53,6 +61,12 @@ function AccountsCard(props: { onRegister: (account: string) => void }) {
             ))}
           </tbody>
         </table>
+        {quiet.length > 0 && (
+          <button className="morecats" onClick={() => setShowQuiet((v) => !v)}
+            aria-expanded={showQuiet}>
+            {showQuiet ? 'Hide' : 'Show'} {quiet.length} empty or closed account{quiet.length === 1 ? '' : 's'}
+          </button>
+        )}
       </Card>
     </div>
   )
@@ -187,7 +201,7 @@ function MapBody({ data }: { data: Networth }) {
 
   return (
     <>
-      <div className="grid g-nwt">
+      <div className={data.cash ? 'grid g-nwt' : 'grid g-solo'}>
         <Card k="Liquid net worth" sub={data.headline.sub} window={data.headline.window}>
           <div className="kv num" style={{ fontSize: 32 }}>{data.headline.liquid}</div>
           <div className="chiprow">
@@ -214,7 +228,7 @@ function MapBody({ data }: { data: Networth }) {
                         <span className="attr-win">{r.window}</span> — {r.body}{r.note}
                       </p>
                       {r.segs && (
-                        <div className="attrbar" aria-label={r.aria}>
+                        <div className="attrbar" role="img" aria-label={r.aria}>
                           {r.segs.map((s, i) => (
                             <span key={i} className={`attrseg ${s.cls}`} style={{ width: `${s.width}%` }} />
                           ))}
@@ -226,43 +240,21 @@ function MapBody({ data }: { data: Networth }) {
               ))}
             </div>
           )}
-        </Card>
-        <Card k="Vs the thesis" sub={data.thesis.sub} window={data.thesis.window}>
-          {data.thesis.nudge ? (
-            <p className="nudge">{data.thesis.nudge}</p>
-          ) : (
-            <>
-              <div className="drift">
-                {data.thesis.rows.map((r) => (
-                  <div className="driftrow" key={r.label}>
-                    <span className="dlabel">{r.label}</span>
-                    <div className="dtrack">
-                      <span className={`dfill ${r.state}`} style={{ width: `${r.fill}%` }} />
-                      <span className="dtick" style={{ left: `${r.tick}%` }} />
-                    </div>
-                    <span className="dnum">
-                      <b className={`num ${r.state}`}>{r.now}</b> · {r.value} · {r.target} {r.band}
-                      {r.delta && <span className="ddelta"> · {r.delta}</span>}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              {data.thesis.notes && <p className="concline">{data.thesis.notes}</p>}
-              {data.thesis.conc && <p className="concline">{data.thesis.conc}</p>}
-            </>
-          )}
           {data.milestones && (
-            <>
-              <div className="barwrap"><Track fill={data.milestones.pct.toFixed(1)} /></div>
-              <div className="barnotes">
-                <span>{data.milestones.label}</span>
-                {data.milestones.crossed > 0 && (
-                  <span>{data.milestones.crossed} crossed</span>
-                )}
-              </div>
-            </>
+            <p className="goalfoot">
+              {data.milestones.label}
+              {data.milestones.crossed > 0 ? ` · ${data.milestones.crossed} crossed` : ''}
+            </p>
           )}
         </Card>
+        {data.cash && (
+          <Card k="Cash" sub="Beyond the reserve you declared — yours to deploy."
+            window={data.headline.window}>
+            <p className={`cashline${data.cash.cls === 'bad' ? ' bad' : ''}`}>
+              {data.cash.line}
+            </p>
+          </Card>
+        )}
       </div>
       {data.map && (
         <div className="grid g-solo">

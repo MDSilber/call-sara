@@ -129,9 +129,9 @@ def payload(today: date | None = None) -> dict[str, object]:
         "slots": {
             "used": used,
             "total": LIFETIME_ITEMS,
-            "line": (f"{used} of {LIFETIME_ITEMS} lifetime Plaid slots used · "
-                     f"{LIFETIME_ITEMS - used} left. Repairing is always free; "
-                     f"disabling keeps the slot."),
+            "line": (f"Only linking a brand-new bank uses one of the "
+                     f"{LIFETIME_ITEMS} lifetime links — {used} used, "
+                     f"{LIFETIME_ITEMS - used} left. Repairs are free."),
         },
         "keys_present": bool(env.get("PLAID_CLIENT_ID") and env.get("PLAID_SECRET")),
         "fixture": bool(os.environ.get("SARA_PLAID_FIXTURE")),

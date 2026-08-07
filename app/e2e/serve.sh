@@ -35,6 +35,28 @@ $TODAY * "PLANTED BAGEL 205" ""
   Expenses:Uncategorized
 PLANT
 
+# The Connections room needs one configured item: the demo alias, routed at
+# the template's Chase accounts, token present (fixture seam, no network).
+if ! grep -q "sources.plaid.items.demo" "$WORK/rules.toml"; then
+cat >> "$WORK/rules.toml" <<'PLAID'
+
+[sources.plaid.items.demo]
+access_token_env = "PLAID_DEMO_ACCESS_TOKEN"
+products = ["transactions"]
+[sources.plaid.items.demo.accounts]
+checking = "Assets:US:Chase:Checking4321"
+card = "Liabilities:US:Chase:Card5678"
+PLAID
+fi
+mkdir -p "$WORK/.secrets"
+if [ ! -f "$WORK/.secrets/plaid.env" ]; then
+cat > "$WORK/.secrets/plaid.env" <<'ENVEOF'
+PLAID_CLIENT_ID=demo-client
+PLAID_SECRET=demo-secret
+PLAID_DEMO_ACCESS_TOKEN=access-demo-offline
+ENVEOF
+fi
+
 # The v2 server reads summary.json + analytics.duckdb — materialize the
 # planted rows the same way the write side would.
 export FINANCE_VAULT="$WORK"

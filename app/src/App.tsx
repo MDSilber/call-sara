@@ -121,8 +121,9 @@ export default function App() {
             audited builders behind the reports — the server binds to 127.0.0.1 and nothing leaves.
           </p>
           <p>
-            Whole dollars; ≈ marks estimates; every figure names its window. The static pages
-            stay: <code>dashboard.sh --home</code> prints the morning page, fava is the microscope.
+            Whole dollars; ≈ marks estimates; every figure names its window.
+            When you want the microscope, ask Sara — the printed reports and
+            fava read the same vault.
           </p>
         </footer>
       </main>

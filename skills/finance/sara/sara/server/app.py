@@ -3,8 +3,8 @@
 READS never parse the ledger. Snapshot rooms (glance/spend/networth/
 investments/goals/autopilot) come from summary.json's ``app`` section with
 live file-backed overlays (live.py); exploratory endpoints (activity,
-search, register, insights, drills, owners, map-by-owner) run parameterized
-SQL against reports/analytics.duckdb (dbq.py). Both artifacts hot-reload on
+search, register, accounts, owners) run parameterized SQL against
+reports/analytics.duckdb (dbq.py). Both artifacts hot-reload on
 mtime, so a background regeneration lands without a restart.
 
 WRITES are a whitelist behind the per-launch token (security.py): the three
@@ -45,7 +45,7 @@ class CategorizeBody(BaseModel):
 
 class SetGoalBody(BaseModel):
     key: str = Field(min_length=1, max_length=64)
-    value: float | bool
+    value: float
 
 
 class DismissBody(BaseModel):
@@ -116,14 +116,6 @@ def create_app(port: int = 8787) -> FastAPI:
             return out
         return _read(build)
 
-    @app.get("/api/findings")
-    def findings() -> JSONResponse:
-        def build() -> dict[str, object]:
-            out = live.findings_live(date.today())
-            out["review"] = dbq.uncat_counts()
-            return out
-        return _read(build)
-
     @app.get("/api/investments")
     def investments(owner: str | None = None) -> JSONResponse:
         def build() -> dict[str, object]:
@@ -133,7 +125,9 @@ def create_app(port: int = 8787) -> FastAPI:
             if lens:
                 out["positions"] = dbq.positions(lens)
                 out["owner"] = lens
-            out["lots"] = dbq.lots(today, lens)
+            lots = dbq.lots(today, lens)
+            out["lots"] = lots
+            out["lots_verdict"] = dbq.lots_verdict(lots)
             out["dividends_timeline"] = dbq.dividends_timeline(lens)
             limits = contribution_limits(REFERENCES_DIR)
             pace = dbq.contribution_pace(today.year, lens)
@@ -203,24 +197,6 @@ def create_app(port: int = 8787) -> FastAPI:
                      if needle.lower() in str(a["account"]).lower()][:6]
             return {"accounts": accts, "txns": dbq.txn_search(needle, 8)}
         return _read(build)
-
-    @app.get("/api/insights")
-    def insights(owner: str | None = None) -> JSONResponse:
-        return _read(lambda: dbq.insights(owner))
-
-    @app.get("/api/spend/drill")
-    def spend_drill(category: str, month: str,
-                    owner: str | None = None) -> JSONResponse:
-        if not _MONTH_OK(month):
-            raise HTTPException(status_code=422, detail="month must be YYYY-MM")
-        return _read(lambda: dbq.spend_drill(category, month, owner))
-
-    @app.get("/api/map")
-    def money_map(owner: str) -> JSONResponse:
-        if not owner or owner == "all":
-            raise HTTPException(status_code=422,
-                                detail="the all-owners map rides /api/networth")
-        return _read(lambda: dbq.map_tree(owner))
 
     @app.get("/api/connections")
     def connections_read() -> JSONResponse:
@@ -306,11 +282,6 @@ def create_app(port: int = 8787) -> FastAPI:
         return _index_response()  # SPA fallback (hash routes handle rooms)
 
     return app
-
-
-def _MONTH_OK(month: str) -> bool:
-    return (len(month) == 7 and month[4] == "-"
-            and month[:4].isdigit() and month[5:].isdigit())
 
 
 def _iso_or_none(v: str | None) -> str | None:

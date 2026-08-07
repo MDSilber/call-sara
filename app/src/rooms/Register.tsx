@@ -3,6 +3,7 @@
  * the money map, the accounts list, or the palette; never a nav tab. */
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
+import { friendlyDate } from '../civil'
 import { Card, CardSkeleton, LoadError } from '../components/ui'
 import type { Register } from '../types'
 
@@ -61,7 +62,7 @@ export function RegisterRoom(props: { account: string; onBack: () => void }) {
         <p className="regmeta">
           {props.account}
           {data.institution ? ` · ${data.institution}` : ''}
-          {data.opened ? ` · opened ${data.opened}` : ''}
+          {data.opened ? ` · opened ${friendlyDate(data.opened)}` : ''}
           {typeof data.postings === 'number' ? ` · ${data.postings.toLocaleString()} postings` : ''}
         </p>
         {data.balances && data.balances.length > 1 && (

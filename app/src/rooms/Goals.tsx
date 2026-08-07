@@ -1,12 +1,15 @@
 /** The Goals room: the 529 story with its what-if slider (precomputed
- * grid — the slider only looks strings up) and the three app-editable
- * targets, saved through the gated set-goal action. */
-import { useEffect, useState } from 'react'
+ * grid — the slider only looks strings up), the college target, and the
+ * one-time college-target question whose "not now" sticks. */
+import { useEffect, useRef, useState } from 'react'
+import type { RefObject } from 'react'
 import { api } from '../api'
 import { useToast } from '../components/toastContext'
 import { Card, CardSkeleton, Empty, LoadError, Track } from '../components/ui'
 import type { Goals } from '../types'
 import { invalidate, useFetch } from '../useFetch'
+
+const ASK_QUIET_DAYS = 365
 
 export function GoalsRoom() {
   const { data, error, loading, reload } = useFetch('goals', api.goals)
@@ -20,6 +23,8 @@ function GoalsBody({ data }: { data: Goals }) {
   const edu = data.education
   const grid = edu.grid
   const [step, setStep] = useState(grid?.def ?? 0)
+  const targetInput = useRef<HTMLInputElement>(null)
+  const asking = Boolean(data.ask && !data.ask.dismissed)
   return (
     <div className="grid g-half">
       <Card k={edu.title} sub={edu.sub} window={data.window}>
@@ -49,7 +54,8 @@ function GoalsBody({ data }: { data: Goals }) {
               </div>
             ))}
             {edu.foot && <p className="goalfoot">{edu.foot}</p>}
-            {edu.nudge && <p className="nudge">{edu.nudge}</p>}
+            {/* the question card asks once — no second nudge on the same screen */}
+            {edu.nudge && !asking && <p className="nudge">{edu.nudge}</p>}
             {grid && (
               <div className="eduwhatif">
                 <div className="dial">
@@ -76,9 +82,55 @@ function GoalsBody({ data }: { data: Goals }) {
         )}
       </Card>
       <div className="sidecol">
-        <TargetsCard settings={data.settings} />
+        {data.ask && !data.ask.dismissed && (
+          <AskCard
+            id={data.ask.id}
+            onSetTarget={() => targetInput.current?.focus()}
+          />
+        )}
+        <TargetsCard settings={data.settings} inputRef={targetInput} />
       </div>
     </div>
+  )
+}
+
+/** The one-time question: a 529 exists, no finish line does. "Not now"
+ * sticks for a year through the same dismissals door the findings use. */
+function AskCard(props: { id: string; onSetTarget: () => void }) {
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
+  const notNow = () => {
+    setBusy(true)
+    const until = new Date(Date.now() + ASK_QUIET_DAYS * 86400_000)
+      .toISOString().slice(0, 10)
+    api.dismiss(props.id, until, 'College target question')
+      .then(() => {
+        toast.show('Okay — parked', { detail: 'set a target any time below' })
+        invalidate('goals', 'glance')
+      })
+      .catch((e: unknown) => {
+        setBusy(false)
+        toast.show('Could not park it', {
+          kind: 'err',
+          detail: e instanceof Error ? e.message : String(e),
+        })
+      })
+  }
+  return (
+    <Card k="One question" className="askcard">
+      <p className="askline">
+        Want a college finish line? Give the 529 a target and this room
+        starts pacing toward a date.
+      </p>
+      <div className="askact">
+        <button className="btn primary" onClick={props.onSetTarget}>
+          Pick a number
+        </button>
+        <button className="btn quiet" onClick={notNow} disabled={busy}>
+          Not now
+        </button>
+      </div>
+    </Card>
   )
 }
 
@@ -87,46 +139,20 @@ const SETTING_META: Record<string, { label: string; hint: string }> = {
     label: 'College target',
     hint: 'the 529 finish line, in dollars',
   },
-  retirement_target: {
-    label: 'Walk-away target',
-    hint: 'turns on the Independence math on Sara Home when set',
-  },
 }
 
-function TargetsCard({ settings }: { settings: Goals['settings'] }) {
+function TargetsCard(props: {
+  settings: Goals['settings']
+  inputRef: RefObject<HTMLInputElement | null>
+}) {
   const toast = useToast()
-  const rows = settings.filter((s) => s.key in SETTING_META)
-  const walkaway = settings.find((s) => s.key === 'show_walkaway')
+  const rows = props.settings.filter((s) => s.key in SETTING_META)
   return (
-    <Card k="Targets" sub="Saved straight into facts/goals — the same numbers every report reads.">
+    <Card k="Targets" sub="Saved to your vault — every report reads the same number.">
       {rows.map((s) => (
-        <TargetRow key={s.key} k={s.key} value={s.value} toastShow={toast.show} />
+        <TargetRow key={s.key} k={s.key} value={s.value} toastShow={toast.show}
+          inputRef={props.inputRef} />
       ))}
-      {walkaway && (
-        <div className="setrow">
-          <span className="skey">Independence room</span>
-          <label className="apply">
-            <input
-              type="checkbox"
-              defaultChecked={String(walkaway.value).toLowerCase() === 'true'}
-              onChange={(e) => {
-                api.setGoal('show_walkaway', e.target.checked)
-                  .then(() => {
-                    toast.show(e.target.checked ? 'Independence room on' : 'Independence room off', {
-                      detail: 'facts/goals updated',
-                    })
-                    invalidate()
-                  })
-                  .catch((err: unknown) => {
-                    toast.show('Change refused', { kind: 'err', detail: err instanceof Error ? err.message : String(err) })
-                  })
-              }}
-            />
-            show the walk-away math
-          </label>
-          <span className="shint">Sara Home&rsquo;s opt-in fifth room — the app leaves the deep what-ifs there.</span>
-        </div>
-      )}
     </Card>
   )
 }
@@ -135,6 +161,7 @@ function TargetRow(props: {
   k: string
   value: number | string | null
   toastShow: ReturnType<typeof useToast>['show']
+  inputRef?: RefObject<HTMLInputElement | null>
 }) {
   const meta = SETTING_META[props.k]
   const [draft, setDraft] = useState(() =>
@@ -169,6 +196,7 @@ function TargetRow(props: {
     <div className="setrow">
       <span className="skey">{meta.label}</span>
       <input
+        ref={props.inputRef}
         type="text"
         inputMode="numeric"
         value={draft}

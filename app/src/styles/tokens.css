@@ -49,9 +49,10 @@
   --ink:#191627; --ink-2:#4b4860; --muted:#6f6c82;
   --grid:#eceae4; --axis:#cbc8d6;
   --accent:#5b50dc; --accent-soft:rgba(91,80,220,.10); --link:#4a40cc;
+  --accent-text:#5b50dc; --on-accent:#ffffff;
   --gold:#a0722e; --gold-soft:rgba(160,114,46,.14);
   --pos:#067647; --pos-soft:#e7f6ee;
-  --neg:#d02b4c; --neg-soft:#fdedf0; --neg-dot:#f43f5e;
+  --neg:#c62646; --neg-soft:#fdedf0; --neg-dot:#f43f5e;
   --warn:#9a5b00; --warn-soft:#fdf3e0; --warn-dot:#f59e0b;
   --edu-track:#e5e2f6;
   --edu-fill:linear-gradient(90deg,#5b50dc,#8f87e8);
@@ -84,6 +85,7 @@
     --ink:#eae9f6; --ink-2:#b3b2ce; --muted:#8b8aa8;
     --grid:#252739; --axis:#3b3d55;
     --accent:#8b83f2; --accent-soft:rgba(139,131,242,.16); --link:#a49df6;
+    --accent-text:#a49df6; --on-accent:#0d0e1a;
     --gold:#cf9c50; --gold-soft:rgba(207,156,80,.15);
     --pos:#4ec17e; --pos-soft:rgba(78,193,126,.12);
     --neg:#ff6b84; --neg-soft:rgba(255,107,132,.12); --neg-dot:#ff6b84;
@@ -115,6 +117,7 @@
   --ink:#eae9f6; --ink-2:#b3b2ce; --muted:#8b8aa8;
   --grid:#242638; --axis:#3b3d55;
   --accent:#8b83f2; --accent-soft:rgba(139,131,242,.16); --link:#a49df6;
+  --accent-text:#a49df6; --on-accent:#0d0e1a;
   --gold:#cf9c50; --gold-soft:rgba(207,156,80,.15);
   --pos:#3ecf7a; --pos-soft:rgba(62,207,122,.13);
   --neg:#ff6b84; --neg-soft:rgba(255,107,132,.12); --neg-dot:#ff6b84;

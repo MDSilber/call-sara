@@ -13,12 +13,14 @@ Unknown-propagation diagnostics are off HERE ONLY.
 # pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false
 # pyright: reportUnknownMemberType=false, reportUnknownLambdaType=false
 # pyright: reportPrivateUsage=false
+import re
 from datetime import date, datetime
 from typing import cast
 
 from checks import goals as goals_config
 from dismissals import active_ids, finding_id, load_dismissals
 from home import (
+    SMALL_NUMS,
     EduAccount,
     _education_ctx,
     _next_ctx,
@@ -29,7 +31,16 @@ from home import (
 from vault import household
 from webview import action_queue, milestone_state, parse_findings
 
-from .assemble import GOAL_KEYS, _card, _friendly_date, _milestones, _text, clean
+from .assemble import (
+    GOAL_KEYS,
+    _card,
+    _friendly_date,
+    _milestones,
+    _text,
+    ask_529,
+    clean,
+    spotlight_tile,
+)
 
 
 def daypart(now: datetime) -> str:
@@ -40,11 +51,29 @@ def daypart(now: datetime) -> str:
             else "afternoon" if now.hour < 18 else "evening")
 
 
+# "Three things want a decision this evening." — the count-carrying shape
+_COUNT_LINE = re.compile(r"^\w+ things? wants? a decision", re.I)
+
+
+def _alert_line(n: int, daypart_word: str) -> str:
+    """sara_line's alert branch, rebuilt from the LIVE cards so the hero
+    count always agrees with the queue it sits above."""
+    when = ("tonight" if daypart_word == "night"
+            else f"this {daypart_word}")
+    n_lbl = SMALL_NUMS[n] if n < 10 else str(n)
+    verb = "wants" if n == 1 else "want"
+    thing = "thing" if n == 1 else "things"
+    return f"{n_lbl} {thing} {verb} a decision {when}."
+
+
 def patch_glance(snapshot: dict[str, object],
                  now: datetime | None = None) -> dict[str, object]:
     """The snapshot glance with the request-time pieces swapped in: the
-    greeting, Sara's line for THIS part of day, and the live Next line."""
+    greeting, Sara's line for THIS part of day, the live Next line, and the
+    spotlight tile. Hero line, Next, and tile all derive from the same
+    needs_you/must_move call — the counts can never disagree."""
     now = now or datetime.now()
+    today = now.date()
     out = dict(snapshot)
     dp = daypart(now)
     names = household("names")
@@ -57,17 +86,28 @@ def patch_glance(snapshot: dict[str, object],
         line = by_daypart.get(sara_dp) or by_daypart.get(dp)
         if line:
             out["sara"] = line
-    out["generated_at"] = now.isoformat(timespec="seconds")
-    out["next"] = live_next(now.date())
-    return out
-
-
-def live_next(today: date | None = None) -> dict[str, object]:
-    today = today or date.today()
     cards, more, needs_state = needs_you(today)
-    moves = [mv for mv in must_move(today) if not mv["plumbing"]]
-    return cast("dict[str, object]",
-                clean(_next_ctx(needs_state, cards, more, moves)))
+    all_moves = must_move(today)
+    moves = [mv for mv in all_moves if not mv["plumbing"]]
+    n_alerts = sum(1 for c in cards if c.kind == "alert")
+    if n_alerts:
+        out["sara"] = _alert_line(n_alerts, sara_dp)
+    elif _COUNT_LINE.match(str(out.get("sara") or "")):
+        # the snapshot counted alerts that have since been handled
+        out["sara"] = "Nothing needs a decision right now — I'm keeping watch."
+    tiles = out.get("tiles")
+    if isinstance(tiles, dict):
+        t = cast("dict[str, object]", dict(tiles))
+        edu_raw = t.get("spotlight") or t.get("education") or {}
+        edu = edu_raw if isinstance(edu_raw, dict) else {}
+        t.pop("education", None)
+        t["spotlight"] = clean(spotlight_tile(
+            cast("dict[str, object]", edu), today))
+        out["tiles"] = t
+    out["generated_at"] = now.isoformat(timespec="seconds")
+    out["next"] = cast("dict[str, object]",
+                       clean(_next_ctx(needs_state, cards, more, moves)))
+    return out
 
 
 def autopilot_live(today: date | None = None) -> dict[str, object]:
@@ -96,23 +136,6 @@ def autopilot_live(today: date | None = None) -> dict[str, object]:
         "errors": errors,
         "checks_from": _friendly_date(findings_date()),
         "findings_ran": findings is not None,
-    }))
-
-
-def findings_live(today: date | None = None) -> dict[str, object]:
-    today = today or date.today()
-    findings, counts, errors = parse_findings()
-    silenced = active_ids(today)
-    items: list[dict[str, object]] = []
-    for f in findings or []:
-        fid = finding_id(f["check"], f["title"])
-        items.append({**f, "id": fid, "dismissed": fid in silenced})
-    return cast("dict[str, object]", clean({
-        "ran": findings is not None,
-        "generated": findings_date(),
-        "counts": counts,
-        "items": items,
-        "errors": errors,
     }))
 
 
@@ -145,6 +168,7 @@ def goals_live(summary_data: dict[str, object],
 
     return cast("dict[str, object]", clean({
         "education": education,
+        "ask": ask_529(cast("dict[str, object]", education), goals, today),
         "milestones": _milestones(liquid),
         "settings": [_setting(k) for k in GOAL_KEYS],
     }))

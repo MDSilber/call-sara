@@ -8,9 +8,18 @@
 import { useEffect, useState } from 'react'
 import { cycleTheme, themeLabel } from '../theme'
 import type { Glance as GlanceData } from '../types'
+import { civil } from '../civil'
 import { CodeText, Skeleton } from './ui'
 
 const IS_MAC = navigator.platform.toUpperCase().includes('MAC')
+const JUMP_LABEL = IS_MAC ? 'Jump \u2318K' : 'Jump ctrl K'
+
+/** Word-boundary ellipsis — never a mid-word chop (full text in `title`). */
+function ellipsize(text: string, limit = 72): string {
+  if (text.length <= limit) return text
+  const cut = text.slice(0, limit).replace(/\s+\S*$/, '').replace(/[,;:.\s]+$/, '')
+  return `${cut}\u2026`
+}
 
 /** Sara's hero line is a verdict, not directions. Newer snapshots are born
  * clean; older ones may still carry on-page navigation ("Start with the
@@ -54,14 +63,14 @@ export function Hero(props: {
         <div className="wrap hero-in">
           <div className="hero-top">
             <div className="hero-lede">
-              <div className="hi">{d ? d.greet : 'Sara App'}</div>
+              <h1 className="hi">{d ? d.greet : 'Sara App'}</h1>
               <p className="say">{d ? saraVerdict(d.sara) : '…'}</p>
             </div>
             <div className="hero-side">
               <div className="hero-controls">
                 {props.onPalette && (
                   <button className="herobtn" onClick={props.onPalette}
-                    aria-label="open the command palette">
+                    aria-label={JUMP_LABEL}>
                     Jump <kbd>{IS_MAC ? '⌘K' : 'ctrl K'}</kbd>
                   </button>
                 )}
@@ -84,10 +93,11 @@ export function Hero(props: {
           </div>
         </div>
       </header>
-      <div className="wrap">
+      <section className="wrap" aria-label="At a glance">
         <Tiles data={d} />
         <NextLine data={d} />
-      </div>
+        {d?.since && <p className="since">{d.since}</p>}
+      </section>
     </>
   )
 }
@@ -127,7 +137,7 @@ function Tiles({ data }: { data: GlanceData | null }) {
             {t.networth.delta.text.split(' ').slice(1).join(' ')}
           </span>
         )}
-        {t.networth.spark && (
+        {t.networth.spark && t.networth.spark.points.split(' ').length >= 4 && (
           <svg
             className="spark"
             viewBox="0 0 100 30"
@@ -151,17 +161,17 @@ function Tiles({ data }: { data: GlanceData | null }) {
         </div>
         <div className="tsub">{t.autopilot.sub}</div>
       </div>
-      <div className="tile">
-        <div className="tk">{t.education.label}</div>
-        {t.education.verdict ? (
-          <div className={`tv-big ${t.education.cls}`}>{t.education.verdict}</div>
+      <div className="tile" data-kind={t.spotlight.kind ?? 'edu'}>
+        <div className="tk">{t.spotlight.label}</div>
+        {t.spotlight.verdict ? (
+          <div className={`tv-big ${t.spotlight.cls}`}>{t.spotlight.verdict}</div>
         ) : (
-          <div className="kv num">{t.education.fig}</div>
+          <div className="kv num">{t.spotlight.fig}</div>
         )}
-        {t.education.verdict && t.education.fig && (
-          <div className="tfig num">{t.education.fig}</div>
+        {t.spotlight.verdict && t.spotlight.fig && (
+          <div className="tfig num">{t.spotlight.fig}</div>
         )}
-        <div className="tsub">{t.education.sub}</div>
+        <div className="tsub">{t.spotlight.sub}</div>
       </div>
     </div>
   )
@@ -176,13 +186,18 @@ function NextLine({ data }: { data: GlanceData | null }) {
     )
   }
   const n = data.next
+  const meta = civil(n.meta)
   return (
     <div className={`next${n.quiet ? ' allquiet' : ''}`}>
       <span className="nk">{n.label}</span>
       <span className="nt">
-        <CodeText text={n.text} />
+        <CodeText text={civil(n.text)} />
       </span>
-      {n.meta && <span className="nm">{n.meta}</span>}
+      {meta && (
+        <span className="nm" title={meta.replace(/`/g, '')}>
+          <CodeText text={ellipsize(meta)} />
+        </span>
+      )}
     </div>
   )
 }

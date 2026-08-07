@@ -4,11 +4,17 @@
 import { useState } from 'react'
 import { api } from '../api'
 import { useToast } from '../components/toastContext'
+import { civil, friendlyDate } from '../civil'
 import { CodeText, Card, CardSkeleton, Empty, LoadError } from '../components/ui'
 import type { Autopilot, Move } from '../types'
 import { invalidate, useFetch } from '../useFetch'
 
 const DISMISS_DAYS = 30
+
+/** '2026-09-06' -> 'Sep 6' — toast dates read like a person wrote them. */
+function monD(iso: string): string {
+  return friendlyDate(iso).replace(/, \d{4}$/, '')
+}
 
 export function AutopilotRoom(props: { onGoActivity: () => void }) {
   const { data, error, loading, reload } = useFetch('autopilot', api.autopilot)
@@ -28,7 +34,7 @@ function AutoBody({ data, onGoActivity }: { data: Autopilot; onGoActivity: () =>
       .toISOString().slice(0, 10)
     api.dismiss(id, until, title)
       .then(() => {
-        toast.show(`Quiet until ${until}`, {
+        toast.show(`Quiet until ${monD(until)}`, {
           detail: title.slice(0, 60),
           undo: () => {
             api.dismiss(id, null)
@@ -61,8 +67,8 @@ function AutoBody({ data, onGoActivity }: { data: Autopilot; onGoActivity: () =>
                 <li key={q.id}>
                   <span className={`sevdot ${q.severity}`} />
                   <div style={{ minWidth: 0 }}>
-                    <div className="verb"><CodeText text={q.fix || q.title} /></div>
-                    <div className="why"><CodeText text={q.title} /></div>
+                    <div className="verb"><CodeText text={civil(q.fix || q.title)} /></div>
+                    <div className="why"><CodeText text={civil(q.title)} /></div>
                   </div>
                   <span className="lmeta">
                     {q.severity}

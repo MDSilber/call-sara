@@ -78,9 +78,21 @@ export interface Glance {
       dots: string[]
       aria: string
     }
-    education: { label: string; verdict: string; cls: string; fig: string; sub: string }
+    /** Adaptive fourth tile: biggest win -> next money event -> 529 status. */
+    spotlight: SpotlightTile
   }
+  /** "Since Jul 31: 2 paychecks landed, $40,000 auto-invested." */
+  since?: string | null
   next: { label: string; quiet: boolean; text: string; meta: string }
+}
+
+export interface SpotlightTile {
+  kind?: 'win' | 'event' | 'edu'
+  label: string
+  verdict: string
+  cls: string
+  fig: string
+  sub: string
 }
 
 // ------------------------------------------------------------ activity v2
@@ -99,13 +111,27 @@ export interface ActivityRow {
   classifier: string
 }
 
+/** A server-folded run of same-day broker sweep noise (total pre-summed). */
+export interface SweepGroup {
+  kind: 'sweep'
+  id: number
+  date: string
+  day: string
+  label: string
+  amt: string
+  count: number
+  rows: ActivityRow[]
+}
+
+export type FeedEntry = ActivityRow | SweepGroup
+
 export interface Category {
   account: string
   label: string
 }
 
 export interface ActivityPage {
-  rows: ActivityRow[]
+  rows: FeedEntry[]
   cursor: string | null
   /** First page only. */
   matched?: number
@@ -169,30 +195,6 @@ export interface AccountRow {
   institution: string | null
   is_open: boolean
   balance: string
-}
-
-// -------------------------------------------------------------- insights
-export interface InsightCat {
-  name: string
-  series: number[]
-  cur: string
-  avg: string
-  delta: string
-  delta_cls: 'good' | 'bad'
-}
-
-export interface Insights {
-  cats: InsightCat[]
-  months: string[]
-  window: string
-}
-
-export interface SpendDrill {
-  category: string
-  month: string
-  total: string
-  merchants: { name: string; amt: string; n: number }[]
-  more: number
 }
 
 // ----------------------------------------------------------- connections
@@ -332,18 +334,6 @@ export interface MapNode {
   children?: MapNode[]
 }
 
-export interface ThesisRow {
-  label: string
-  state: '' | 'over' | 'under'
-  now: string
-  value: string
-  target: string
-  band: string
-  fill: string
-  tick: string
-  delta: string
-}
-
 export interface Networth {
   headline: {
     sub: string
@@ -377,15 +367,8 @@ export interface Networth {
     /** [account, balance] — plus an owner label once the ledger declares owners. */
     table_rows: [string, string][] | [string, string, string][]
   } | null
-  thesis: {
-    rows: ThesisRow[]
-    nudge: string | null
-    sub?: string
-    window?: string
-    notes?: string
-    conc?: string
-    any_out?: boolean
-  }
+  /** One plain sentence about parked cash vs the declared reserve. */
+  cash: { line: string; cls: '' | 'bad' } | null
   paper: string | null
   unpriced: string[]
   milestones: { pct: number; next: string | null; crossed: number; label: string } | null
@@ -414,6 +397,7 @@ export interface Lot {
   value: string | null
   valueN: number
   gain: string | null
+  gainN: number | null
   gain_cls: 'good' | 'bad' | ''
   gain_pct: string | null
 }
@@ -444,6 +428,8 @@ export interface Investments {
   window: string
   owner?: string
   lots: Lot[]
+  /** One sentence: is any unrealized loss worth harvesting? */
+  lots_verdict?: string | null
   dividends_timeline: DividendsTimeline
   contribution_pace: ContributionPace
   positions: Position[]
@@ -451,22 +437,19 @@ export interface Investments {
   invested_total: string
   allocation: {
     invested: string
-    rows: { label: string; value: number; amt: string; pct: string; target: string; out: boolean }[]
+    rows: {
+      label: string
+      value: number
+      amt: string
+      pct: string
+      target: string
+      out: boolean
+      /** Dollars to move to sit on target — present only when out of band. */
+      drift?: string | null
+    }[]
     cash_above_reserve: string | null
   } | null
   dividends: { ytd: string; count: number; window: string; note: string }
-  contributions: {
-    bought: string
-    window: string
-    note: string
-    lanes: {
-      name: string
-      cadence: string
-      status: string
-      last: string | null
-      last_amount: string | null
-    }[]
-  }
 }
 
 // --------------------------------------------------------------- goals
@@ -494,6 +477,8 @@ export interface Goals {
     grid: EduGrid | null
     tile: { label: string; verdict: string; cls: string; fig: string; sub: string }
   }
+  /** The one-time college-target question (a 529 exists, no target set). */
+  ask?: { id: string; dismissed: boolean } | null
   milestones: { pct: number; next: string | null; crossed: number; label: string } | null
   settings: { key: string; value: number | string | null }[]
   window: string

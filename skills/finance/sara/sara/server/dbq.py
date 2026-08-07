@@ -35,6 +35,20 @@ def _f(v: object) -> float:
     return 0.0
 
 
+def _cursor_parts(cursor: str | None) -> tuple[str, int] | None:
+    """Parse a keyset cursor ('<iso-date>:<posting_id>'). A malformed cursor
+    — bad date, bad id — is ignored (first page served), never a 500."""
+    if not cursor:
+        return None
+    d, _, pid = cursor.partition(":")
+    if not pid.lstrip("-").isdigit():
+        return None
+    try:
+        return date.fromisoformat(d).isoformat(), int(pid)
+    except ValueError:
+        return None
+
+
 def _s(v: object) -> str:
     return v if isinstance(v, str) else ("" if v is None else str(v))
 
@@ -176,19 +190,64 @@ def _feed_row(r: Row) -> dict[str, object]:
     }
 
 
+SWEEP_TEXT = ("reinvest", "sweep")
+SWEEP_MIN = 3  # fewer consecutive micro-rows than this stay individual
+
+
+def _is_sweep(row: dict[str, object]) -> bool:
+    """Broker plumbing noise: reinvested dividends and cash sweeps."""
+    if row["kind"] != "income":
+        return False
+    blob = f"{row['payee']} {row['narration']} {row['account']}".lower()
+    return any(w in blob for w in SWEEP_TEXT)
+
+
+def _collapse_sweeps(rows: list[Row],
+                     feed: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Fold runs of ≥SWEEP_MIN consecutive same-day sweep rows into one
+    group entry with a server-summed total (the frontend never adds money).
+    The underlying rows ride along for the expander."""
+    out: list[dict[str, object]] = []
+    i = 0
+    while i < len(feed):
+        j = i
+        while (j < len(feed) and _is_sweep(feed[j])
+               and feed[j]["date"] == feed[i]["date"] and _is_sweep(feed[i])):
+            j += 1
+        run = feed[i:j]
+        if len(run) >= SWEEP_MIN:
+            total = sum(_f(rows[k]["amount_home"]) for k in range(i, j))
+            all_div = all("dividend" in str(r["account"]).lower()
+                          or "reinvest" in f"{r['payee']} {r['narration']}".lower()
+                          for r in run)
+            noun = "reinvested dividends" if all_div else "sweep transactions"
+            out.append({
+                "kind": "sweep", "id": run[0]["id"],
+                "date": run[0]["date"], "day": run[0]["day"],
+                "label": f"{len(run)} {noun}",
+                "amt": feed_money(total, income=True),
+                "count": len(run), "rows": run,
+            })
+            i = j
+        else:
+            out.extend(run if run else [feed[i]])
+            i = max(j, i + 1)
+    return out
+
+
 def activity_page(f: ActivityFilters, cursor: str | None,
                   limit: int = FEED_PAGE) -> dict[str, object]:
     """One keyset page of the feed, newest first. The cursor is the last
-    row's '<iso-date>:<posting_id>'; matching totals ride the first page."""
+    row's '<iso-date>:<posting_id>'; matching totals ride the first page.
+    Same-day runs of broker sweep noise arrive pre-folded."""
     where, params = _activity_where(f)
     limit = max(1, min(int(limit), 200))
     cursor_sql = ""
-    if cursor:
-        d, _, pid = cursor.partition(":")
-        if d and pid.lstrip("-").isdigit():
-            cursor_sql = (" AND (p.date < $cur_date OR "
-                          "(p.date = $cur_date AND p.posting_id < $cur_id))")
-            params = {**params, "cur_date": d, "cur_id": int(pid)}
+    cur = _cursor_parts(cursor)
+    if cur:
+        cursor_sql = (" AND (p.date < $cur_date OR "
+                      "(p.date = $cur_date AND p.posting_id < $cur_id))")
+        params = {**params, "cur_date": cur[0], "cur_id": cur[1]}
     sql = f"""
         SELECT p.posting_id, p.date, p.payee, p.narration, p.account,
                p.other_account, p.amount_home,
@@ -204,7 +263,7 @@ def activity_page(f: ActivityFilters, cursor: str | None,
     has_more = len(rows) > limit
     rows = rows[:limit]
     out: dict[str, object] = {
-        "rows": [_feed_row(r) for r in rows],
+        "rows": _collapse_sweeps(rows, [_feed_row(r) for r in rows]),
         "cursor": (f"{_iso(rows[-1]['date'])}:{int(_f(rows[-1]['posting_id']))}"
                    if has_more and rows else None),
     }
@@ -247,18 +306,18 @@ def uncat_counts() -> dict[str, object]:
 # ---------------------------------------------------------------- register
 def register(account: str, cursor: str | None, owner: str | None = None,
              limit: int = 80) -> dict[str, object]:
-    """The statement view for one account: rows with a running balance from
-    the register view (computed in the DB, never client-side)."""
+    """The statement view for one account: one human row per transaction
+    (same-transaction legs merged), with the running balance the DB
+    computed — never client-side."""
     limit = max(1, min(int(limit), 200))
     params: dict[str, object] = {"account": account}
     cursor_sql = ""
-    if cursor:
-        d, _, pid = cursor.partition(":")
-        if d and pid.lstrip("-").isdigit():
-            cursor_sql = (" AND (r.date < $cur_date OR "
-                          "(r.date = $cur_date AND r.posting_id < $cur_id))")
-            params["cur_date"] = d
-            params["cur_id"] = int(pid)
+    cur = _cursor_parts(cursor)
+    if cur:
+        cursor_sql = (" AND (r.date < $cur_date OR "
+                      "(r.date = $cur_date AND r.posting_id < $cur_id))")
+        params["cur_date"] = cur[0]
+        params["cur_id"] = cur[1]
     home = home_currency()
     rows = DB.rows(f"""
         SELECT r.posting_id, r.date, r.payee, r.narration, r.other_account,
@@ -294,17 +353,47 @@ def register(account: str, cursor: str | None, owner: str | None = None,
         in_home = cur == home
         amt = _f(r["amount"])
         bal = _f(r["balance"])
+        payee = _s(r["payee"]).strip()
+        narration = _s(r["narration"]).strip()
+        if not payee:  # a statement line with no payee: the note IS the name
+            payee, narration = narration or "—", ""
         return {
             "id": int(_f(r["posting_id"])),
             "date": _iso(r["date"]),
             "day": _mon_d(r["date"]),
-            "payee": _s(r["payee"]).strip() or "(no payee)",
-            "narration": _s(r["narration"]).strip(),
+            "payee": payee,
+            "narration": narration,
             "other": _s(r["other_account"]),
             "amt": money2(amt) if in_home else f"{amt:+,.4f}".rstrip("0").rstrip(".") + f" {cur}",
             "neg": amt < 0,
             "balance": money2(bal) if in_home else f"{bal:,.4f}".rstrip("0").rstrip(".") + f" {cur}",
         }
+
+    def _merge_txn_rows(
+            built: list[tuple[dict[str, object], str]]) -> list[dict[str, object]]:
+        """Consecutive legs of the SAME transaction on this account (same
+        date/payee/narration, DIFFERENT currency — a buy's cash leg + share
+        leg) fold into one human row: amounts joined oldest-leg-first, the
+        running balance from the newest leg (the balance after the whole
+        transaction — rows arrive newest-first). Two identical same-day
+        purchases share a currency and stay two rows."""
+        merged: list[dict[str, object]] = []
+        currencies: list[set[str]] = []
+        for row, cur in built:
+            prev = merged[-1] if merged else None
+            if (prev and prev["date"] == row["date"]
+                    and prev["payee"] == row["payee"]
+                    and prev["narration"] == row["narration"]
+                    and cur not in currencies[-1]):
+                prev["amt"] = f"{row['amt']} · {prev['amt']}"
+                prev["neg"] = bool(prev["neg"]) and bool(row["neg"])
+                if not prev["other"]:
+                    prev["other"] = row["other"]
+                currencies[-1].add(cur)
+                continue
+            merged.append(dict(row))
+            currencies.append({cur})
+        return merged
 
     owner_val = _s(meta["owner"]) or None
     if owner and owner != "all" and owner_val != owner:
@@ -322,7 +411,7 @@ def register(account: str, cursor: str | None, owner: str | None = None,
         "postings": int(_f(meta["n"])),
         "balance": money0(total),
         "balances": balances,
-        "rows": [_reg_row(r) for r in rows],
+        "rows": _merge_txn_rows([(_reg_row(r), _s(r["currency"])) for r in rows]),
         "cursor": (f"{_iso(rows[-1]['date'])}:{int(_f(rows[-1]['posting_id']))}"
                    if has_more and rows else None),
     }
@@ -369,95 +458,6 @@ def txn_search(q: str, limit: int = 8) -> list[dict[str, object]]:
         LIMIT {max(1, min(int(limit), 20))}
     """, {"q": f"%{q}%"})
     return [_feed_row(r) for r in rows]
-
-
-# ------------------------------------------------------------------ spend
-def insights(owner: str | None = None, months: int = 12) -> dict[str, object]:
-    """The small-multiple grid: top expense categories' monthly series over
-    the trailing window (monthly_flows view; owner lens joins postings)."""
-    months = max(3, min(months, 24))
-    if not owner or owner == "all":
-        src = """
-            SELECT account, month, total_home AS total FROM monthly_flows
-            WHERE root = 'Expenses'
-        """
-        params: dict[str, object] = {}
-    else:
-        clause, params = owner_clause(owner, "p.other_account")
-        src = f"""
-            SELECT p.account, date_trunc('month', p.date)::DATE AS month,
-                   sum(p.amount_home) AS total
-            FROM postings p
-            WHERE p.account LIKE 'Expenses:%'{clause}
-            GROUP BY ALL
-        """
-    rows = DB.rows(f"""
-        WITH flows AS ({src}),
-        cat AS (
-            SELECT CASE WHEN account IN ('Expenses:Uncategorized', 'Expenses:FIXME')
-                        THEN 'Uncategorized'
-                        ELSE split_part(account, ':', 2) END AS cat,
-                   month, sum(total) AS total
-            FROM flows GROUP BY ALL
-        ),
-        bounds AS (SELECT max(month) AS m1 FROM cat)
-        SELECT c.cat, c.month, c.total FROM cat c, bounds
-        WHERE c.month > (bounds.m1 - to_months({months}))
-        ORDER BY c.cat, c.month
-    """, params)
-    if not rows:
-        return {"cats": [], "window": "no expense months yet", "months": []}
-    month_keys = sorted({_iso(r["month"])[:7] for r in rows})
-    by_cat: dict[str, dict[str, float]] = {}
-    for r in rows:
-        by_cat.setdefault(_s(r["cat"]), {})[_iso(r["month"])[:7]] = _f(r["total"])
-    cats: list[dict[str, object]] = []
-    for name, series in by_cat.items():
-        values = [round(series.get(mk, 0.0), 2) for mk in month_keys]
-        total = sum(values)
-        if total <= 0:
-            continue
-        cur, prev = values[-1], (values[-2] if len(values) > 1 else 0.0)
-        cats.append({
-            "name": name,
-            "series": values,
-            "total": total,
-            "cur": money0(cur),
-            "avg": money0(sum(values[:-1]) / max(1, len(values) - 1)),
-            "delta": delta0(cur - prev) + " vs last month",
-            "delta_cls": "bad" if cur - prev > 0 else "good",
-        })
-    cats.sort(key=lambda c: -_f(c["total"]))
-    for c in cats:
-        del c["total"]
-    y0, m0_ = month_keys[0].split("-")
-    y1, m1_ = month_keys[-1].split("-")
-    window = (f"{MONTH_ABBR[int(m0_)]} {y0} – {MONTH_ABBR[int(m1_)]} {y1}"  # noqa: RUF001 — window labels keep the en dash
-              if len(month_keys) > 1 else f"{MONTH_ABBR[int(m1_)]} {y1}")
-    return {"cats": cats[:8], "months": month_keys, "window": window}
-
-
-def spend_drill(category: str, month: str, owner: str | None = None,
-                limit: int = 12) -> dict[str, object]:
-    """Merchants inside one category for one month (owner-lens aware)."""
-    clause, extra = owner_clause(owner, "p.other_account")
-    rows = DB.rows(f"""
-        SELECT coalesce(nullif(trim(p.payee), ''), '(no payee)') AS merch,
-               sum(p.amount_home) AS total, count(*) AS n
-        FROM postings p
-        WHERE (p.account = $cat OR p.account LIKE $cat_pfx)
-          AND date_trunc('month', p.date) = ($month || '-01')::DATE{clause}
-        GROUP BY ALL ORDER BY total DESC
-    """, {"cat": f"Expenses:{category}", "cat_pfx": f"Expenses:{category}:%",
-          "month": month, **extra})
-    total = sum(_f(r["total"]) for r in rows)
-    return {
-        "category": category, "month": month,
-        "total": money0(total),
-        "merchants": [{"name": _s(r["merch"]), "amt": money0(_f(r["total"])),
-                       "n": int(_f(r["n"]))} for r in rows[:limit]],
-        "more": max(0, len(rows) - limit),
-    }
 
 
 # ------------------------------------------------------------ investments
@@ -508,12 +508,35 @@ def lots(today: date, owner: str | None = None) -> list[dict[str, object]]:
             "value": money0(value) if value is not None else None,
             "valueN": round(value, 2) if value is not None else 0.0,
             "gain": delta0(gain) if gain is not None else None,
+            "gainN": round(gain, 2) if gain is not None else None,
             "gain_cls": ("good" if gain is not None and gain >= 0 else
                          "bad" if gain is not None else ""),
             "gain_pct": (f"{100.0 * gain / basis:+.1f}%"
                          if gain is not None and basis else None),
         })
     return out
+
+
+HARVEST_MIN = 250.0  # a loss smaller than this isn't worth the paperwork
+
+
+def lots_verdict(rows: list[dict[str, object]]) -> str | None:
+    """One glanceable sentence over the lots table: is there a tax loss
+    worth harvesting? None when there are no lots (the empty state talks)."""
+    if not rows:
+        return None
+    losses = sorted(float(str(r["gainN"])) for r in rows
+                    if isinstance(r.get("gainN"), (int, float))
+                    and float(str(r["gainN"])) < 0)
+    if not losses:
+        return "Nothing worth harvesting — every lot is sitting on a gain."
+    worst = losses[0]
+    if abs(worst) < HARVEST_MIN:
+        return ("Nothing worth harvesting — the biggest unrealized loss is "
+                f"{money0(abs(worst))}.")
+    n = len(losses)
+    return (f"{n} lot{'s' if n != 1 else ''} sit{'' if n != 1 else 's'} at a "
+            f"loss — the biggest is {delta0(worst)}. Worth a harvesting look.")
 
 
 def dividends_timeline(owner: str | None = None,
@@ -635,61 +658,6 @@ def positions(owner: str | None = None) -> list[dict[str, object]]:
                       if value is not None and total else "—"),
         })
     return out
-
-
-# --------------------------------------------------------------- money map
-def map_tree(owner: str) -> dict[str, object]:
-    """The owner-lens money map: institution → account over the latest
-    balances, filtered to one owner's accounts (transit never shows)."""
-    clause, extra = owner_clause(owner, "b.account")
-    rows = DB.rows(f"""
-        SELECT b.account, sum(b.value_home) AS value, a.institution
-        FROM balances_daily b
-        JOIN accounts a ON a.account = b.account
-        WHERE b.date = (SELECT max(date) FROM balances_daily)
-          AND b.account LIKE 'Assets:%'{clause}
-        GROUP BY ALL HAVING sum(b.value_home) > 0.5
-        ORDER BY value DESC
-    """, extra)
-    total = sum(_f(r["value"]) for r in rows)
-    by_inst: dict[str, list[Row]] = {}
-    for r in rows:
-        parts = _s(r["account"]).split(":")
-        inst = _s(r["institution"]) or (parts[2] if len(parts) > 2 else parts[-1])
-        by_inst.setdefault(inst, []).append(r)
-    tree: list[dict[str, object]] = []
-    for inst, group in sorted(by_inst.items(),
-                              key=lambda kv: -sum(_f(x["value"]) for x in kv[1])):
-        value = sum(_f(x["value"]) for x in group)
-        tree.append({
-            "name": inst, "value": round(value, 2), "amt": money0(value),
-            "pct": f"{100.0 * value / total:.0f}%" if total else "—",
-            "children": [{
-                "name": _s(x["account"]).split(":")[-1],
-                "account": _s(x["account"]),
-                "value": round(_f(x["value"]), 2),
-                "amt": money0(_f(x["value"])),
-                "pct": f"{100.0 * _f(x['value']) / total:.0f}%" if total else "—",
-            } for x in group],
-        })
-    liab = DB.rows(f"""
-        SELECT b.account, sum(b.value_home) AS value
-        FROM balances_daily b
-        WHERE b.date = (SELECT max(date) FROM balances_daily)
-          AND b.account LIKE 'Liabilities:%'{clause}
-        GROUP BY ALL HAVING abs(sum(b.value_home)) > 0.5
-    """, extra)
-    owed = sum(_f(r["value"]) for r in liab)
-    return {
-        "owner": owner,
-        "tree": tree,
-        "assets": money0(total),
-        "owed": money0(owed) if liab else None,
-        "net": money0(total + owed),
-        "caption": (f"{money0(total)} across {len(rows)} account"
-                    f"{'s' if len(rows) != 1 else ''}"
-                    + (f" · {money0(owed)} owed" if liab else "")),
-    }
 
 
 def month_span(months: int, end: str) -> list[str]:

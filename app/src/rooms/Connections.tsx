@@ -43,7 +43,7 @@ export function ConnectionsRoom() {
         <DropZone />
       </div>
       <Card k="Linked institutions"
-        sub="Each card is one Plaid connection: its freshness, the accounts it feeds, and its three doors. Slots are lifetime — repair is free, disabling keeps the slot."
+        sub="Each card is one bank connection: its freshness, the accounts it feeds, and its three doors."
         className="conncard" window={data.fixture ? 'demo fixture feed' : undefined}>
         {data.configured ? (
           <>
@@ -58,14 +58,13 @@ export function ConnectionsRoom() {
           <div className="emptyhero">
             <p className="eh1">No bank connections yet.</p>
             <p className="eh2">
-              Link one from a terminal — <code>python -m sara.link ally</code> walks
-              the whole flow and prints the config to paste. Manual statement drops
-              (above) work without any of it.
+              Ask Sara to link your first bank — she walks the whole flow with
+              you. Statement drops (above) work without any linking.
             </p>
             {!data.keys_present && (
               <p className="eh2" style={{ marginTop: 8 }}>
-                First run: put your Plaid keys in <code>.secrets/plaid.env</code> —
-                the link tool prints the exact recipe.
+                First run: ask Sara to set up your bank-link keys — a two-minute
+                one-time step.
               </p>
             )}
           </div>
@@ -128,11 +127,10 @@ function Connection(props: { item: ConnectionItem; onChanged: () => void }) {
       }))
       .catch((e: unknown) => {
         setBusy('')
-        toast.show('Repair could not start', {
+        toast.show('The repair window couldn\u2019t open', {
           kind: 'err',
           detail: e instanceof ApiError ? e.message
-            : 'Plaid Link failed to load — repair from a terminal: '
-              + `python -m sara.link --repair ${item.alias}`,
+            : 'ask Sara to repair it instead',
         })
       })
   }
@@ -308,7 +306,7 @@ function DropZone() {
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') fileRef.current?.click()
           }}
-          aria-label="drop a statement file"
+          aria-label="Drop a statement here"
         >
           <p className="dz1">Drop a statement here</p>
           <p className="dz2">or click to pick a file · .ofx · .qfx · .csv · .pdf · 15MB max</p>

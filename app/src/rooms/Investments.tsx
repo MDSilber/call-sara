@@ -40,13 +40,10 @@ interface DonutParams {
   dataIndex: number
 }
 
-const LOTS_PREVIEW = 24
-
 function InvestBody({ data, owner }: { data: Investments; owner: string }) {
-  const [allLots, setAllLots] = useState(false)
+  const [showLots, setShowLots] = useState(false)
   const alloc = data.allocation
   const filtered = owner !== 'all'
-  const lots = allLots ? data.lots : data.lots.slice(0, LOTS_PREVIEW)
 
   const buildDonut = useCallback((width: number): EChartsCoreOption | null => {
     if (!alloc || alloc.rows.length === 0) return null
@@ -122,49 +119,53 @@ function InvestBody({ data, owner }: { data: Investments; owner: string }) {
           </Card>
           <Card
             k={filtered ? `Lots · ${ownerTitle(owner)}` : 'Lots'}
-            sub="Each purchase lot as the ledger booked it. LT lots (held a year+) sell at the kinder tax rate."
+            sub="Tax-loss harvesting, watched. LT lots (held a year+) sell at the kinder tax rate."
             window={data.window}
           >
             {data.lots.length === 0 ? (
               <Empty><b>No cost-basis lots yet.</b> Lots appear when buys are booked with their cost — imports do this on their own.</Empty>
             ) : (
-              <table className="postable">
-                <thead>
-                  <tr>
-                    <th>Lot</th><th className="r">Units</th><th>Acquired</th>
-                    <th className="r">Basis</th><th className="r">Value</th>
-                    <th className="r">Unrealized</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lots.map((lot) => (
-                    <tr key={`${lot.account}:${lot.symbol}:${lot.acquired ?? ''}:${lot.basis}`}>
-                      <td>
-                        <span className="sym">{lot.symbol}</span>
-                        <div className="lotacct">{lot.account.split(':').slice(2).join(' · ')}</div>
-                      </td>
-                      <td className="r num">{lot.units}</td>
-                      <td>
-                        <span className={`termchip ${lot.term.toLowerCase()}`}>{lot.term}</span>{' '}
-                        <span className="num" style={{ color: 'var(--ink-2)', fontSize: 'var(--fs-1)' }}>{lot.acquired_lbl}</span>
-                      </td>
-                      <td className="r num">{lot.basis}</td>
-                      <td className="r num"><b>{lot.value ?? 'unpriced'}</b></td>
-                      <td className={`r num ${lot.gain_cls}`}>
-                        {lot.gain ?? '—'}
-                        {lot.gain_pct && <span style={{ color: 'var(--muted)' }}> · {lot.gain_pct}</span>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            {data.lots.length > LOTS_PREVIEW && (
-              <button className="btn loadmore" onClick={() => setAllLots((v) => !v)}>
-                {allLots
-                  ? 'Show fewer'
-                  : `Show all ${data.lots.length.toLocaleString()} lots`}
-              </button>
+              <>
+                {data.lots_verdict && <p className="lotsverdict">{data.lots_verdict}</p>}
+                {showLots && (
+                  <table className="postable">
+                    <thead>
+                      <tr>
+                        <th>Lot</th><th className="r">Units</th><th>Acquired</th>
+                        <th className="r">Basis</th><th className="r">Value</th>
+                        <th className="r">Unrealized</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.lots.map((lot) => (
+                        <tr key={`${lot.account}:${lot.symbol}:${lot.acquired ?? ''}:${lot.basis}`}>
+                          <td>
+                            <span className="sym">{lot.symbol}</span>
+                            <div className="lotacct">{lot.account.split(':').slice(2).join(' · ')}</div>
+                          </td>
+                          <td className="r num">{lot.units}</td>
+                          <td>
+                            <span className={`termchip ${lot.term.toLowerCase()}`}>{lot.term}</span>{' '}
+                            <span className="num" style={{ color: 'var(--ink-2)', fontSize: 'var(--fs-1)' }}>{lot.acquired_lbl}</span>
+                          </td>
+                          <td className="r num">{lot.basis}</td>
+                          <td className="r num"><b>{lot.value ?? 'unpriced'}</b></td>
+                          <td className={`r num ${lot.gain_cls}`}>
+                            {lot.gain ?? '—'}
+                            {lot.gain_pct && <span style={{ color: 'var(--muted)' }}> · {lot.gain_pct}</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                <button className="btn loadmore" onClick={() => setShowLots((v) => !v)}
+                  aria-expanded={showLots}>
+                  {showLots
+                    ? 'Hide the lots'
+                    : `Show all ${data.lots.length.toLocaleString()} lot${data.lots.length === 1 ? '' : 's'}`}
+                </button>
+              </>
             )}
           </Card>
         </div>
@@ -178,7 +179,11 @@ function InvestBody({ data, owner }: { data: Investments; owner: string }) {
                   <div key={r.label} className="setrow">
                     <span className="skey">{r.label}</span>
                     <span className="sval num">{r.amt} · {r.pct} vs {r.target}</span>
-                    {r.out && <span className="chip bad">off target</span>}
+                    {r.out && (
+                      <span className="chip bad">
+                        {r.drift ? `off target · ${r.drift}` : 'off target'}
+                      </span>
+                    )}
                   </div>
                 ))}
                 {alloc.cash_above_reserve && (
@@ -220,30 +225,9 @@ function InvestBody({ data, owner }: { data: Investments; owner: string }) {
                   </div>
                 ))}
                 {pace.source && (
-                  <p className="goalfoot">Limits read from <code>{pace.source}</code>, year named on each row. Employer match rides outside the elective line, so a maxed bar is a win, not an alarm.</p>
+                  <p className="goalfoot">Limits are the IRS numbers on file, year named on each row. Employer match rides outside the elective line, so a maxed bar is a win, not an alarm.</p>
                 )}
               </>
-            )}
-          </Card>
-          <Card k="The contribution machine" sub="Standing auto-invests, checked against the ledger.">
-            {data.contributions.lanes.length === 0 ? (
-              <Empty><b>No auto-invest lanes declared.</b> Tell Sara about a standing buy and it gets watched here.</Empty>
-            ) : (
-              <ul className="lanes">
-                {data.contributions.lanes.map((ln) => (
-                  <li key={ln.name}>
-                    <span className={`lanedot ${ln.status === 'ok' ? 'ok' : ln.status === 'pending' ? 'watch' : 'bad'}`} />
-                    <div>
-                      <div className="lname">{ln.name}</div>
-                      <div className="ldet">
-                        {ln.status === 'ok' && ln.last
-                          ? `ran ${ln.last}${ln.last_amount ? ` · ${ln.last_amount}` : ''} · ${ln.cadence}`
-                          : `${ln.status} · ${ln.cadence}`}
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
             )}
           </Card>
         </div>

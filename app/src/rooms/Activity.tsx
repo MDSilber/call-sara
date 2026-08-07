@@ -7,14 +7,14 @@ import { api } from '../api'
 import { useToast } from '../components/toastContext'
 import { Card, CardSkeleton, LoadError } from '../components/ui'
 import { watchRegeneration } from '../refresh'
-import type { ActivityFilters, ActivityPage, ActivityRow, Category, OwnerDef } from '../types'
+import type { ActivityFilters, ActivityPage, ActivityRow, Category, FeedEntry, OwnerDef, SweepGroup } from '../types'
 import { invalidate } from '../useFetch'
 
 const AMOUNT_DEBOUNCE = 350
 const SEARCH_DEBOUNCE = 220
 
 interface FeedState {
-  rows: ActivityRow[]
+  rows: FeedEntry[]
   cursor: string | null
   matched: number
   totals: { spent: string; received: string } | null
@@ -42,6 +42,7 @@ export function ActivityRoom(props: { initialQ?: string }) {
   const [amountMax, setAmountMax] = useState('')
   const [debouncedAmounts, setDebouncedAmounts] = useState<[string, string]>(['', ''])
   const [feed, setFeed] = useState<FeedState>(EMPTY_FEED)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [selected, setSelected] = useState<ReadonlySet<number>>(new Set())
   const [overrides, setOverrides] = useState<ReadonlyMap<number, string>>(new Map())
   const seq = useRef(0)
@@ -164,40 +165,46 @@ export function ActivityRoom(props: { initialQ?: string }) {
               spellCheck={false}
             />
           </label>
-          <button
-            className="fchip"
-            aria-pressed={uncatOnly}
-            onClick={() => setUncatOnly((v) => !v)}
-          >
-            Uncategorized{uncatHere > 0 ? ` · ${uncatHere}` : ''}
+          <button className="fchip fdisclose" aria-expanded={filtersOpen}
+            onClick={() => setFiltersOpen((v) => !v)}>
+            Filters{filtersOn ? ' · on' : ''}
           </button>
-          <label className="fchip" aria-label="category filter">
-            <select value={category} onChange={(e) => setCategory(e.target.value)}>
-              <option value="">Any category</option>
-              {feed.categories.map((c) => (
-                <option key={c.account} value={c.account}>{c.label}</option>
-              ))}
-            </select>
-          </label>
-          {feed.owners.length > 0 && (
-            <label className="fchip" aria-label="owner filter">
-              <select value={owner} onChange={(e) => setOwner(e.target.value)}>
-                <option value="all">Everyone</option>
-                {feed.owners.map((o) => (
-                  <option key={o.owner} value={o.owner}>{o.label}</option>
+          <div className={`fmore${filtersOpen ? ' open' : ''}`}>
+            <button
+              className="fchip"
+              aria-pressed={uncatOnly}
+              onClick={() => setUncatOnly((v) => !v)}
+            >
+              Uncategorized{uncatHere > 0 ? ` · ${uncatHere}` : ''}
+            </button>
+            <label className="fchip" aria-label="category filter">
+              <select value={category} onChange={(e) => setCategory(e.target.value)}>
+                <option value="">Any category</option>
+                {feed.categories.map((c) => (
+                  <option key={c.account} value={c.account}>{c.label}</option>
                 ))}
               </select>
             </label>
-          )}
-          <label className="fchip" aria-label="amount range">
-            $<input type="number" min="0" placeholder="min" value={amountMin}
-              onChange={(e) => setAmountMin(e.target.value)} aria-label="minimum amount" />
-            –<input type="number" min="0" placeholder="max" value={amountMax}
-              onChange={(e) => setAmountMax(e.target.value)} aria-label="maximum amount" />
-          </label>
+            {feed.owners.length > 0 && (
+              <label className="fchip" aria-label="owner filter">
+                <select value={owner} onChange={(e) => setOwner(e.target.value)}>
+                  <option value="all">Everyone</option>
+                  {feed.owners.map((o) => (
+                    <option key={o.owner} value={o.owner}>{o.label}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label className="fchip" aria-label="amount range">
+              $<input type="number" min="0" placeholder="min" value={amountMin}
+                onChange={(e) => setAmountMin(e.target.value)} aria-label="minimum amount" />
+              –<input type="number" min="0" placeholder="max" value={amountMax}
+                onChange={(e) => setAmountMax(e.target.value)} aria-label="maximum amount" />
+            </label>
+          </div>
           <span className="feedcount num" aria-live="polite">
             {feed.totals
-              ? <><b>{feed.matched.toLocaleString()}</b> rows · <b>{feed.totals.spent}</b> out · <b>{feed.totals.received}</b> in</>
+              ? <>{filtersOn ? 'matching · ' : 'all history · '}<b>{feed.matched.toLocaleString()}</b> rows · <b>{feed.totals.spent}</b> out · <b>{feed.totals.received}</b> in</>
               : '…'}
           </span>
         </div>
@@ -206,16 +213,18 @@ export function ActivityRoom(props: { initialQ?: string }) {
           <div key={day.date}>
             <div className="dayhead">{day.label}</div>
             <ul className={`feed${selected.size > 0 ? ' selecting' : ''}`}>
-              {day.rows.map((row) => (
+              {day.rows.map((entry) => isSweep(entry) ? (
+                <SweepRow key={`sweep-${entry.id}`} group={entry} />
+              ) : (
                 <FeedRow
-                  key={row.id}
-                  row={row}
-                  override={overrides.get(row.id)
-                    ?? (row.kind === 'uncategorized'
-                      ? taughtRules.find((r) => r.rx?.test(row.payee))?.label
+                  key={entry.id}
+                  row={entry}
+                  override={overrides.get(entry.id)
+                    ?? (entry.kind === 'uncategorized'
+                      ? taughtRules.find((r) => r.rx?.test(entry.payee))?.label
                       : undefined)}
                   categories={feed.categories}
-                  selected={selected.has(row.id)}
+                  selected={selected.has(entry.id)}
                   onToggle={toggleRow}
                   anySelected={selected.size > 0}
                   onTaught={applyTaught}
@@ -251,7 +260,7 @@ export function ActivityRoom(props: { initialQ?: string }) {
         )}
         {selected.size > 0 && (
           <BulkTeach
-            rows={feed.rows.filter((r) => selected.has(r.id))}
+            rows={feed.rows.filter((r): r is ActivityRow => !isSweep(r) && selected.has(r.id))}
             categories={feed.categories}
             onDone={(ids, label) => {
               setOverrides((o) => {
@@ -269,14 +278,45 @@ export function ActivityRoom(props: { initialQ?: string }) {
   )
 }
 
-function groupByDay(rows: ActivityRow[]): { date: string; label: string; rows: ActivityRow[] }[] {
-  const out: { date: string; label: string; rows: ActivityRow[] }[] = []
+function groupByDay(rows: FeedEntry[]): { date: string; label: string; rows: FeedEntry[] }[] {
+  const out: { date: string; label: string; rows: FeedEntry[] }[] = []
   for (const row of rows) {
     const last = out[out.length - 1]
     if (last && last.date === row.date) last.rows.push(row)
     else out.push({ date: row.date, label: row.day, rows: [row] })
   }
   return out
+}
+
+function isSweep(entry: FeedEntry): entry is SweepGroup {
+  return 'kind' in entry && entry.kind === 'sweep'
+}
+
+/** A folded run of broker sweep noise: one quiet line, expandable. */
+function SweepRow({ group }: { group: SweepGroup }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <li className="sweeprow">
+        <button className="sweepbtn" onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}>
+          <span className="sweeplbl">{group.label}</span>
+          <span className="sweepn">{open ? 'fold' : 'show'}</span>
+        </button>
+        <span className="famt num in">{group.amt}</span>
+      </li>
+      {open && group.rows.map((row) => (
+        <li key={row.id} className="sweepchild">
+          <div className="fp">
+            <div className="payee">{row.payee}</div>
+            {row.narration && <div className="fnote">{row.narration}</div>}
+          </div>
+          <span className="catchip">{row.category}</span>
+          <span className={`famt num${row.kind === 'income' ? ' in' : ''}`}>{row.amt}</span>
+        </li>
+      ))}
+    </>
+  )
 }
 
 function provenance(classifier: string): { cls: string; label: string } | null {

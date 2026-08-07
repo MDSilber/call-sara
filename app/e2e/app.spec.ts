@@ -37,11 +37,24 @@ test('the glance loads with verdicts and the Next line', async ({ page }) => {
   await expect(page.locator('.say')).not.toBeEmpty()
   await expect(page.locator('.tile')).toHaveCount(4)
   await expect(page.locator('.next .nk')).toBeVisible()
+  // the Next line never leaks a raw ledger path
+  await expect(page.locator('.next')).not.toContainText(/Assets:|Liabilities:/)
   // the hero is household-only: no owner pills, no slice chip, no badges
   await expect(page.locator('.lens, .lenschip, .hero .roomlens')).toHaveCount(0)
   await expect(page.locator('.tiles .hbadge')).toHaveCount(0)
   await settled(page)
   await page.screenshot({ path: `${SHOTS}/e2e-glance.png` })
+})
+
+test('the fourth tile adapts: win, money event, or 529 status', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForSelector('.tiles .tv-big', { timeout: 30_000 })
+  const spot = page.locator('.tile[data-kind]')
+  await expect(spot).toHaveCount(1)
+  const kind = await spot.getAttribute('data-kind')
+  expect(['win', 'event', 'edu']).toContain(kind)
+  // one big slot filled, always
+  await expect(spot.locator('.tv-big, .kv').first()).not.toBeEmpty()
 })
 
 test('every room opens and renders its content', async ({ page }) => {
@@ -126,6 +139,17 @@ test('the Spending owner control flips the pace headline', async ({ page }) => {
   await filter.locator('button', { hasText: 'All' }).click()
   await settled(page)
   await expect(page.locator('.room .ck').first()).toHaveText('Is this month unusual?')
+})
+
+test('lots fold to one verdict line with the table behind it', async ({ page }) => {
+  await page.goto('/#investments')
+  await settled(page)
+  const verdict = page.locator('.lotsverdict')
+  await expect(verdict).toBeVisible()
+  await expect(verdict).toContainText(/harvest/i)
+  await expect(page.locator('.postable')).toHaveCount(1) // positions only
+  await page.locator('.btn.loadmore', { hasText: /Show all/ }).click()
+  await expect(page.locator('.postable')).toHaveCount(2) // + the lots table
 })
 
 test('the Investments owner control retitles the tables', async ({ page }) => {
@@ -275,4 +299,16 @@ test('phone viewport holds together', async ({ page }) => {
   )
   expect(overflow).toBeLessThanOrEqual(2)
   await page.screenshot({ path: `${SHOTS}/e2e-phone.png`, fullPage: true })
+})
+
+test('phone: activity filters fold behind one disclosure', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/#activity')
+  await page.waitForSelector('.feed', { timeout: 30_000 })
+  const disclose = page.locator('.fdisclose')
+  await expect(disclose).toBeVisible()
+  await expect(page.locator('.fmore .fchip').first()).toBeHidden()
+  await disclose.click()
+  await expect(page.locator('.fmore .fchip').first()).toBeVisible()
+  await page.screenshot({ path: `${SHOTS}/e2e-phone-filters.png` })
 })
