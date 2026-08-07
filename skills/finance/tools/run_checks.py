@@ -6,6 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from checks import run_all  # noqa: E402
+from dismissals import filter_findings  # noqa: E402
 from vault import REPORTS  # noqa: E402
 
 ORDER = {"alert": 0, "watch": 1, "info": 2}
@@ -14,6 +15,7 @@ ICON = {"alert": "🔴", "watch": "🟡", "info": "⚪"}
 
 def main():
     findings, errors = run_all()
+    findings = filter_findings(findings)  # dismissed = silenced on every surface, this one included
     findings.sort(key=lambda f: ORDER.get(f["severity"], 9))
     counts = {s: sum(1 for f in findings if f["severity"] == s) for s in ORDER}
     lines = ["# Findings\n",

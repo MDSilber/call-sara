@@ -1179,28 +1179,82 @@ def catch_all_lumps(rows=None):
     Self-transfers and principal returns hiding in Income:US:Other or
     Expenses:Uncategorized silently corrupt every flow view — a lump that
     big always has a real name (transfer, maturity, opening equity).
+    Exact +/- twins inside the same account net to zero first: a reconciled
+    round-trip (a treasury buy and its payback, an advance and its refund)
+    is already telling a complete story and never fires.
     """
     from vault import amount, query
     LIMIT = 10_000
-    out = []
     q = ("SELECT date, account, payee, number AS amt "
          "WHERE account ~ 'Income:US:Other|Expenses:Uncategorized'")
+    big = []
     for r in query(q):
         amt = amount(r.get("amt", "") or "")
         if abs(amt) >= LIMIT:
-            out.append(finding(
-                "catch-all-lump", "alert",
-                f"${abs(amt):,.0f} is filed as \"miscellaneous\" — money that big has a real name",
-                f"{r.get('date', '?')} {(r.get('payee') or 'no payee')} sits in "
-                f"{r.get('account', '?')}. A lump like this is a transfer, a "
-                f"maturity, or opening money — tell Sara what it was and the "
-                f"flow numbers get honest again."))
+            big.append((r, amt))
+    tally = Counter((r.get("account"), amt) for r, amt in big)
+    netted = Counter()  # (account, amt) -> how many rows cancel against a twin
+    for (acct, amt), n in tally.items():
+        if amt > 0:
+            k = min(n, tally.get((acct, -amt), 0))
+            if k:
+                netted[(acct, amt)] = k
+                netted[(acct, -amt)] = k
+    out = []
+    for r, amt in big:
+        key = (r.get("account"), amt)
+        if netted.get(key, 0) > 0:
+            netted[key] -= 1
+            continue
+        out.append(finding(
+            "catch-all-lump", "alert",
+            f"${abs(amt):,.0f} is filed as \"miscellaneous\" — money that big has a real name",
+            f"{r.get('date', '?')} {(r.get('payee') or 'no payee')} sits in "
+            f"{r.get('account', '?')}. A lump like this is a transfer, a "
+            f"maturity, or opening money — tell Sara what it was and the "
+            f"flow numbers get honest again."))
     return out
+
+
+TRANSFERS_DRIFT_TOLERANCE = 1000  # in-flight money may wobble this much
+                                  # between the send and the landing
+
+
+def transfers_drift():
+    """The in-flight account must hold exactly what's DECLARED to be mid-air.
+
+    Assets:US:Transfers is where money waits between our own accounts — and
+    where misfiled flows go to hide. rules.toml [transfers] in_flight (default
+    0) declares today's legitimate in-transit total; when the parked balance
+    strays more than $1,000 from it, something landed under the wrong name.
+    """
+    conf = rules().get("transfers", {})
+    try:
+        declared = float(conf.get("in_flight", 0) or 0)
+    except (TypeError, ValueError):
+        declared = 0.0
+    rows = query("SELECT sum(number) AS v "
+                 "WHERE account = 'Assets:US:Transfers' AND currency = 'USD'")
+    bal = amount(rows[0].get("v")) if rows else 0.0
+    drift = bal - declared
+    if abs(drift) <= TRANSFERS_DRIFT_TOLERANCE:
+        return []
+    direction = "more" if drift > 0 else "less"
+    return [finding(
+        "transfers-drift", "alert",
+        f"${abs(drift):,.0f} {direction} than the declared in-flight money is parked in Transfers",
+        f"The in-flight account holds ${bal:,.2f}; the declared mid-transfer total is "
+        f"${declared:,.2f}. The gap is real money wearing an \"in motion\" costume — "
+        f"usually a transfer that landed under a different name, or income or spending "
+        f"in disguise. Walk the newest Transfers rows with Sara and give each its real "
+        f"name — and when a big sweep departs or lands, tell Sara so she can update "
+        f"the declared amount and keep this tripwire honest.")]
 
 
 ALL = [concentration, deadlines, inbox, anomaly, subscriptions, reconciliation,
        coverage, review_queue, goals_status, milestones, fixed_balances, lanes,
-       projected_shortfall, cash_drag, allocation_drift, plaid_freshness, catch_all_lumps]
+       projected_shortfall, cash_drag, allocation_drift, plaid_freshness,
+       catch_all_lumps, transfers_drift]
 
 
 

@@ -157,6 +157,18 @@ ignore_account_regex = "Childcare|Cash|Uncategorized|Investment-Loss|Taxes|Insur
 # "Assets:US:Ally:Savings9876" = 3.60
 
 # ---------------------------------------------------------------------------
+# Declared in-flight money (optional) — the transfers-drift tripwire.
+# Assets:US:Transfers holds money mid-flight between your own accounts; it
+# should carry ONLY what you know is in transit today. Declare that total
+# here (with a date comment) and the checks alert when the parked balance
+# strays more than $1,000 from it — the classic sign of a transfer that
+# landed under the wrong name, or income/spending hiding as "in motion".
+# Defaults to 0 when omitted: any standing Transfers balance then alerts.
+#
+# [transfers]
+# in_flight = 25000.00   # 2026-08-01: brokerage sweep sent, settles in 2 days
+
+# ---------------------------------------------------------------------------
 # The machine — standing money movements Sara watches on the home page and
 # in the checks (the `lanes` check → findings; the "The machine" panel on
 # reports/home.html renders the same detector, so they always agree).
