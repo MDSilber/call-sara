@@ -44,6 +44,7 @@ paths = ['''skills/finance/tools/importers/tests/fixtures/.*''',
          '''skills/finance/tools/assets/.*''',
          '''integrations/cloudflare-mcp/dev/.*''',
          '''skills/finance/sara/tests/.*''',
+         '''skills/finance/sara/tests_server/.*''',
          '''skills/finance/sara/sara/server/static/.*''']
 regexTarget = "line"
 regexes = [

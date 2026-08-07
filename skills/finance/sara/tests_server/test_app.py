@@ -19,7 +19,9 @@ server there, and drives the real FastAPI app with TestClient:
     finding everywhere and undoes cleanly
 
 Without FINANCE_TEST_VAULT the whole module skips (same convention as the
-FINANCE_TEST_VENV-gated importer paths).
+FINANCE_TEST_VENV-gated importer paths). Runs as its OWN pytest session
+(`pytest tests_server`): sara.vault binds one vault per process, and this
+suite needs the built vault, not the synthetic one tests/conftest.py binds.
 """
 # The suite exercises untyped TestClient/json boundaries end to end:
 # pyright: basic
@@ -52,6 +54,10 @@ shutil.copytree(SOURCE, VAULT, symlinks=True,
                 ignore=shutil.ignore_patterns(".venv", ".git"))
 # the copy leans on the SOURCE vault's venv for bean-query/bean-check
 (VAULT / ".venv").symlink_to(SOURCE / ".venv")
+VAULT = VAULT.resolve()
+# One process, one vault: bind FINANCE_VAULT BEFORE anything imports sara —
+# this session directory has no parent conftest, so nothing bound it earlier.
+os.environ["FINANCE_VAULT"] = str(VAULT)
 
 PLANT_PAYEE = "PLANTED COFFEE 042"
 
@@ -147,19 +153,9 @@ def client():
     rebuilding the conftest scratch vault, never this copy.
     """
     global _token
-    before = os.environ.get("FINANCE_VAULT")
-    os.environ["FINANCE_VAULT"] = str(VAULT)
-    try:
-        from sara.server.app import create_app
-        from sara.server.security import TOKEN as launch_token
-    finally:
-        if before is not None:
-            os.environ["FINANCE_VAULT"] = before
+    from sara.server.app import create_app
+    from sara.server.security import TOKEN as launch_token
     _token = launch_token
-    import vault as tools_vault
-    if tools_vault.VAULT != VAULT:
-        pytest.skip("tools/vault bound to a different vault before this "
-                    "module ran — run test_server_app.py on its own")
     app = create_app(port=8787)
     with TestClient(app, base_url="http://127.0.0.1:8787") as c:
         yield c

@@ -34,7 +34,6 @@ from webview import (MONTH_ABBR, _units, action_queue, code_spans,  # noqa: E402
                      deadline_items, month_label, nice_ticks, parse_findings,
                      price_history, queue_lane)
 from checks import LANE_REINVEST, goals as goals_config  # noqa: E402
-from market_history import survival_tables  # noqa: E402
 
 MONTH_FULL = ["", "January", "February", "March", "April", "May", "June",
               "July", "August", "September", "October", "November", "December"]
@@ -53,6 +52,7 @@ MERCHANTS_TOP = 8         # merchant rows per category per period
 CATS_VISIBLE = 10         # clickable category rows; the rest fold into the table
 SPARK_MONTHS = 13         # net-worth tile sparkline: up to this many month-ends
 EDU_SLIDER_MAX = 2000     # 529 what-if slider: $0..this per month
+EDU_MAX_YEARS = 40              # slider horizon; beyond = "40+ yrs out"
 EDU_SLIDER_STEP = 50      # ...in these steps
 
 YM = tuple[int, int]      # a calendar month as (year, month)
@@ -78,26 +78,7 @@ class Pace:
     fallback: bool                # True = pacing the last imported month instead
 
 
-@dataclass(frozen=True)
-class Baseline:
-    monthly: float                # median full-month spend over the window
-    months: list[YM]
-    burn: float                   # MEAN full-month spend — the true burn a
-                                  # year actually costs, lumpy months included
-    drift_pct: float | None       # burn vs the 12 months before the window;
                                   # None until 24 full months exist
-
-
-@dataclass(frozen=True)
-class Walkaway:
-    target: float
-    src: str                      # 'set' (facts/goals) | 'computed' (baseline×25)
-    lo: float | None              # baseline×12×25, $1k-rounded
-    hi: float | None              # baseline×12×28.5, $1k-rounded
-    baseline: Baseline | None
-    pct: float                    # liquid progress, percent of target
-    paper: float
-    paper_pct: float              # (liquid+paper) progress — the labelled shadow
 
 
 class Card(NamedTuple):
@@ -127,12 +108,6 @@ def delta0(x: float) -> str:
     r = round(x)
     sign = "+" if r > 0 else (MINUS if r < 0 else "±")
     return f"{sign}${abs(r):,.0f}"
-
-
-def round1k(x: float) -> float:
-    """Nearest $1,000 — for ×25-amplified estimates, where dollar precision
-    would be false precision."""
-    return round(x / 1000.0) * 1000
 
 
 def mon_d(d: date) -> str:
@@ -294,30 +269,6 @@ def spend_pace(today: date, asof: date | None,
         fallback=month is not None)
 
 
-def true_spend_baseline(today: date,
-                        totals: list[tuple[YM, float]]) -> Baseline | None:
-    """The spend baseline over the last up-to-12 FULL months: the median
-    (a typical month — the pace card's comparator) and the MEAN (the true
-    burn — what a year actually costs, lumpy months included; the walk-away
-    math and the what-if spend dial run on this one). With 24 full months
-    on file, drift_pct says how this year's burn compares to the last."""
-    cur = (today.year, today.month)
-    full = [(ym, v) for ym, v in totals if ym < cur]
-    window = full[-BASELINE_WINDOW:]
-    if len(window) < MIN_FULL_MONTHS:
-        return None
-    burn = sum(v for _, v in window) / len(window)
-    prior = full[-2 * BASELINE_WINDOW:-BASELINE_WINDOW]
-    drift = None
-    if len(window) == BASELINE_WINDOW and len(prior) == BASELINE_WINDOW:
-        prior_burn = sum(v for _, v in prior) / BASELINE_WINDOW
-        if prior_burn > 0:
-            drift = 100.0 * (burn - prior_burn) / prior_burn
-    return Baseline(monthly=median(v for _, v in window),
-                    months=[ym for ym, _ in window],
-                    burn=burn, drift_pct=drift)
-
-
 def _as_float(value) -> float | None:
     try:
         return float(value) if value is not None else None
@@ -325,105 +276,9 @@ def _as_float(value) -> float | None:
         return None
 
 
-def walkaway(liquid: float, paper: float, baseline: Baseline | None,
-             goals: dict) -> Walkaway | None:
-    """The walk-away hero: target from the set goal when there is one, else
-    from the true burn ×25 (the ×28.5 end of the range shown too). Burn, not
-    the median — a year costs its lumpy months too, and a walk-away number
-    that forgets them is optimistic exactly when it must not be."""
-    target_set = _as_float(goals.get("retirement_target"))
-    lo = hi = None
-    if baseline:
-        annual = baseline.burn * 12
-        lo, hi = round1k(annual * WALKAWAY_LO), round1k(annual * WALKAWAY_HI)
-    if target_set is not None:
-        target, src = target_set, "set"
-    elif lo:
-        target, src = lo, "computed"
-    else:
-        return None
-    return Walkaway(
-        target=target, src=src, lo=lo, hi=hi, baseline=baseline,
-        pct=100.0 * liquid / target if target else 0.0, paper=paper,
-        paper_pct=100.0 * (liquid + paper) / target if target else 0.0)
-
-
-# ----------------------------------------------------------- what-if grid
-WHATIF_RATES = [round(3.0 + 0.1 * i, 1) for i in range(21)]     # 3.0–5.0%
-WHATIF_GROWTHS = [round(0.5 * i, 1) for i in range(17)]         # 0–8% real
-WHATIF_SPEND_POINTS = 21        # ~this many spend steps across 0.5–1.5× burn
-SPEND_STEP_LADDER = (2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000)
-WHATIF_MAX_YEARS = 40           # projection horizon; beyond = "not within 40"
-DEFAULT_STOCK_PCT = 70.0        # history-replay mix until targets are declared
-HOUSE_DOWN_BURN_MULT = 1.5      # house preset ≈ 1.5× a year of burn, $25k-rounded
-HOUSE_YEARS_OUT = 5             # ...bought this many years out, absent a plan
-HOUSE_AMOUNT_MULTS = (0.75, 1.0, 1.25)   # the quiet select's three amounts
 HOUSE_YEAR_OFFSETS = (-2, 0, 2)          # ...and its three purchase years
 COLLEGE_AGE = 18
 COLLEGE_FALLBACK_COST = 400_000  # today's-dollar private-college placeholder
-
-
-def net_savings_baseline(months: list[YM]) -> float:
-    """Median monthly net (income − expenses) over the baseline window —
-    the contribution stream the what-if projection compounds."""
-    if not months:
-        return 0.0
-    rows = query("SELECT year, month, root(account,1) AS r, "
-                 "sum(convert(position,'USD')) AS v "
-                 "WHERE account ~ '^(Income|Expenses)' GROUP BY year, month, r")
-    per: dict[YM, dict[str, float]] = {}
-    for r in rows:
-        try:
-            ym = (int(r["year"]), int(r["month"]))
-        except (TypeError, ValueError):
-            continue
-        per.setdefault(ym, {})[r["r"]] = amount(r["v"])
-    keep = set(months)
-    nets = [-d.get("Income", 0.0) - d.get("Expenses", 0.0)
-            for ym, d in per.items() if ym in keep]
-    return median(nets) if nets else 0.0
-
-
-def salary_streams(months: list[YM]) -> list[tuple[str, float]]:
-    """Per salary account: employer label + median monthly net posted to
-    the ledger over the baseline-window months that saw any posting.
-    Largest stream first."""
-    rows = query("SELECT account, year, month, sum(convert(position,'USD')) AS v "
-                 "WHERE account ~ 'Salary' GROUP BY account, year, month")
-    keep = set(months)
-    per: dict[str, list[float]] = {}
-    for r in rows:
-        try:
-            ym = (int(r["year"]), int(r["month"]))
-        except (TypeError, ValueError):
-            continue
-        if ym in keep:
-            per.setdefault(r["account"], []).append(-amount(r["v"]))
-    out = []
-    for acct, vals in per.items():
-        vals = [v for v in vals if v > 0]
-        if not vals:
-            continue
-        segs = [s for s in acct.split(":") if s and s != "Salary"]
-        out.append((segs[-1] if segs else acct, median(vals)))
-    return sorted(out, key=lambda kv: -kv[1])
-
-
-class LifeEvents(NamedTuple):
-    """The three toggles' presets, derived from the vault (or the named
-    fallback). Dollars are today's dollars; months count from today."""
-    house_amounts: list[int]        # the quiet select's options, preset included
-    house_years: list[int]          # calendar years, preset included
-    house_def_a: int                # index of the preset amount
-    house_def_y: int
-    house_src: str
-    partner_monthly: float | None   # smaller salary stream, $/mo net (ledger)
-    partner_label: str
-    college_year: int | None        # calendar year of the college lump
-    college_lump: float             # net of the 529's current path; 0 = covered
-    college_cost: float
-    college_529_path: float
-    college_src: str
 
 
 PEOPLE_BORN = re.compile(r"^born:\s*(\d{4})-(\d{2})-(\d{2})", re.M)
@@ -472,384 +327,6 @@ def _youngest_person(today: date) -> tuple[str, int] | None:
         if best is None or born > best[0]:
             best = (born, name)
     return (best[1], best[0].year) if best else None
-
-
-def life_events(today: date, burn_annual: float, months: list[YM],
-                goals: dict, edu_accounts: list["EduAccount"],
-                edu_pace: float | None) -> LifeEvents:
-    # house: a declared plan (facts/goals house_downpayment + house_year)
-    # wins; else a stated derivation from the household's own burn
-    down = _as_float(goals.get("house_downpayment"))
-    year = _as_float(goals.get("house_year"))
-    if down and down > 0:
-        down = round(down)                # the declared number, verbatim
-        house_src = "the down-payment goal in facts/goals"
-    else:
-        down = max(25_000,               # derived: stated multiple, $25k-round
-                   round(burn_annual * HOUSE_DOWN_BURN_MULT / 25_000) * 25_000)
-        house_src = (f"a placeholder ≈{HOUSE_DOWN_BURN_MULT:g}× a year of "
-                     f"burn — set house_downpayment in facts/goals to pin it")
-    year_cal = (int(year) if year and year > today.year
-                else today.year + HOUSE_YEARS_OUT)
-    amounts = sorted({down} | {max(5_000, round(down * m / 5_000) * 5_000)
-                               for m in HOUSE_AMOUNT_MULTS if m != 1.0})
-    years = sorted({max(today.year + 1, year_cal + off)
-                    for off in HOUSE_YEAR_OFFSETS})
-
-    # partner: the smaller of the two biggest salary streams keeps coming
-    streams = salary_streams(months)
-    partner_monthly, partner_label = None, ""
-    if len(streams) >= 2:
-        partner_label, partner_monthly = min(streams[:2], key=lambda kv: kv[1])
-
-    college_year, college_src = _college_year(today, edu_accounts)
-    lump = cost = path529 = 0.0
-    if college_year and college_year > today.year:
-        cost = _as_float(goals.get("education_target")) or 0.0
-        if cost <= 0:
-            cost = COLLEGE_FALLBACK_COST
-            college_src += (" · the cost is a private-college placeholder — "
-                            "set education_target to pin it")
-        months_to = max(0, (college_year - today.year) * 12 - today.month + 8)
-        path529 = (sum(a.value for a in edu_accounts)
-                   + (edu_pace or 0.0) * months_to)
-        lump = max(0.0, cost - path529)
-    else:
-        college_year = None
-    return LifeEvents(
-        house_amounts=amounts, house_years=years,
-        house_def_a=amounts.index(down) if down in amounts else len(amounts) // 2,
-        house_def_y=(years.index(year_cal) if year_cal in years
-                     else len(years) // 2),
-        house_src=house_src, partner_monthly=partner_monthly,
-        partner_label=partner_label, college_year=college_year,
-        college_lump=round1k(lump), college_cost=cost,
-        college_529_path=path529, college_src=college_src)
-
-
-def _months_to_target(liquid: float, monthly_save: float, target: float,
-                      growth_pct: float,
-                      events: tuple | list = ()) -> float | None:
-    """First month from which the projected balance sits at/above target
-    and no later life event knocks it back under. `events` = (month, lump)
-    pairs — dollars leaving the path at that month. Closed form inside each
-    inter-event regime (verified independently by the ground-truth table);
-    None = not within the horizon."""
-    if target <= 0:
-        return 0.0
-    horizon = WHATIF_MAX_YEARS * 12
-    evs = sorted((m, a) for m, a in events if 0 < m <= horizon and a > 0)
-    f = (1.0 + growth_pct / 100.0) ** (1.0 / 12.0)
-
-    def grow(b0: float, months: float) -> float:
-        if growth_pct <= 0:
-            return b0 + monthly_save * months
-        g = f ** months
-        return b0 * g + monthly_save * (g - 1.0) / (f - 1.0)
-
-    def cross(b0: float, m0: float, m1: float) -> float | None:
-        if b0 >= target:
-            return m0
-        if growth_pct <= 0:
-            if monthly_save <= 0:
-                return None
-            m = m0 + (target - b0) / monthly_save
-            return m if m < m1 else None
-        k = monthly_save / (f - 1.0)
-        if b0 + k <= 0:            # drains faster than growth can lift
-            return None
-        m = m0 + math.log((target + k) / (b0 + k)) / math.log(f)
-        return m if m < m1 else None
-
-    bounds: list[float] = [0.0] + [float(m) for m, _ in evs] + [float(horizon)]
-    bals = [liquid]
-    for i, (m, lump) in enumerate(evs):
-        bals.append(grow(bals[i], m - bounds[i]) - lump)
-
-    def cross_req(b0: float, m0: float, m1: float, req: float,
-                  me: float) -> float | None:
-        """First m in [m0, m1) where the balance covers `req` dollars due at
-        month me, growing alone in between: B(m) ≥ req · f^(m−me)."""
-        if growth_pct <= 0:
-            if b0 >= req:
-                return m0
-            if monthly_save <= 0:
-                return None
-            m = m0 + (req - b0) / monthly_save
-            return m if m < m1 else None
-        k = monthly_save / (f - 1.0)
-        coeff = (b0 + k) - req * f ** (m0 - me)
-        if coeff <= 0:
-            return None
-        m = (m0 if k <= coeff
-             else m0 + math.log(k / coeff) / math.log(f))
-        return m if m < m1 else None
-
-    # a crossing is the walk-away month only if the pot ALSO pre-funds every
-    # later life event: growing alone from that month, it must absorb each
-    # remaining lump and still sit at the target (post-walk-away spending is
-    # the survival replay's job; this guards the lumps).
-    for i in range(len(bounds) - 1):
-        cands = [cross(bals[i], bounds[i], bounds[i + 1])]
-        for e in range(i, len(evs)):
-            req = target + sum(
-                evs[k][1] * (f ** (evs[e][0] - evs[k][0])
-                             if growth_pct > 0 else 1.0)
-                for k in range(i, e + 1))
-            cands.append(cross_req(bals[i], bounds[i], bounds[i + 1],
-                                   req, float(evs[e][0])))
-        if all(c is not None for c in cands):
-            c = max(c for c in cands if c is not None)
-            return c if c <= horizon else None
-    return None
-
-
-def _years_or_none(months: float | None) -> float | None:
-    return None if months is None else round(months / 12.0, 1)
-
-
-def _spend_axis(annual_burn: float) -> list[int]:
-    """Spend-dial steps across 0.5–1.5× the true burn: ~21 points snapped
-    to a human step (the resolution the grid's size budget allows)."""
-    raw = annual_burn / WHATIF_SPEND_POINTS
-    step = next((s for s in SPEND_STEP_LADDER if s >= raw),
-                SPEND_STEP_LADDER[-1])
-    lo = max(step, int(round(annual_burn * 0.5 / step)) * step)
-    hi = max(lo + step, int(round(annual_burn * 1.5 / step)) * step)
-    return list(range(lo, hi + 1, step))
-
-
-def _event_list(ev: LifeEvents, today: date, h: int, c: int,
-                ai: int, yi: int) -> list[tuple[int, float]]:
-    """The (month, lump) list a toggle state implies, months from today
-    (events land mid-year of their calendar year)."""
-    out = []
-    if h:
-        m = max(1, (ev.house_years[yi] - today.year) * 12 - today.month + 7)
-        out.append((m, float(ev.house_amounts[ai])))
-    if c and ev.college_year and ev.college_lump > 0:
-        m = max(1, (ev.college_year - today.year) * 12 - today.month + 8)
-        out.append((m, ev.college_lump))
-    return out
-
-
-def whatif_grid(liquid: float, baseline: Baseline, monthly_save: float,
-                today: date, goals: dict, edu_accounts: list["EduAccount"],
-                edu_pace: float | None, stock_pct: float,
-                stock_src: str) -> dict:
-    """The full precomputed scenario space: the "Play with it" dials, the
-    three life-event toggles, and the walk-away history replay. Python owns
-    every dollar figure AND every sequence replay; the page's JS only
-    indexes this grid (keys are concatenated index digits, nothing more).
-
-    Layout: `tg[p]` = target family per partner state; `years[hKey+p+c]` =
-    arrival horizons (hKey carries the quiet-select lattice, "h1a2y0");
-    `coast`/`half` ride the base state only — milestones hide under
-    toggles; `paths[hKey+c]` = projection curves (partner moves the target
-    line, not the curve); `surv` = the historical-sequence tables — counts
-    and bands per withdrawal rate (pot-normalized replays, so survival
-    depends only on the rate and the mix), guardrail + unspent medians
-    scaled to cell dollars here. The spend dial centers on the TRUE BURN."""
-    annual = baseline.burn * 12
-    spends = _spend_axis(annual)
-    ev = life_events(today, annual, baseline.months, goals,
-                     edu_accounts, edu_pace)
-    surv = survival_tables(WHATIF_RATES, stock_pct)
-    n_r, n_s = len(WHATIF_RATES), len(spends)
-
-    # ---- target family, per partner state -------------------------------
-    p_states = ["0"] + (["1"] if ev.partner_monthly else [])
-    partner_annual = (ev.partner_monthly or 0.0) * 12
-    tg: dict[str, dict] = {}
-    for p in p_states:
-        tN, tS, gap, pct = [], [], [], []
-        for r in WHATIF_RATES:
-            tn_r, ts_r, gp_r, pc_r = [], [], [], []
-            for sp in spends:
-                wbase = max(0.0, sp - (partner_annual if p == "1" else 0.0))
-                if wbase <= 0:
-                    tn_r.append(0.0)
-                    ts_r.append("$0 — the paycheck covers this spend")
-                    gp_r.append("nothing to bridge")
-                    pc_r.append("—")
-                    continue
-                t = round1k(wbase / (r / 100.0))
-                tn_r.append(t)
-                ts_r.append("≈" + m0(t))
-                g = t - liquid
-                gp_r.append(("past it by " + m0(-g)) if g <= 0
-                            else (m0(g) + " to go"))
-                pc_r.append(f"{min(999.0, 100.0 * liquid / t):.0f}%")
-            tN.append(tn_r)
-            tS.append(ts_r)
-            gap.append(gp_r)
-            pct.append(pc_r)
-        tg[p] = {"targetN": tN, "target": tS, "gap": gap, "pct": pct}
-
-    # halfway strings ride the base state only
-    half_n = [[tg["0"]["targetN"][ri][si] / 2.0 for si in range(n_s)]
-              for ri in range(n_r)]
-    half_s = [["≈" + m0(v) for v in row] for row in half_n]
-
-    def horizon_grid(target_n, save, events):
-        return [[[_years_or_none(_months_to_target(
-            liquid, save, target_n[ri][si], g, events))
-            for g in WHATIF_GROWTHS] for si in range(n_s)]
-            for ri in range(n_r)]
-
-    # ---- arrival horizons per toggle state ------------------------------
-    college_on = ev.college_year is not None and ev.college_lump > 0
-    c_states = ["0", "1"] if college_on else ["0"]
-    h_keys = ["h0"] + [f"h1a{ai}y{yi}"
-                       for ai in range(len(ev.house_amounts))
-                       for yi in range(len(ev.house_years))]
-    years: dict[str, list] = {}
-    for hk in h_keys:
-        h, ai, yi = (0, 0, 0) if hk == "h0" else (1, int(hk[3]), int(hk[5]))
-        for p in p_states:
-            for c in c_states:
-                evts = _event_list(ev, today, h, int(c), ai, yi)
-                years[f"{hk}p{p}c{c}"] = horizon_grid(
-                    tg[p]["targetN"], monthly_save, evts)
-    coast = horizon_grid(tg["0"]["targetN"], 0.0, [])
-    half = [[[_years_or_none(_months_to_target(
-        liquid, monthly_save, half_n[ri][si], g))
-        for g in WHATIF_GROWTHS] for si in range(n_s)] for ri in range(n_r)]
-
-    # ---- projection paths per house/college state -----------------------
-    def balance_at(months, f, g, save, events):
-        if g <= 0:
-            bal = liquid + save * months
-        else:
-            grown = f ** months
-            bal = liquid * grown + save * (grown - 1.0) / (f - 1.0)
-        for em, lump in events:
-            if em <= months:
-                bal -= lump * (f ** (months - em) if g > 0 else 1.0)
-        return max(0.0, round(bal))
-
-    paths: dict[str, list] = {}
-    ptips: dict[str, list] = {}
-    pdots: dict[str, list] = {}
-    pmax: dict[str, list] = {}
-    paths0 = []                      # growth-alone twin, base state only
-    for g in WHATIF_GROWTHS:
-        f = (1.0 + g / 100.0) ** (1.0 / 12.0)
-        paths0.append([[yr, balance_at(yr * 12, f, g, 0.0, [])]
-                       for yr in range(WHATIF_MAX_YEARS + 1)])
-    for hk in h_keys:
-        h, ai, yi = (0, 0, 0) if hk == "h0" else (1, int(hk[3]), int(hk[5]))
-        for c in c_states:
-            evts = _event_list(ev, today, h, int(c), ai, yi)
-            key = f"{hk}c{c}"
-            pp, tt, dd, mm = [], [], [], []
-            for gi, g in enumerate(WHATIF_GROWTHS):
-                f = (1.0 + g / 100.0) ** (1.0 / 12.0)
-                pts = [[yr, balance_at(yr * 12, f, g, monthly_save, evts)]
-                       for yr in range(WHATIF_MAX_YEARS + 1)]
-                pp.append(pts)
-                tt.append(["≈" + m0(v) for _, v in pts])
-                dd.append([{"coord": [round(em / 12.0, 1),
-                                      balance_at(em, f, g, monthly_save, evts)],
-                            "lbl": delta0(-lump)}
-                           for em, lump in evts])
-                mx = max(v for _, v in pts)
-                mm.append(max(mx, max(v for _, v in paths0[gi])
-                              if key == "h0c0" else 0))
-            paths[key] = pp
-            ptips[key] = tt
-            pdots[key] = dd
-            pmax[key] = mm
-
-    # ---- y-axis pool: deduplicated nice scales, indexed per state -------
-    ymaps_pool: list[dict] = []
-    pool_seen: dict[tuple, int] = {}
-    ymap_idx: dict[str, list[int]] = {}
-    for key, mm in pmax.items():
-        for p in p_states:
-            tmax = max((max(row) for row in tg[p]["targetN"]), default=0.0)
-            idxs = []
-            for gi in range(len(WHATIF_GROWTHS)):
-                y = yaxis_payload(0, max(mm[gi], tmax, liquid, 1.0))
-                sig = (y["min"], y["max"])
-                if sig not in pool_seen:
-                    pool_seen[sig] = len(ymaps_pool)
-                    ymaps_pool.append(y)
-                idxs.append(pool_seen[sig])
-            ymap_idx[f"{key}p{p}"] = idxs
-
-    # ---- history replay, scaled to cell dollars -------------------------
-    guard_trig: dict[str, list] = {}
-    guard_cut: dict[str, list] = {}
-    unspent: dict[str, list] = {}
-    for p in p_states:
-        gt, gc, un = [], [], []
-        for ri in range(n_r):
-            g = surv.guard[ri]
-            uf = surv.unspent_frac[ri]
-            gt_r, gc_r, un_r = [], [], []
-            for si in range(n_s):
-                pot = tg[p]["targetN"][ri][si]
-                wbase = max(0.0, spends[si]
-                            - (partner_annual if p == "1" else 0.0))
-                if pot <= 0:
-                    gt_r.append(None)
-                    gc_r.append(None)
-                    un_r.append(None)
-                    continue
-                gt_r.append(m0(round1k(pot * g.trigger_frac)) if g else None)
-                gc_r.append("≈" + m0(round(wbase * (1 - g.cut_frac) / 12))
-                            + "/mo" if g else None)
-                un_r.append("≈" + m0(round1k(pot * uf)) if uf else None)
-            gt.append(gt_r)
-            gc.append(gc_r)
-            un.append(un_r)
-        guard_trig[p] = gt
-        guard_cut[p] = gc
-        unspent[p] = un
-
-    mix_lbl = f"{stock_pct:.0f}/{100 - stock_pct:.0f} stock/bond mix ({stock_src})"
-    surv_ctx = {
-        "survived": surv.survived, "nSeq": surv.n_seq, "bands": surv.bands,
-        "bandY": {"min": 0, "max": surv.n_seq, "step": surv.n_seq / 4,
-                  "labels": {str(surv.n_seq): f"all {surv.n_seq}", "0": "0"}},
-        "bandX": {"0": "walk-away",
-                  **{str(x): f"{x} yrs in" for x in (10, 20, 30)},
-                  "40": "40"},
-        "guardTrig": guard_trig, "guardCut": guard_cut, "unspent": unspent,
-        "window": (f"{surv.n_seq} starts, {surv.start_lo}–{surv.start_hi}, "
-                   f"data through {surv.data_hi}"),
-        "mix": mix_lbl,
-    }
-
-    xticks = {str(y): ("today" if y == 0 else f"{y} yrs")
-              for y in range(0, WHATIF_MAX_YEARS + 1, 10)}
-    xyear = {str(y): str(today.year + y)
-             for y in range(WHATIF_MAX_YEARS + 1)}
-    xyear_s = {k: "’" + v[2:] for k, v in xyear.items()}
-    nearest_si = min(range(n_s), key=lambda i: abs(spends[i] - annual))
-    return {
-        "rates": [f"{r:.1f}%" for r in WHATIF_RATES],
-        "spends": [f"{m0(sp)}/yr" for sp in spends],
-        "growths": [f"{g:.1f}% real" for g in WHATIF_GROWTHS],
-        "nRates": n_r, "nSpends": n_s, "nGrowths": len(WHATIF_GROWTHS),
-        "tg": tg, "halfN": half_n, "halfS": half_s,
-        "years": years, "coast": coast, "half": half,
-        "paths": paths, "pathTips": ptips, "pathDots": pdots, "paths0": paths0,
-        "paths0Tips": [["≈" + m0(v) for _, v in pts] for pts in paths0],
-        "ymapsPool": ymaps_pool, "ymapIdx": ymap_idx,
-        "surv": surv_ctx,
-        "ev": {"houseAmts": [m0(a) for a in ev.house_amounts],
-               "houseYears": [str(y) for y in ev.house_years],
-               "houseDefA": ev.house_def_a, "houseDefY": ev.house_def_y,
-               "partner": ev.partner_monthly is not None,
-               "college": college_on},
-        "xticks": xticks, "xyear": xyear, "xyearS": xyear_s,
-        "maxYears": WHATIF_MAX_YEARS,
-        "def": {"ri": WHATIF_RATES.index(4.0), "si": nearest_si,
-                "gi": WHATIF_GROWTHS.index(4.0)},
-        "_ev": ev,      # template context only; stripped before the island
-    }
 
 
 def kid_name(account: str) -> str:
@@ -1303,8 +780,8 @@ def edu_grid(total: float, target: float | None, pace: float | None,
             arrive.append("parked — $0/mo never arrives")
         else:
             need = int(math.ceil((target - total) / c))
-            if need > WHATIF_MAX_YEARS * 12:
-                arrive.append(f"{WHATIF_MAX_YEARS}+ yrs out at this pace")
+            if need > EDU_MAX_YEARS * 12:
+                arrive.append(f"{EDU_MAX_YEARS}+ yrs out at this pace")
             else:
                 eta = add_months(today, need)
                 arrive.append(f"≈{MONTH_ABBR[eta.month]} {eta.year}")
@@ -1362,21 +839,6 @@ def _sparkline(series: list[dict]) -> dict | None:
 
 
 # ----------------------------------------------------- the opt-in room rule
-def show_walkaway_room(goals: dict) -> bool:
-    """THE ONE RULE for the opt-in Independence room (walk-away number,
-    what-if dials, 1871 history replay): an explicit `show_walkaway:
-    true/false` in facts/goals always wins; with no flag, the room turns on
-    exactly when a `retirement_target` is set. No flag and no target = the
-    page never mentions walking away, and none of it is computed. The rule
-    is documented in both vault templates' facts/goals files."""
-    raw = goals.get("show_walkaway")
-    if raw is not None:
-        s = str(raw).strip().lower()
-        if s in ("true", "yes", "on", "1", "1.0"):
-            return True
-        if s in ("false", "no", "off", "0", "0.0"):
-            return False
-    return _as_float(goals.get("retirement_target")) is not None
 
 
 SMALL_NUMS = ["zero", "One", "Two", "Three", "Four", "Five", "Six",
@@ -1420,7 +882,6 @@ def sara_line(pace: Pace, cards_state: str, cards: list[Card], more: int,
 def _codespans(text: str) -> Markup:
     """Escape, then `x` -> <code>x</code> — findings text is untrusted."""
     return Markup(code_spans(str(escape(text))))
-
 
 
 # ------------------------------------------------------- context builders
@@ -1651,55 +1112,6 @@ def _machine_ctx(rows: list[dict]) -> dict:
             "summary": " · ".join(bits) if n else ""}
 
 
-def _walkaway_ctx(wa: Walkaway | None, liquid: float,
-                  asof: date | None) -> dict | None:
-    if wa is None:
-        return None
-    if wa.src == "set":
-        hero = m0(wa.target)
-        srcline = "the target you set"
-    else:
-        hero = f"≈{m0(wa.target)}"
-        srcline = (f"{WALKAWAY_LO}× your true yearly burn — up to "
-                   f"≈{m0(wa.hi or 0)} at the safer {WALKAWAY_HI}×")
-    foot_bits = []
-    if wa.baseline:
-        b = wa.baseline
-        foot_bits.append(f"True burn: ≈{m0(b.burn)}/mo — what the last "
-                         f"{len(b.months)} full months actually cost "
-                         f"({window_label(b.months)}).")
-        if b.drift_pct is not None:
-            d = round(b.drift_pct)
-            trend = ("held roughly flat" if d == 0 else
-                     f"drifted {'+' if d > 0 else MINUS}{abs(d)}%")
-            foot_bits.append(f"Year over year it has {trend} "
-                             f"vs the 12 months before.")
-        if wa.src == "set" and wa.lo:
-            foot_bits.append(f"For reference, burn math alone says "
-                             f"≈{m0(wa.lo)}–≈{m0(wa.hi or 0)} "
-                             f"({WALKAWAY_LO}–{WALKAWAY_HI}× the yearly burn).")
-    shadow_left = shadow_note = None
-    if wa.paper > 0:
-        shadow_left = f"{max(0.0, min(100.0, wa.paper_pct)):.1f}"
-        combined = m0(liquid + wa.paper)
-        if wa.paper_pct >= 100:
-            shadow_note = Markup(
-                "◦ If the paper converts: <b>{}</b> — past the line the day "
-                "it's real. Until then it isn't counted.").format(combined)
-        else:
-            shadow_note = Markup(
-                "◦ If the paper converts: <b>{}</b> ({}% of the way). "
-                "Not counted until it's real.").format(combined,
-                                                      f"{wa.paper_pct:.0f}")
-    return {
-        "hero": hero, "srcline": srcline, "fill": f"{max(0.0, min(100.0, wa.pct)):.1f}",
-        "liquid": m0(liquid),
-        "window": (f"through {mon_d(asof)}" if asof else "ledger empty"),
-        "pct": pct_display(wa.pct), "shadow_left": shadow_left,
-        "shadow_note": shadow_note, "foot": " ".join(foot_bits),
-    }
-
-
 def _education_ctx(accounts: list[EduAccount], pace: float | None,
                    goals: dict, today: date) -> dict:
     """The 529 card (Goals room) AND its glance tile, one source of truth.
@@ -1831,7 +1243,6 @@ def _networth_ctx(series: list[dict], baseline_cut: int, liquid: float,
         "table_rows": [(mon_yr((p["d"].year, p["d"].month)), m0(p["v"]),
                         basis(i, p)) for i, p in enumerate(series)],
     }
-
 
 
 # ------------------------------------------------- net-worth attribution
@@ -2081,7 +1492,6 @@ def _moneymap_ctx(balances: list[tuple[str, float]], liquid: float,
             "window": f"through {mon_d(asof)}" if asof else "",
             "has_owners": bool(owners),
             "table_rows": rows}
-
 
 
 # ----------------------------------------------------- chart data builders

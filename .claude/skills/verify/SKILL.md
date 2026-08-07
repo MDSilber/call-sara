@@ -75,7 +75,7 @@ The Sara App server (skills/finance/sara/sara/server/) has its own lane:
 
 ```bash
 cd skills/finance/sara
-FINANCE_TEST_VAULT=<built-demo-vault> python -m pytest tests/test_server_app.py -q
+FINANCE_TEST_VAULT=<built-demo-vault> python -m pytest tests_server -q   # own session: one process binds one vault
 # contract tests: every GET 200, eight figures vs query.py to the dollar,
 # categorize/set-goal/dismiss e2e on a throwaway copy (source vault untouched)
 cd ../../../app && npm run build && npm run lint          # rebuild static + eslint
