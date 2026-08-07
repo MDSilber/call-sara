@@ -22,6 +22,7 @@ from pathlib import Path
 from sara.ledger.invest import build
 from sara.ledger.writer import (
     CASH_MIRROR_TIER_LABEL,
+    CASH_XSRC_TIER_LABEL,
     FAMILY_OFX,
     FAMILY_PLAID,
     INVEST_INCOME_TIER_LABEL,
@@ -374,11 +375,13 @@ class TestVanguardOverlapRegression:
         assert f"deduped ({INVEST_TIER_LABEL}) 2026-07-16 -103.17 BUY 0.000 VMFXX @ 0.00" in r.stdout
         assert f"deduped ({INVEST_INCOME_TIER_LABEL}) 2026-07-16 103.17 DIV VMFXX" in r.stdout
         # the settlement fund's cash shadows dedupe against what the ledger
-        # already represents: the fused buy's USD leg, the hand-booked
-        # maturity, and the OFX coupon
+        # already represents — each on the strictest tier that owns it: the
+        # fused buy's USD leg (units legs exclude it from xsrc -> mirror),
+        # the hand-booked maturity (family "" -> mirror), and the OFX coupon
+        # (machine pure-cash, signed exact -> the cross-source tier)
         assert f"deduped ({CASH_MIRROR_TIER_LABEL}) 2026-07-11 -4866.07 Sweep in" in r.stdout
         assert f"deduped ({CASH_MIRROR_TIER_LABEL}) 2026-07-21 50000.00 Corp Action (Redemption)" in r.stdout
-        assert f"deduped ({CASH_MIRROR_TIER_LABEL}) 2026-07-18 1218.75 INTEREST" in r.stdout
+        assert f"deduped ({CASH_XSRC_TIER_LABEL}) 2026-07-18 1218.75 INTEREST" in r.stdout
         # the un-twinned zero-qty row books as pure cash, bucketed loudly
         assert "cash-only invest rows (zero units): 1 — booked as settlement cash" in r.stdout
         assert "2026-07-18 -4.56 BUY 0.000 VMFXX @ 0.00" in r.stdout
@@ -553,7 +556,7 @@ class TestCashMirror:
 
     def test_scan_indexes_every_cash_moving_entry_shape(self, fresh_vault: Path) -> None:
         seed(fresh_vault)
-        _idx, cash = scan_invest_ledger(BROKERAGE)
+        cash = scan_invest_ledger(BROKERAGE).cash_mirror
         amounts = sorted(c.amount for c in cash)
         # fused buys, the coupon, the hand maturity — reinvests (net 0) excluded
         assert amounts == [D("1218.75"), D("4866.07"), D("6848.86"),

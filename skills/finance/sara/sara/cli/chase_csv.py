@@ -38,6 +38,7 @@ from decimal import Decimal
 from sara.cli.shared import err, reject_unknown_flags, since_from_argv
 from sara.ledger.writer import (
     DISCREPANCY,
+    FAMILY_CSV,
     VERIFIED,
     AccountDedupe,
     Entry,
@@ -107,7 +108,7 @@ def main(argv: list[str] | None = None) -> None:
         # right call both against QFX-imported twins (same transaction via
         # another format) and in-batch (a CSV cannot disambiguate same-day
         # identical rows; import the card's QFX when that matters).
-        why = deduper.check(t.date, t.amount, t.payee, "", h)
+        why = deduper.check(t.date, t.amount, t.payee, "", h, family=FAMILY_CSV)
         if why:
             skipped.append((r, why))
             continue

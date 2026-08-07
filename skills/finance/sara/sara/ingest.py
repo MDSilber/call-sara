@@ -309,7 +309,8 @@ def run_item(alias: str, cfg: dict[str, Any], env: dict[str, str],
         skipped: list[tuple[CanonTxn, str]] = []
         for t in txns:
             h = deduper.hash_for(t.date, t.amount, t.payee)
-            why = deduper.check(t.date, t.amount, t.payee, t.source_id, h)
+            why = deduper.check(t.date, t.amount, t.payee, t.source_id, h,
+                                family=FAMILY_PLAID)
             if why:
                 skipped.append((t, why))
                 continue

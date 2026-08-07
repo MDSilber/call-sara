@@ -67,9 +67,11 @@ def import_hash(when: date, amt: Decimal, payee: str | None, account: str) -> st
 
 IMPORT_HASH_META = re.compile(r'^\s+import-hash:\s*"([0-9a-f]{8,64})"', re.M)
 # Source-family markers: ids are authoritative only WITHIN a family, so the
-# invest fuzzy tier needs to know which family wrote a ledger entry. Entries
-# that predate fitid: metadata still carry ofx-type: — they are OFX-family.
+# cross-source tiers need to know which family wrote a ledger entry. Entries
+# that predate fitid: metadata still carry ofx-type: — they are OFX-family;
+# Chase-CSV rows carry chase-type: and no bank id at all.
 PLAID_FAMILY_META = re.compile(r'^\s+(?:plaid-id|plaid-type):\s*"', re.M)
+CSV_FAMILY_META = re.compile(r'^\s+chase-type:\s*"', re.M)
 OFX_FAMILY_META = re.compile(r'^\s+(?:fitid|ofx-type):\s*"', re.M)
 # The source-id slot: OFX entries record the bank's FITID as `fitid:`;
 # Plaid entries record the Plaid transaction_id as `plaid-id:`. One regex
@@ -204,10 +206,16 @@ def is_duplicate(idx: FuzzyIndex, when: date, amount: Decimal, payee: str | None
 INVEST_WINDOW_DAYS = 5
 INVEST_TOTAL_TOLERANCE = Decimal("0.01")
 
-FAMILY_OFX, FAMILY_PLAID = "ofx", "plaid"
+FAMILY_OFX, FAMILY_PLAID, FAMILY_CSV = "ofx", "plaid", "csv"
 INVEST_TIER_LABEL = f"units±{INVEST_WINDOW_DAYS}d"
 INVEST_INCOME_TIER_LABEL = f"reinvest-income±{INVEST_WINDOW_DAYS}d"
 CASH_MIRROR_TIER_LABEL = f"cash-mirror±{INVEST_WINDOW_DAYS}d"
+# The plain-cash cross-source tier is tighter than the brokerage mirror: the
+# SAME signed amount to the cent (a refund never explains a charge), ±3 days
+# (card transaction-vs-post drift), machine rows only — legacy/hand entries
+# stay the ±5d payee-fuzzy tier's business.
+CASH_XSRC_WINDOW_DAYS = 3
+CASH_XSRC_TIER_LABEL = f"cash-xsrc±{CASH_XSRC_WINDOW_DAYS}d"
 # The invest tier applies only to these kinds: INCOME rows match the
 # income FACET of a reinvest, position kinds match its units facet, and
 # plain cash (INVBANKTRAN) never touches the invest index at all.
@@ -223,6 +231,18 @@ class InvestLedgerRow(NamedTuple):
 
 
 InvestIndex = dict[str, list[InvestLedgerRow]]
+
+
+class CashXsrcRow(NamedTuple):
+    """One MACHINE-written pure-cash entry on the account — what another
+    source family's booking of the same purchase must be checked against."""
+
+    when: date
+    amount: Decimal  # signed, account perspective
+    family: str  # never "" — machine rows only
+
+
+XsrcIndex = list[CashXsrcRow]
 
 
 class CashLegRow(NamedTuple):
@@ -243,9 +263,11 @@ _SINGLE_COST = re.compile(r"\{([\d,.]+)\s+USD")
 _INCOME_POSTING = re.compile(r"^[ \t]+Income:", re.M)
 
 
-def _entry_family(body: str) -> str:
+def entry_family(body: str) -> str:
     if PLAID_FAMILY_META.search(body):
         return FAMILY_PLAID
+    if CSV_FAMILY_META.search(body):
+        return FAMILY_CSV
     if OFX_FAMILY_META.search(body):
         return FAMILY_OFX
     return ""
@@ -264,9 +286,15 @@ def _dec_or_none(text: str) -> Decimal | None:
     return d if d.is_finite() else None
 
 
-def scan_invest_ledger(account: str) -> tuple[InvestIndex, CashIndex]:
+class LedgerScan(NamedTuple):
+    invest: InvestIndex  # units/income facets, per ticker
+    cash_mirror: CashIndex  # |net USD| of every cash-moving entry (any family)
+    cash_xsrc: XsrcIndex  # signed net USD of machine PURE-cash entries
+
+
+def scan_invest_ledger(account: str) -> LedgerScan:
     """One pass over ledger/*.beancount for an account -> the invest facet
-    index PLUS the cash-leg index (every entry's net USD movement).
+    index PLUS the two cash pools (mirror and cross-source).
 
     Invest rows: {ticker: rows} for every entry holding a units posting.
     A row's total is the entry's |USD movement| on the account, else the
@@ -281,6 +309,7 @@ def scan_invest_ledger(account: str) -> tuple[InvestIndex, CashIndex]:
     """
     idx: InvestIndex = {}
     cash: CashIndex = []
+    xsrc: XsrcIndex = []
     posting = _posting_re(account)
     for f in sorted((VAULT / "ledger").glob("*.beancount")):
         try:
@@ -294,7 +323,7 @@ def scan_invest_ledger(account: str) -> tuple[InvestIndex, CashIndex]:
             except ValueError:
                 continue
             body = m.group(1)
-            family = _entry_family(body)
+            family = entry_family(body)
             income_facet = bool(_INCOME_POSTING.search(body))
             usd_sum = ZERO
             units_legs: list[tuple[Decimal, str, str]] = []
@@ -322,12 +351,14 @@ def scan_invest_ledger(account: str) -> tuple[InvestIndex, CashIndex]:
                     InvestLedgerRow(when, units, total, family, income_facet))
             if usd_sum != 0:
                 cash.append(CashLegRow(when, abs(usd_sum), family))
-    return idx, cash
+                if family and not units_legs:
+                    xsrc.append(CashXsrcRow(when, usd_sum, family))
+    return LedgerScan(idx, cash, xsrc)
 
 
 def invest_index(account: str) -> InvestIndex:
     """The invest facet index alone (see scan_invest_ledger)."""
-    return scan_invest_ledger(account)[0]
+    return scan_invest_ledger(account).invest
 
 
 def claim_invest_duplicate(idx: InvestIndex, when: date, ticker: str,
@@ -383,6 +414,36 @@ def claim_cash_mirror(pool: CashIndex, when: date, amount: Decimal, family: str,
     return False
 
 
+def claim_cash_xsrc(pool: XsrcIndex, when: date, amount: Decimal, family: str,
+                    window: int = CASH_XSRC_WINDOW_DAYS) -> bool:
+    """True when a machine entry from ANOTHER source family already books
+    this exact cash movement — and CONSUME it (closest date first).
+
+    This is how "TST*THE VIAND" (Chase CSV, Aug 3) and "The Viand" (Plaid,
+    Aug 4, -100.11 both) become one transaction: ids and hashes can never
+    match across families, payee text differs, but same account + same
+    SIGNED cents + ±3 days is the purchase itself. Same-family rows are
+    untouchable (their ids/hashes are complete identity — two real $12.99
+    charges days apart within one source both import), and consumption
+    guarantees a true twin still imports when only one ledger row exists.
+    """
+    best: int | None = None
+    best_key: tuple[int, date] | None = None
+    for i, row in enumerate(pool):
+        if row.family == family:
+            continue  # same source family: ids/hashes own it, twins are real
+        days = abs((row.when - when).days)
+        if days > window or row.amount != amount:
+            continue
+        key = (days, row.when)
+        if best_key is None or key < best_key:
+            best, best_key = i, key
+    if best is None:
+        return False
+    del pool[best]
+    return True
+
+
 TransferPool = list[tuple[date, Decimal]]
 
 
@@ -428,15 +489,19 @@ class AccountDedupe:
                                 if enabled else {})
         self.new_hashes: HashIndex = {}
         self.new_sids: set[str] = set()
-        self._invest_idx: InvestIndex | None = None  # units facet, lazy
+        self._scan_result: LedgerScan | None = None  # one lazy file pass
         self._invest_income_idx: InvestIndex | None = None  # income facet, lazy
-        self._cash_mirror_idx: CashIndex | None = None  # cash facet, lazy
 
     def hash_for(self, when: date, amount: Decimal, payee: str) -> str:
         return import_hash(when, amount, payee, self.account)
 
     def check(self, when: date, amount: Decimal, payee: str, source_id: str,
-              h: str | None = None) -> str | None:
+              h: str | None = None, *, family: str = "") -> str | None:
+        """The cash tiers, in order: source-id exact, content hash, the ±5d
+        payee fuzzy (legacy/hand rows only), and — when the caller declares
+        its source `family` — the cross-source tier: a machine row from a
+        DIFFERENT family booking the same signed cents within ±3 days is the
+        same purchase wearing different payee text."""
         if not self.enabled:
             return None
         h = h or self.hash_for(when, amount, payee)
@@ -446,6 +511,8 @@ class AccountDedupe:
             return "hash"
         if is_duplicate(self.idx, when, amount, payee):
             return "±5d"
+        if family and claim_cash_xsrc(self._xsrc_pool(), when, amount, family):
+            return CASH_XSRC_TIER_LABEL
         return None
 
     def check_invest(self, when: date, amount: Decimal, payee: str, source_id: str,
@@ -460,7 +527,7 @@ class AccountDedupe:
         waived when qty is unreported as zero), INCOME rows claim the income
         facet of reinvest entries, and plain cash rows never touch either.
         `amount` (the signed cash effect) doubles as the total."""
-        why = self.check(when, amount, payee, source_id, h)
+        why = self.check(when, amount, payee, source_id, h, family=family)
         if why or not self.enabled:
             return why
         if kind in POSITION_KINDS:
@@ -477,25 +544,27 @@ class AccountDedupe:
             return CASH_MIRROR_TIER_LABEL
         return None
 
-    def _units_pool(self) -> InvestIndex:
-        if self._invest_idx is None:
-            full, cash = scan_invest_ledger(self.account)
-            self._invest_idx = full
-            self._cash_mirror_idx = cash
+    def _scan(self) -> LedgerScan:
+        if self._scan_result is None:
+            self._scan_result = scan_invest_ledger(self.account)
             self._invest_income_idx = {
                 ticker: [r for r in rows if r.income_facet]
-                for ticker, rows in full.items()}
-        return self._invest_idx
+                for ticker, rows in self._scan_result.invest.items()}
+        return self._scan_result
+
+    def _units_pool(self) -> InvestIndex:
+        return self._scan().invest
 
     def _income_pool(self) -> InvestIndex:
-        self._units_pool()
+        self._scan()
         assert self._invest_income_idx is not None
         return self._invest_income_idx
 
     def _cash_pool(self) -> CashIndex:
-        self._units_pool()
-        assert self._cash_mirror_idx is not None
-        return self._cash_mirror_idx
+        return self._scan().cash_mirror
+
+    def _xsrc_pool(self) -> XsrcIndex:
+        return self._scan().cash_xsrc
 
     def record(self, h: str, source_id: str) -> None:
         self.new_hashes.setdefault(h, set())
@@ -751,6 +820,34 @@ def find_entries_by_source_id(ids: set[str]) -> dict[str, tuple[Path, str]]:
             if fm and fm.group(1).strip() in ids:
                 out[fm.group(1).strip()] = (f, m.group(0))
     return out
+
+
+def delete_entries(victims: list[tuple[Path, str]]) -> list[str]:
+    """Remove whole ledger entries, atomically, with bean-check rollback —
+    the audit tool's surgical half. Each (file, entry_text) must address
+    exactly one occurrence or NOTHING is touched; every mutated file rolls
+    back if validation fails. Returns the vault-relative paths rewritten."""
+    by_file: dict[Path, list[str]] = {}
+    for f, entry_text in victims:
+        by_file.setdefault(f, []).append(entry_text)
+    main = VAULT / "ledger" / "main.beancount"
+    backups: dict[Path, str | None] = {}
+    try:
+        for f, texts in by_file.items():
+            backups[f] = text = f.read_text()
+            for entry_text in texts:
+                if text.count(entry_text) != 1:
+                    raise SystemExit(f"delete_entries: entry not uniquely addressable "
+                                     f"in {f.name} — nothing deleted")
+                text = text.replace(entry_text, "", 1)
+            while "\n\n\n" in text:
+                text = text.replace("\n\n\n", "\n\n")
+            atomic_write(f, text)
+    except OSError as e:
+        _restore(backups)
+        raise SystemExit(f"delete failed, rolled back: {e}") from e
+    _bean_check_or_rollback(backups, main)
+    return [str(p.relative_to(VAULT)) for p in by_file]
 
 
 def replace_by_source_id(replacements: dict[str, str]) -> list[str]:

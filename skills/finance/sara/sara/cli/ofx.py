@@ -41,6 +41,7 @@ from decimal import Decimal
 from sara.cli.shared import err, reject_unknown_flags, since_from_argv
 from sara.ledger.writer import (
     DISCREPANCY,
+    FAMILY_OFX,
     VERIFIED,
     AccountDedupe,
     Entry,
@@ -101,7 +102,8 @@ def main(argv: list[str] | None = None) -> None:
         skipped: list[tuple[CanonTxn, str]] = []
         for t in txns:
             h = deduper.hash_for(t.date, t.amount, t.payee)
-            why = deduper.check(t.date, t.amount, t.payee, t.source_id, h)
+            why = deduper.check(t.date, t.amount, t.payee, t.source_id, h,
+                                family=FAMILY_OFX)
             if why:
                 skipped.append((t, why))
                 continue
