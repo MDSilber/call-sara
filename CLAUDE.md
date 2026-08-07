@@ -28,3 +28,4 @@ whole rule.
 Voice: anything user-facing passes the string gate in
 `skills/finance/tools/checks.py` (the style addendum lives in its
 docstring). Public writing never pitches.
+- Queue rows carry `fix` (civilian) and optionally `how` (operator command). A surface that renders `how` must make it look like operator territory — mono, folded, labeled — never inline beside `fix`.
