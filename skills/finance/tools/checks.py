@@ -1173,9 +1173,40 @@ def plaid_freshness():
     return out
 
 
+def catch_all_lumps(rows=None):
+    """Tripwire: no single row over $10K may sit in a catch-all account.
+
+    Self-transfers and principal returns hiding in Income:US:Other or
+    Expenses:Uncategorized silently corrupt every flow view — a lump that
+    big always has a real name (transfer, maturity, opening equity).
+    """
+    from vault import bean_query
+    LIMIT = 10_000
+    out = []
+    q = ("SELECT date, account, payee, number(position) as amt "
+         "WHERE account ~ 'Income:US:Other|Expenses:Uncategorized'")
+    for r in bean_query(q):
+        try:
+            amt = float(r[3])
+        except (TypeError, ValueError):
+            continue
+        if abs(amt) >= LIMIT:
+            out.append({
+                "check": "catch-all-lump",
+                "level": "alert",
+                "title": f"${abs(amt):,.0f} lump sitting in {r[1]} — name it",
+                "detail": (f"{r[0]} {(r[2] or 'no payee')}: a row this big is never "
+                           f"misc — it's a transfer, a maturity, or opening equity. "
+                           f"Rebook it so the flow numbers stay honest."),
+            })
+    return out
+
+
 ALL = [concentration, deadlines, inbox, anomaly, subscriptions, reconciliation,
        coverage, review_queue, goals_status, milestones, fixed_balances, lanes,
-       projected_shortfall, cash_drag, allocation_drift, plaid_freshness]
+       projected_shortfall, cash_drag, allocation_drift, plaid_freshness, catch_all_lumps]
+
+
 
 
 def run_all():
