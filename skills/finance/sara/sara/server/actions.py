@@ -3,7 +3,11 @@
 categorize  appends a [[payee_rules]] entry to rules.toml (validated, TOML-
             escaped, parse-verified with rollback), then runs the stock
             recategorize tool — atomic writes, bean-check, full rollback on
-            a rejected rewrite. Nothing new touches the ledger.
+            a rejected rewrite. With `new_account` the target category is
+            first OPENED: a dated `open` directive lands in the chart file
+            through the same gated ledger writer (atomic, bean-check,
+            rollback) before the rule is taught — so "what if it doesn't
+            match one of these?" is answered without leaving the popover.
 set-goal    edits one allowlisted numeric key inside the yaml block of
             facts/goals/index.md, atomically, and re-reads it to confirm.
 dismiss     records "quiet until <date>" for one finding in
@@ -25,8 +29,11 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import cast
 
+import sara.vault
 from checks import goals as goals_config
 from dismissals import DISMISSALS_FILE, load_dismissals
+from sara.ledger.queries import opened_accounts
+from sara.ledger.writer import rewrite_ledger_files
 from vault import (
     RULES_FILE,
     VAULT,
@@ -92,8 +99,74 @@ def _open_accounts() -> set[str]:
 
 
 # -------------------------------------------------------------- categorize
-def categorize(payee_pattern: str, account: str,
-               apply_history: bool) -> dict[str, object]:
+# Beancount's account grammar, narrowed to the two roots a rule may target:
+# colon-separated segments, each starting with a capital letter or digit.
+NEW_ACCOUNT_RE = re.compile(r"^(?:Expenses|Income)(?::[A-Z0-9][A-Za-z0-9-]*)+$")
+REVIEW_BUCKETS = ("Expenses:Uncategorized", "Expenses:FIXME")
+
+
+def _chart_file() -> Path:
+    """The ledger file that holds the Expenses/Income chart — the one with
+    the most such `open` directives (accounts.beancount in the template),
+    falling back to main.beancount."""
+    opens = re.compile(r"^\s*\d{4}-\d{2}-\d{2}\s+open\s+(?:Expenses|Income):", re.M)
+    best, best_n = VAULT / "ledger" / "main.beancount", 0
+    for f in sorted((VAULT / "ledger").glob("*.beancount")):
+        try:
+            n = len(opens.findall(f.read_text()))
+        except OSError:
+            continue
+        if n > best_n:
+            best, best_n = f, n
+    return best
+
+
+def _chart_epoch() -> date:
+    """The earliest `open` date anywhere in the ledger. A new category must
+    be open from the chart's own beginning — the whole point of teaching it
+    is rewriting HISTORY into it, and beancount refuses postings that
+    predate their account."""
+    dates: list[date] = []
+    for f in (VAULT / "ledger").glob("*.beancount"):
+        try:
+            text = f.read_text()
+        except OSError:
+            continue
+        for m in re.finditer(r"^\s*(\d{4}-\d{2}-\d{2})\s+open\s", text, re.M):
+            try:
+                dates.append(date.fromisoformat(m.group(1)))
+            except ValueError:
+                continue
+    return min(dates, default=date.today())
+
+
+def _open_new_account(account: str) -> bool:
+    """Append a dated `open` for `account` to the chart file through the
+    gated ledger writer (atomic tmp+rename, bean-check, rollback). Returns
+    False when the account is already open — the graceful-duplicate path."""
+    if not NEW_ACCOUNT_RE.match(account):
+        raise ActionError(
+            f"{account!r} is not a valid category name — use Expenses:… or "
+            f"Income:… with capitalized segments (letters, digits, dashes), "
+            f'like "Expenses:Health:Acupuncture"')
+    if account in REVIEW_BUCKETS:
+        raise ActionError("that IS the review bucket — name a real category")
+    if account in opened_accounts():
+        return False
+    chart = _chart_file()
+    text = chart.read_text() if chart.exists() else ""
+    line = f"{_chart_epoch().isoformat()} open {account}  USD\n"
+    joined = text + ("" if text.endswith("\n") or not text else "\n") + line
+    try:
+        rewrite_ledger_files({chart: joined})
+    except SystemExit as e:  # the writer's CLI-shaped refusal, made a 422
+        raise ActionError(f"could not open {account}: {e}") from e
+    return True
+
+
+def categorize(payee_pattern: str, account: str | None,
+               apply_history: bool,
+               new_account: str | None = None) -> dict[str, object]:
     pattern = (payee_pattern or "").strip()
     if not pattern:
         raise ActionError("the payee pattern is empty")
@@ -104,19 +177,29 @@ def categorize(payee_pattern: str, account: str,
     except re.error as e:
         raise ActionError(f"not a valid regex: {e}") from e
     account = (account or "").strip()
-    if not account.startswith(("Expenses:", "Income:")):
-        raise ActionError("rules may only point at Expenses:* or Income:* accounts")
-    if account in ("Expenses:Uncategorized", "Expenses:FIXME"):
-        raise ActionError("that IS the review bucket — pick a real category")
-    if account not in _open_accounts():
-        raise ActionError(f"no open ledger account named {account}")
+    new_account = (new_account or "").strip()
+    if account and new_account:
+        raise ActionError("send either account or new_account, not both")
+    if not account and not new_account:
+        raise ActionError("pick a category (account) or name a new one (new_account)")
+    if account:
+        if not account.startswith(("Expenses:", "Income:")):
+            raise ActionError("rules may only point at Expenses:* or Income:* accounts")
+        if account in REVIEW_BUCKETS:
+            raise ActionError("that IS the review bucket — pick a real category")
+        if account not in _open_accounts():
+            raise ActionError(f"no open ledger account named {account}")
 
     stamp = date.today().isoformat()
-    block = (f"\n[[payee_rules]]\n"
-             f"# taught in Sara App {stamp}\n"
-             f"match = {json.dumps(pattern)}\n"
-             f"account = {json.dumps(account)}\n")
+    opened = False
     with _WRITE_LOCK:
+        if new_account:
+            opened = _open_new_account(new_account)  # 422s before anything lands
+            account = new_account
+        block = (f"\n[[payee_rules]]\n"
+                 f"# taught in Sara App {stamp}\n"
+                 f"match = {json.dumps(pattern)}\n"
+                 f"account = {json.dumps(account)}\n")
         original = RULES_FILE.read_text() if RULES_FILE.exists() else ""
         new_text = original + ("" if original.endswith("\n") or not original
                                else "\n") + block
@@ -126,7 +209,7 @@ def categorize(payee_pattern: str, account: str,
             raise ActionError(f"refusing to write rules.toml — the result "
                               f"would not parse: {e}") from e
         _atomic_write(RULES_FILE, new_text)
-        reset_rules_cache()  # the running process must see the new rule
+        _reset_rules_caches()  # the running process must see the new rule
 
         argv = [sys.executable, str(TOOLS_DIR / "recategorize.py")]
         if apply_history:
@@ -140,8 +223,19 @@ def categorize(payee_pattern: str, account: str,
     m = _RECAT_TOTAL.search(proc.stdout)
     changed = int(m.group(1) or m.group(2)) if m else 0
     return {"rule": {"match": pattern, "account": account},
+            "account": account, "opened": opened,
             "applied": apply_history, "changed": changed,
             "report": proc.stdout.strip()}
+
+
+def _reset_rules_caches() -> None:
+    """Both rules.toml parse caches (the flat tools module AND sara.vault —
+    two modules, one file) plus the suggest endpoint's per-payee cache, so
+    a just-taught rule shows up in every surface immediately."""
+    reset_rules_cache()
+    sara.vault.reset_rules_cache()
+    from . import suggest  # local: suggest imports classify (heavier module)
+    suggest.reset_cache()
 
 
 def _env_with_vault() -> dict[str, str]:

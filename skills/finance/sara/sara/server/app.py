@@ -29,7 +29,17 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import TOOLS_DIR, connections, dbq, live, regen, security, spendlens, uploads
+from . import (
+    TOOLS_DIR,
+    connections,
+    dbq,
+    live,
+    regen,
+    security,
+    spendlens,
+    suggest,
+    uploads,
+)
 from .actions import ActionError, categorize, dismiss, set_goal
 from .readmodel import SUMMARY, ReadModelMissing, contribution_limits
 
@@ -39,7 +49,10 @@ REFERENCES_DIR = TOOLS_DIR.parent / "references"
 
 class CategorizeBody(BaseModel):
     payee_pattern: str = Field(min_length=1, max_length=200)
-    account: str = Field(min_length=1, max_length=200)
+    # exactly one of the two: an open account to point the rule at, or a
+    # brand-new Expenses:/Income: name to open first (validated server-side)
+    account: str | None = Field(default=None, max_length=200)
+    new_account: str | None = Field(default=None, max_length=200)
     apply_history: bool = False
 
 
@@ -202,6 +215,17 @@ def create_app(port: int = 8787) -> FastAPI:
     def connections_read() -> JSONResponse:
         return _read(lambda: connections.payload())
 
+    @app.get("/api/suggest")
+    def suggest_read(posting_id: int) -> JSONResponse:
+        # token-gated (security.py) despite being a GET: it can spin up an
+        # on-device model call, so the caller must prove it holds the page
+        def build() -> dict[str, object]:
+            out = suggest.suggest(posting_id)
+            if out is None:
+                raise HTTPException(status_code=404, detail="no such posting")
+            return out
+        return _read(build)
+
     @app.get("/api/freshness")
     def freshness() -> JSONResponse:
         def build() -> dict[str, object]:
@@ -222,7 +246,8 @@ def create_app(port: int = 8787) -> FastAPI:
     @app.post("/api/actions/categorize")
     def act_categorize(body: CategorizeBody) -> JSONResponse:
         result = _act(lambda: categorize(
-            body.payee_pattern, body.account, body.apply_history))
+            body.payee_pattern, body.account, body.apply_history,
+            new_account=body.new_account))
         # the ledger changed: refresh the snapshot + DB in the background
         result["regenerating"] = regen.kick()
         return JSONResponse(result)

@@ -2,12 +2,12 @@
  * chips, keyset infinite scroll, provenance chips, and BULK TEACH — select
  * same-merchant rows, teach one rule, watch every room refresh itself.
  * Money strings arrive formatted; this file never does money math. */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
 import { useToast } from '../components/toastContext'
 import { Card, LoadError, Skeleton } from '../components/ui'
 import { watchRegeneration } from '../refresh'
-import type { ActivityFilters, ActivityPage, ActivityRow, Category, FeedEntry, OwnerDef, SweepGroup } from '../types'
+import type { ActivityFilters, ActivityPage, ActivityRow, Category, FeedEntry, OwnerDef, Suggest, Suggestion, SweepGroup } from '../types'
 import { invalidate } from '../useFetch'
 
 const AMOUNT_DEBOUNCE = 350
@@ -126,6 +126,17 @@ export function ActivityRoom(props: { initialQ?: string }) {
     setTaughtRules((rules) => [...rules, { rx, label }])
   }, [])
 
+  // a just-opened category joins every picker at once; the regenerated DB
+  // confirms it in the background
+  const addCategory = useCallback((account: string) => {
+    setFeed((f) => f.categories.some((c) => c.account === account) ? f : {
+      ...f,
+      categories: [...f.categories,
+        { account, label: account.split(':').slice(1).join(' · ') }]
+        .sort((a, b) => a.account.localeCompare(b.account)),
+    })
+  }, [])
+
   const toggleRow = useCallback((id: number) => {
     setSelected((s) => {
       const next = new Set(s)
@@ -239,6 +250,7 @@ export function ActivityRoom(props: { initialQ?: string }) {
                   onToggle={toggleRow}
                   anySelected={selected.size > 0}
                   onTaught={applyTaught}
+                  onNewCategory={addCategory}
                 />
               ))}
             </ul>
@@ -273,6 +285,7 @@ export function ActivityRoom(props: { initialQ?: string }) {
           <BulkTeach
             rows={feed.rows.filter((r): r is ActivityRow => !isSweep(r) && selected.has(r.id))}
             categories={feed.categories}
+            onNewCategory={addCategory}
             onDone={(ids, label) => {
               setOverrides((o) => {
                 const next = new Map(o)
@@ -345,6 +358,7 @@ function FeedRow(props: {
   anySelected: boolean
   onToggle: (id: number) => void
   onTaught: (pattern: string, label: string) => void
+  onNewCategory: (account: string) => void
 }) {
   const { row, override, selected } = props
   const [open, setOpen] = useState(false)
@@ -389,22 +403,29 @@ function FeedRow(props: {
           categories={props.categories}
           done={() => setOpen(false)}
           onTaught={props.onTaught}
+          onNewCategory={props.onNewCategory}
         />
       )}
     </>
   )
 }
 
-/** The sticky bar under a selection: same-merchant rows become ONE rule. */
+/** The sticky bar under a selection: same-merchant rows become ONE rule.
+ * One suggest call (the first row) preselects for the whole batch — same
+ * guard: person/P2P batches show the line and wait for the owner's word. */
 function BulkTeach(props: {
   rows: ActivityRow[]
   categories: Category[]
   onDone: (ids: number[], label: string) => void
   onClear: () => void
+  onNewCategory: (account: string) => void
 }) {
   const toast = useToast()
   const [account, setAccount] = useState('')
+  const [newMode, setNewMode] = useState(false)
+  const [newName, setNewName] = useState('')
   const [busy, setBusy] = useState(false)
+  const [sug, setSug] = useState<Suggest | null>(null)
   const patterns = useMemo(
     () => new Set(props.rows.map((r) => defaultPattern(r.payee))),
     [props.rows],
@@ -412,17 +433,46 @@ function BulkTeach(props: {
   const oneMerchant = patterns.size === 1
   const pattern = oneMerchant ? [...patterns][0] ?? '' : ''
 
+  const first = oneMerchant ? props.rows[0] : undefined
+  useEffect(() => {
+    if (!first) {
+      setSug(null)
+      return
+    }
+    let alive = true
+    suggestFor(first)
+      .then((s) => {
+        if (!alive) return
+        setSug(s)
+        if (s.suggestion?.preselect) {
+          const suggested = s.suggestion.account
+          setAccount((a) => (a === '' ? suggested : a))
+        }
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [first])
+
+  const newTarget = newMode ? newName.trim() : ''
+  const ready = pattern !== '' && (newMode
+    ? newTarget !== '' && accountHint(newTarget) === null
+    : account !== '')
+
   const teach = () => {
-    if (!account || !pattern || busy) return
+    if (!ready || busy) return
     setBusy(true)
-    const label = props.categories.find((c) => c.account === account)?.label ?? account
-    api.categorize(pattern, account, true)
+    api.categorize(pattern, newMode ? null : account, true,
+      newMode ? newTarget : undefined)
       .then((res) => {
         toast.show(`Taught Sara a rule for ${props.rows.length} row${props.rows.length === 1 ? '' : 's'}`, {
           detail: `${res.rule.match} → ${res.rule.account}` +
             (res.changed ? ` · ${res.changed} past transaction${res.changed === 1 ? '' : 's'} recategorized` : ''),
         })
-        props.onDone(props.rows.map((r) => r.id), label)
+        suggestCache.clear()
+        if (res.opened) props.onNewCategory(res.account)
+        props.onDone(props.rows.map((r) => r.id), categoryLabel(res.account, props.categories))
         invalidate('glance', 'spend', 'autopilot')
         watchRegeneration()
       })
@@ -440,14 +490,19 @@ function BulkTeach(props: {
       <span className="bcount num">{props.rows.length} selected</span>
       {oneMerchant ? (
         <>
-          <select value={account} onChange={(e) => setAccount(e.target.value)}
-            aria-label="bulk category">
-            <option value="">Every “{trim(pattern)}” belongs in…</option>
-            {props.categories.map((c) => (
-              <option key={c.account} value={c.account}>{c.label}</option>
-            ))}
-          </select>
-          <button className="btn primary" disabled={!account || busy} onClick={teach}>
+          <CategoryPicker
+            categories={props.categories}
+            picked={account}
+            newMode={newMode}
+            newName={newName}
+            placeholder={`Every “${trim(pattern)}” belongs in…`}
+            ariaLabel="bulk category"
+            onPick={setAccount}
+            onNewMode={setNewMode}
+            onNewName={setNewName}
+          />
+          {sug && <SaraLine s={sug} categories={props.categories} />}
+          <button className="btn primary" disabled={!ready || busy} onClick={teach}>
             {busy ? 'Teaching…' : 'Teach one rule'}
           </button>
         </>
@@ -466,33 +521,56 @@ function TeachRule(props: {
   categories: Category[]
   done: () => void
   onTaught: (pattern: string, label: string) => void
+  onNewCategory: (account: string) => void
 }) {
   const toast = useToast()
   const first = props.rows[0]
   const [pattern, setPattern] = useState(first ? defaultPattern(first.payee) : '')
   const [account, setAccount] = useState('')
+  const [newMode, setNewMode] = useState(false)
+  const [newName, setNewName] = useState('')
   const [applyHistory, setApplyHistory] = useState(true)
   const [busy, setBusy] = useState(false)
-  const expenses = useMemo(
-    () => props.categories.filter((c) => c.account.startsWith('Expenses:')),
-    [props.categories],
-  )
-  const income = useMemo(
-    () => props.categories.filter((c) => c.account.startsWith('Income:')),
-    [props.categories],
-  )
+  const [sug, setSug] = useState<Suggest | null>(null)
+
+  // the popover opened instantly; the suggestion lands async and preselects
+  // only while the picker is untouched (and never for person/P2P rows)
+  useEffect(() => {
+    if (!first) return
+    let alive = true
+    suggestFor(first)
+      .then((s) => {
+        if (!alive) return
+        setSug(s)
+        if (s.suggestion?.preselect) {
+          const suggested = s.suggestion.account
+          setAccount((a) => (a === '' ? suggested : a))
+        }
+      })
+      .catch(() => undefined) // no suggestion is a fine suggestion
+    return () => {
+      alive = false
+    }
+  }, [first])
+
+  const newTarget = newMode ? newName.trim() : ''
+  const ready = newMode ? newTarget !== '' && accountHint(newTarget) === null
+    : account !== ''
 
   const teach = () => {
-    if (!account || busy) return
+    if (!ready || busy) return
     setBusy(true)
-    api.categorize(pattern, account, applyHistory)
+    api.categorize(pattern, newMode ? null : account, applyHistory,
+      newMode ? newTarget : undefined)
       .then((res) => {
-        toast.show('Taught Sara a rule', {
+        toast.show(res.opened ? 'Opened a new category and taught Sara a rule'
+          : 'Taught Sara a rule', {
           detail: `${res.rule.match} → ${res.rule.account}` +
             (res.applied ? ` · ${res.changed} past transaction${res.changed === 1 ? '' : 's'} recategorized` : ''),
         })
-        const label = props.categories.find((c) => c.account === account)?.label ?? account
-        props.onTaught(pattern, label)
+        suggestCache.clear() // the new rule outranks every cached verdict
+        if (res.opened) props.onNewCategory(res.account)
+        props.onTaught(pattern, categoryLabel(res.account, props.categories))
         invalidate('glance', 'spend', 'autopilot')
         watchRegeneration()
         props.done()
@@ -518,20 +596,17 @@ function TeachRule(props: {
             aria-label="payee pattern"
             spellCheck={false}
           />
-          <select value={account} onChange={(e) => setAccount(e.target.value)}
-            aria-label="category">
-            <option value="">…belong in</option>
-            {expenses.map((c) => (
-              <option key={c.account} value={c.account}>{c.label}</option>
-            ))}
-            {income.length > 0 && (
-              <optgroup label="Income">
-                {income.map((c) => (
-                  <option key={c.account} value={c.account}>{c.label}</option>
-                ))}
-              </optgroup>
-            )}
-          </select>
+          <CategoryPicker
+            categories={props.categories}
+            picked={account}
+            newMode={newMode}
+            newName={newName}
+            placeholder="…belong in"
+            ariaLabel="category"
+            onPick={setAccount}
+            onNewMode={setNewMode}
+            onNewName={setNewName}
+          />
           <label className="apply">
             <input
               type="checkbox"
@@ -540,13 +615,153 @@ function TeachRule(props: {
             />
             fix history too
           </label>
-          <button className="btn primary" disabled={!account || busy} onClick={teach}>
+          <button className="btn primary" disabled={!ready || busy} onClick={teach}>
             {busy ? 'Teaching…' : 'Teach the rule'}
           </button>
           <button className="btn quiet" onClick={props.done}>Cancel</button>
         </div>
+        {sug && <SaraLine s={sug} categories={props.categories} />}
       </div>
     </li>
+  )
+}
+
+// ---- live suggestions ------------------------------------------------------
+// One suggest call per payee per visit: the popover opens instantly and the
+// answer lands async; same-merchant rows share the verdict. Teaching a rule
+// clears the cache (a new rule changes what every tier would say).
+const suggestCache = new Map<string, Promise<Suggest>>()
+
+function suggestFor(row: ActivityRow): Promise<Suggest> {
+  const key = row.payee.trim().toUpperCase()
+  const hit = suggestCache.get(key)
+  if (hit) return hit
+  const fresh = api.suggest(row.id)
+  suggestCache.set(key, fresh)
+  fresh.catch(() => suggestCache.delete(key)) // a miss may retry next open
+  return fresh
+}
+
+function categoryLabel(account: string, categories: Category[]): string {
+  return categories.find((c) => c.account === account)?.label
+    ?? account.split(':').slice(1).join(' · ')
+}
+
+const SOURCE_DETAIL: Record<Suggestion['source'], string> = {
+  rule: 'your rules',
+  plaid: 'bank hint',
+  apple: 'on-device',
+}
+
+/** "Sara thinks: Dining (on-device)" — and on person/P2P rows the reminder
+ * that her guess stays a guess until the owner says so. */
+function SaraLine({ s, categories }: { s: Suggest; categories: Category[] }) {
+  if (!s.suggestion) return null
+  return (
+    <div className="saraline">
+      Sara thinks: <b>{categoryLabel(s.suggestion.account, categories)}</b>
+      {' '}({SOURCE_DETAIL[s.suggestion.source]})
+      {s.guarded && <span className="guardnote"> — a person needs your word</span>}
+    </div>
+  )
+}
+
+// ---- the category picker ---------------------------------------------------
+const NEW_CATEGORY = '__new__'
+// Beancount's account grammar, narrowed to the teachable roots — the server
+// re-validates; this only keeps the button honest while typing.
+const ACCOUNT_RE = /^(?:Expenses|Income)(?::[A-Z0-9][A-Za-z0-9-]*)+$/
+
+function accountHint(name: string): string | null {
+  if (ACCOUNT_RE.test(name)) return null
+  if (!/^(?:Expenses|Income)(?::|$)/.test(name)) {
+    return 'start with Expenses: or Income:'
+  }
+  return 'segments are Capitalized (letters, digits, dashes), separated by ":"'
+}
+
+/** Completions for the inline input: every existing chart prefix that
+ * extends what's typed, so new leaves land under known branches. */
+function completions(input: string, categories: Category[]): string[] {
+  const prefixes = new Set<string>(['Expenses:', 'Income:'])
+  for (const c of categories) {
+    const segs = c.account.split(':')
+    for (let i = 2; i <= segs.length; i++) prefixes.add(segs.slice(0, i).join(':'))
+  }
+  const q = input.toLowerCase()
+  return [...prefixes]
+    .filter((p) => p.toLowerCase().startsWith(q) && p !== input)
+    .sort()
+    .slice(0, 8)
+}
+
+/** The teach flows' category control: the dropdown, plus a "New category…"
+ * escape hatch that swaps in a validated inline input autocompleting
+ * against the chart's existing segments. */
+function CategoryPicker(props: {
+  categories: Category[]
+  picked: string
+  newMode: boolean
+  newName: string
+  placeholder: string
+  ariaLabel: string
+  onPick: (account: string) => void
+  onNewMode: (on: boolean) => void
+  onNewName: (name: string) => void
+}) {
+  const listId = useId()
+  const expenses = props.categories.filter((c) => c.account.startsWith('Expenses:'))
+  const income = props.categories.filter((c) => c.account.startsWith('Income:'))
+  if (props.newMode) {
+    const hint = props.newName ? accountHint(props.newName) : null
+    return (
+      <span className="newcat">
+        <input
+          type="text"
+          value={props.newName}
+          list={listId}
+          onChange={(e) => props.onNewName(e.target.value)}
+          placeholder="Expenses:Health:Acupuncture"
+          aria-label="new category name"
+          aria-invalid={hint !== null || undefined}
+          spellCheck={false}
+          autoFocus
+        />
+        <datalist id={listId}>
+          {completions(props.newName, props.categories).map((p) => (
+            <option key={p} value={p} />
+          ))}
+        </datalist>
+        <button type="button" className="quietlink"
+          onClick={() => props.onNewMode(false)}>
+          pick from list
+        </button>
+        {hint && <span className="newcathint">{hint}</span>}
+      </span>
+    )
+  }
+  return (
+    <select
+      value={props.picked}
+      aria-label={props.ariaLabel}
+      onChange={(e) => {
+        if (e.target.value === NEW_CATEGORY) props.onNewMode(true)
+        else props.onPick(e.target.value)
+      }}
+    >
+      <option value="">{props.placeholder}</option>
+      {expenses.map((c) => (
+        <option key={c.account} value={c.account}>{c.label}</option>
+      ))}
+      {income.length > 0 && (
+        <optgroup label="Income">
+          {income.map((c) => (
+            <option key={c.account} value={c.account}>{c.label}</option>
+          ))}
+        </optgroup>
+      )}
+      <option value={NEW_CATEGORY}>New category…</option>
+    </select>
   )
 }
 

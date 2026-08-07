@@ -74,6 +74,26 @@ with PLANT_FILE.open("a") as fh:
              f"  Expenses:Uncategorized\n"
              f'\n2026-08-05 * "{PLANT_PAYEE}" ""\n'
              f"  {PLANT_ACCOUNT}   -4.50 USD\n"
+             f"  Expenses:Uncategorized\n"
+             # the suggest ladder's fixtures: a rule-tier target (taught
+             # without history so it STAYS uncategorized), a Plaid-tagged
+             # row, a P2P rail, a person-shaped payee, and a new-category
+             # target — every rung and both guard layers, one row each
+             f'\n2026-08-05 * "PLANTED SMOOTHIE 900" ""\n'
+             f"  {PLANT_ACCOUNT}   -9.75 USD\n"
+             f"  Expenses:Uncategorized\n"
+             f'\n2026-08-05 * "PLANTED DELI 55" ""\n'
+             f'  plaid-category: "FOOD_AND_DRINK_GROCERIES (high)"\n'
+             f"  {PLANT_ACCOUNT}   -12.00 USD\n"
+             f"  Expenses:Uncategorized\n"
+             f'\n2026-08-05 * "Zelle to Alicia" ""\n'
+             f"  {PLANT_ACCOUNT}   -150.00 USD\n"
+             f"  Expenses:Uncategorized\n"
+             f'\n2026-08-05 * "Alicia Weiss" ""\n'
+             f"  {PLANT_ACCOUNT}   -90.00 USD\n"
+             f"  Expenses:Uncategorized\n"
+             f'\n2026-08-06 * "PLANTED JUICE 700" ""\n'
+             f"  {PLANT_ACCOUNT}   -7.25 USD\n"
              f"  Expenses:Uncategorized\n")
 
 # The Connections surface needs one configured item on the copy: the demo
@@ -206,7 +226,7 @@ def test_glance_spotlight_and_hero_agree(client: TestClient) -> None:
     words = {"One": 1, "Two": 2, "Three": 3, "Four": 4, "Five": 5,
              "Six": 6, "Seven": 7, "Eight": 8, "Nine": 9}
     if m:
-        counted = words.get(m.group(1), None)
+        counted = words.get(m.group(1))
         if counted is None and m.group(1).isdigit():
             counted = int(m.group(1))
         assert counted == n_alerts
@@ -380,6 +400,132 @@ def test_categorize_rejects_bad_input(client: TestClient) -> None:
     r = client.post("/api/actions/categorize", headers=_auth(),
                     json={"payee_pattern": "x", "account": "Assets:US:Somewhere",
                           "apply_history": False})
+    assert r.status_code == 422
+
+
+# ---------------------------------------------------- suggest + new-category
+def _posting_id(client: TestClient, q: str) -> int:
+    rows = as_dicts(_body(client.get(f"/api/activity?q={q}"))["rows"])
+    assert rows, f"no activity row matches {q!r}"
+    return int(str(rows[0]["id"]))
+
+
+def test_suggest_requires_token(client: TestClient) -> None:
+    r = client.get("/api/suggest?posting_id=1")
+    assert r.status_code == 403  # the one GET that can start a model call
+
+
+def test_suggest_unknown_posting_is_404(client: TestClient) -> None:
+    r = client.get("/api/suggest?posting_id=999999999", headers=_auth())
+    assert r.status_code == 404
+
+
+def test_suggest_rule_tier_after_history_free_teach(client: TestClient) -> None:
+    """Teach a rule WITHOUT rewriting history: the row stays uncategorized,
+    and suggest's rung 1 hands the rule back as a preselecting suggestion."""
+    target = next(str(a["account"])
+                  for a in as_dicts(_body(client.get("/api/activity"))["categories"])
+                  if str(a["account"]).startswith("Expenses:"))
+    r = client.post("/api/actions/categorize", headers=_auth(),
+                    json={"payee_pattern": "PLANTED SMOOTHIE",
+                          "account": target, "apply_history": False})
+    assert r.status_code == 200, r.text
+    pid = _posting_id(client, "planted smoothie")
+    body = _body(client.get(f"/api/suggest?posting_id={pid}", headers=_auth()))
+    assert body["guarded"] is False and body["guard"] is None
+    sug = as_dict(body["suggestion"])
+    assert sug["account"] == target
+    assert sug["source"] == "rule"
+    assert sug["preselect"] is True
+
+
+def test_suggest_plaid_tier_reads_banked_category(client: TestClient) -> None:
+    pid = _posting_id(client, "planted deli")
+    body = _body(client.get(f"/api/suggest?posting_id={pid}", headers=_auth()))
+    sug = as_dict(body["suggestion"])
+    assert sug["account"] == "Expenses:Food:Groceries"
+    assert sug["source"] == "plaid"
+    assert sug["preselect"] is True  # (high) meets the classifier's own bar
+    assert "FOOD_AND_DRINK_GROCERIES" in str(sug["reason"])
+
+
+def test_suggest_guards_p2p_rail(client: TestClient) -> None:
+    pid = _posting_id(client, "zelle to alicia")
+    body = _body(client.get(f"/api/suggest?posting_id={pid}", headers=_auth()))
+    assert body["guarded"] is True and body["guard"] == "P2P rail"
+    sug = body["suggestion"]
+    if sug is not None:  # any rung may still speak — but never preselect
+        assert as_dict(sug)["preselect"] is False
+
+
+def test_suggest_guards_person_shaped_payee(client: TestClient) -> None:
+    pid = _posting_id(client, "alicia weiss")
+    body = _body(client.get(f"/api/suggest?posting_id={pid}", headers=_auth()))
+    assert body["guarded"] is True and body["guard"] == "person-shaped payee"
+    sug = body["suggestion"]
+    if sug is not None:
+        assert as_dict(sug)["preselect"] is False
+
+
+def test_categorize_new_account_end_to_end(client: TestClient) -> None:
+    """The popover's "New category…" path: open directive lands in the chart
+    (gated, bean-checked), the rule is taught, history rewrites, and the
+    categories list carries the newcomer."""
+    new = "Expenses:Planted:Juice"
+    r = client.post("/api/actions/categorize", headers=_auth(),
+                    json={"payee_pattern": "PLANTED JUICE",
+                          "new_account": new, "apply_history": True})
+    assert r.status_code == 200, r.text
+    body = _body(r)
+    assert body["opened"] is True and body["account"] == new
+    # >= 1: recategorize replays EVERY rule, so the smoothie rule taught
+    # above (history-free) sweeps its row along with the juice one
+    assert int(str(body["changed"])) >= 1 and body["applied"] is True
+    opens = [f for f in (VAULT / "ledger").glob("*.beancount")
+             if re.search(rf"^\d{{4}}-\d{{2}}-\d{{2}} open {re.escape(new)}\b",
+                          f.read_text(), re.M)]
+    assert len(opens) == 1, "exactly one chart file holds the open directive"
+    assert new in (VAULT / "rules.toml").read_text()
+    planted = PLANT_FILE.read_text().split("PLANTED JUICE 700", 1)[1].split("\n\n")[0]
+    assert new in planted and "Expenses:Uncategorized" not in planted
+    check = subprocess.run([str(SOURCE / ".venv" / "bin" / "bean-check"),
+                            str(VAULT / "ledger" / "main.beancount")],
+                           capture_output=True, text=True)
+    assert check.returncode == 0, check.stderr
+
+
+def test_categorize_new_account_duplicate_open_is_graceful(client: TestClient) -> None:
+    new = "Expenses:Planted:Juice"  # already opened by the test above
+    r = client.post("/api/actions/categorize", headers=_auth(),
+                    json={"payee_pattern": "PLANTED JUICE ENCORE",
+                          "new_account": new, "apply_history": False})
+    assert r.status_code == 200, r.text
+    assert _body(r)["opened"] is False  # no second open directive…
+    all_text = "".join(f.read_text() for f in (VAULT / "ledger").glob("*.beancount"))
+    assert len(re.findall(rf"open {re.escape(new)}\b", all_text)) == 1
+    assert "PLANTED JUICE ENCORE" in (VAULT / "rules.toml").read_text()  # …rule still written
+
+
+def test_categorize_new_account_rejects_bad_names(client: TestClient) -> None:
+    bad = ["Assets:US:Somewhere",      # wrong root
+           "expenses:food",            # lowercase root
+           "Expenses:",                # empty segment
+           "Expenses:with space",      # spaces
+           "Expenses:lower",           # segment must start upper/digit
+           "Expenses",                 # root alone is not a category
+           "Expenses:Uncategorized"]   # the review bucket itself
+    for name in bad:
+        r = client.post("/api/actions/categorize", headers=_auth(),
+                        json={"payee_pattern": "X", "new_account": name,
+                              "apply_history": False})
+        assert r.status_code == 422, f"{name!r} -> {r.status_code}"
+    # both account and new_account, and neither, are refused loudly too
+    r = client.post("/api/actions/categorize", headers=_auth(),
+                    json={"payee_pattern": "X", "account": "Expenses:Food:Dining",
+                          "new_account": "Expenses:Other", "apply_history": False})
+    assert r.status_code == 422
+    r = client.post("/api/actions/categorize", headers=_auth(),
+                    json={"payee_pattern": "X", "apply_history": False})
     assert r.status_code == 422
 
 

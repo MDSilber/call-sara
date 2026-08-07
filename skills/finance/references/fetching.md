@@ -193,6 +193,17 @@ machine), the API brain catches only what it wasn't sure about. Every
 applied posting carries `classifier: "<backend>:<confidence>"` so you can
 always see which brain judged what, and re-judge later.
 
+**Person-payees never auto-apply (the P2P guard).** A model can read
+"STARBUCKS 042" off a receipt; it can only *guess* who "Zelle to Alicia"
+is — and a confident guess about a person is still a guess. Transactions
+on P2P rails (Venmo/Zelle/Cash App/PayPal person-to-person/Wise/Apple
+Cash) or with person-shaped payees (a bare 1–3-token name, "SQ *NAME"
+included) are therefore never auto-applied by any model backend at any
+confidence: they queue with the model's best suggestion attached, and the
+same suggestion pre-fills the Sara App teach popover — one click to
+confirm, never a silent booking. Default on; `p2p_guard = false` under
+`[classification]` disarms it. Rules and the Plaid tier are unaffected.
+
 ## The workflow
 
 **1. Get in.** Load claude-in-chrome tools in ONE ToolSearch call

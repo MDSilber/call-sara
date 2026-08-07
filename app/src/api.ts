@@ -12,7 +12,7 @@ import type {
   AccountRow, ActivityFilters, ActivityPage, Autopilot, CategorizeResult,
   Connections, DismissResult, FreshnessV2, Glance, Goals,
   Investments, LinkUpdate, Networth, Owners, Register,
-  SearchResults, SetGoalResult, Spend, UploadPlan,
+  SearchResults, SetGoalResult, Spend, Suggest, UploadPlan,
 } from './types'
 
 function token(): string {
@@ -118,9 +118,18 @@ export const api = {
   search: (q: string) => get<SearchResults>(`/api/search${qs({ q })}`),
   connections: () => get<Connections>('/api/connections'),
 
-  categorize: (payee_pattern: string, account: string, apply_history: boolean) =>
+  /** Teach a rule at an existing account, or (new_account set) open a brand-new
+   * category first — exactly one of the two names the target. */
+  categorize: (payee_pattern: string, account: string | null,
+    apply_history: boolean, new_account?: string) =>
     post<CategorizeResult & { regenerating?: boolean }>('/api/actions/categorize',
-      { payee_pattern, account, apply_history }),
+      { payee_pattern, account, apply_history, new_account: new_account ?? null }),
+
+  /** One transaction's live suggestion (rule -> plaid hint -> on-device model).
+   * Token-carried: the one GET that can start a model call. */
+  suggest: (postingId: number) =>
+    request<Suggest>(`/api/suggest?posting_id=${postingId}`,
+      { headers: { 'X-Sara-Token': token() } }),
   setGoal: (key: string, value: number | boolean) =>
     post<SetGoalResult>('/api/actions/set-goal', { key, value }),
   dismiss: (finding_id: string, until: string | null, title = '') =>

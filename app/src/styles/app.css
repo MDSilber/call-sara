@@ -358,6 +358,27 @@ main { padding-bottom:var(--sp-8); }
   font-size:var(--fs-1); color:var(--ink-2); cursor:pointer; }
 .teach label.apply input { accent-color:var(--accent); }
 
+/* Sara's live suggestion line + the new-category inline input */
+.saraline { margin-top:var(--sp-2); font-size:var(--fs-1); color:var(--ink-2); }
+.saraline b { color:var(--ink); font-weight:600; }
+.saraline .guardnote { color:var(--warn); font-weight:600; }
+.bulkbar .saraline { margin-top:0; flex:1 1 100%; order:5; color:var(--bg);
+  opacity:.9; }
+.bulkbar .saraline b { color:var(--bg); }
+.bulkbar .saraline .guardnote { color:var(--warn-dot); }
+.newcat { display:inline-flex; gap:var(--sp-2); align-items:center;
+  flex:1 1 260px; min-width:0; flex-wrap:wrap; }
+.newcat input { flex:1 1 200px; font:var(--fs-2) 'Inter',system-ui,sans-serif;
+  color:var(--ink); background:var(--surface);
+  border:1px solid var(--border-strong); border-radius:9px; padding:7px 10px;
+  min-width:0; height:34px; font-variant-ligatures:none; }
+.newcat input[aria-invalid] { border-color:var(--neg); }
+.newcat .quietlink { border:0; background:none; color:var(--link);
+  cursor:pointer; font:600 var(--fs-1) 'Inter',system-ui,sans-serif;
+  padding:2px 0; text-decoration:underline; text-underline-offset:2px; }
+.newcathint { flex:1 1 100%; font-size:var(--fs-1); color:var(--neg); }
+.bulkbar .newcat input { height:32px; }
+
 /* ---- the register: one account, statement-style ---- */
 .reghead { display:flex; align-items:baseline; gap:var(--sp-3); flex-wrap:wrap; }
 .regback { border:0; background:none; color:var(--link); cursor:pointer;

@@ -33,6 +33,22 @@ $TODAY * "PLANTED BAGEL 101" ""
 $TODAY * "PLANTED BAGEL 205" ""
   $CARD   -5.10 USD
   Expenses:Uncategorized
+
+$TODAY * "PLANTED JUICE 007" ""
+  $CARD   -7.25 USD
+  Expenses:Uncategorized
+
+$TODAY * "PLANTED SODA 011" ""
+  $CARD   -2.50 USD
+  Expenses:Uncategorized
+
+$TODAY * "PLANTED SODA 022" ""
+  $CARD   -3.10 USD
+  Expenses:Uncategorized
+
+$TODAY * "Zelle to Alicia Weiss" ""
+  $CARD   -150.00 USD
+  Expenses:Uncategorized
 PLANT
 
 # The Connections room needs one configured item: the demo alias, routed at

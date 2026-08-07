@@ -21,6 +21,20 @@ first — and the first tier to speak wins:
           suggestions. A model picks from the vault's real chart — it can
           never invent a category.
 
+THE P2P GUARD (default on): person-payees are never machine-knowable. A
+model can read "STARBUCKS 042" off a receipt; it can only GUESS who "Zelle
+to Alicia" is — and a confident guess about a person is still a guess. Two
+layers, both keyed on the payee text: (a) P2P rails (Venmo/Zelle/Cash App/
+PayPal person-to-person/Wise/Apple Cash), and (b) person-shaped payees
+(1-3 capitalized name tokens with no business markers; "SQ *NAME" counts
+even with the star). A guarded transaction is NEVER auto-applied by a
+model backend at any confidence — it queues with the model's suggestion
+displayed ("suggest Expenses:Health — a person needs your word") for the
+human to confirm in one click. The heuristic deliberately over-guards
+(a bare "Coinbase" queues too): the cost of a false positive is one
+preloaded click; the cost of a false negative is a stranger booked as
+your nanny. Rules (tier 1) and the Plaid signal (tier 2) are unaffected.
+
 Every rewrite lands through the same machinery as recategorize.py (atomic
 tmp+rename per file, bean-check, full rollback on failure), and every
 machine-moved posting gains `classifier:` metadata naming its tier and
@@ -43,6 +57,7 @@ CONFIG — $VAULT/rules.toml (all optional; defaults shown):
   [classification]
   tier2 = true                    # Plaid-signal tier
   tier3 = true                    # model tier (the backend ladder)
+  p2p_guard = true                # person-payees queue instead of auto-applying
   plaid_min_confidence = "high"   # or "very_high"
   model_backends = ["haiku"]      # the tier-3 ladder, in escalation order:
                                   #   "apple"  on-device (macOS 26+, $0)
@@ -104,6 +119,13 @@ MODEL_BATCH_SIZE = 40  # txns per backend call — small enough to stay sharp
 MODEL_MAX_TOKENS = 8192
 MAX_HISTORY_EXAMPLES = 40  # recent payee->category pairs shown to the model
 MAX_RULE_EXAMPLES = 25
+# The on-device model's context window is 4096 tokens TOTAL (briefing +
+# txns + its own reply), so the apple rung takes small bites and a
+# shortened briefing — a real 200-txn backlog overflowed the window and
+# killed the whole rung before these caps existed.
+APPLE_BATCH_SIZE = 8
+APPLE_MAX_RULE_EXAMPLES = 10
+APPLE_MAX_HISTORY_EXAMPLES = 15
 RULE_SUGGESTION_MIN = 3  # a payee seen this often in the residue earns a rule hint
 NO_SIGNAL = "no signal (model tier not run)"
 # claude-haiku-4-5 list price (USD per million tokens, 2026-08) — estimate only.
@@ -126,6 +148,54 @@ TXN_HEADER = re.compile(r'^(\d{4}-\d{2}-\d{2}) [*!] "([^"]*)"')
 POSTING = re.compile(r"^(\s+)([A-Z][\w:-]+)(\s+(-?[\d.,]+) USD)?\s*$")
 META = re.compile(r'^\s+([a-z][\w-]*):\s+"([^"]*)"\s*$')
 PLAID_CATEGORY_META = re.compile(r"^([A-Z0-9_]+)(?:\s+\(([a-z_]+)\))?$")
+
+# ------------------------------------------------------------- p2p guard
+# Layer (a): the person-to-person rails. Word-bounded where a bare name
+# would collide with merchants (WISE vs WISEACRE); "PAYPAL *X" is PayPal
+# CHECKOUT at merchant X, not a person, hence the lookahead.
+P2P_RAILS = re.compile(
+    r"\bVENMO\b|\bZELLE\b|\bCASH ?APP\b|PAYPAL(?! ?\*)|\bWISE\b"
+    r"|\bTRANSFERWISE\b|\bAPPLE CASH\b", re.I)
+# Layer (b): person-shaped payees — 1-3 capitalized name tokens (ALLCAPS or
+# Title case, apostrophes/hyphens fine) with none of the structural business
+# markers below. "SQ *JANE DOE" is Square moving money to a person, so the
+# prefix is stripped before the shape test and the star does not exempt it.
+_SQ_PREFIX = re.compile(r"^SQ\s*\*\s*", re.I)
+_NAME_TOKEN = re.compile(r"^[A-Z][A-Za-z'’-]*$")  # noqa: RUF001 — feeds use the curly apostrophe too
+_BUSINESS_CHARS = re.compile(r"[\d*#&@/+_]|\.\s*(COM|ORG|NET|CO|IO)\b|WWW\.", re.I)
+_BUSINESS_WORDS = frozenset({
+    "INC", "LLC", "LLP", "LTD", "CORP", "CO", "COMPANY", "PLLC", "PC", "DBA",
+    "BANK", "ATM", "POS", "ACH", "DEPOSIT", "WITHDRAWAL", "PAYMENT", "PMT",
+    "TRANSFER", "XFER", "FEE", "INTEREST", "DIVIDEND", "PAYROLL", "DIRECTDEP",
+})
+GUARD_RAIL = "P2P rail"
+GUARD_PERSON = "person-shaped payee"
+
+
+def guard_reason(payee: str) -> str | None:
+    """Why this payee's model verdicts must stay suggestions, or None.
+
+    Layer (a) fires on any P2P-rail marker in the text; layer (b) fires on
+    payees shaped like an individual human's name. Deliberately over-broad:
+    a guarded transaction still gets the model's suggestion, it just waits
+    for the owner's word.
+    """
+    text = (payee or "").strip()
+    if not text:
+        return None
+    if P2P_RAILS.search(text):
+        return GUARD_RAIL
+    text = _SQ_PREFIX.sub("", text)
+    if _BUSINESS_CHARS.search(text):
+        return None
+    tokens = [t for t in text.replace(",", " ").split() if t]
+    if not 1 <= len(tokens) <= 3:
+        return None
+    for t in tokens:
+        bare = t.strip(".").strip()
+        if not bare or bare.upper() in _BUSINESS_WORDS or not _NAME_TOKEN.match(bare):
+            return None
+    return GUARD_PERSON
 
 RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -296,6 +366,7 @@ def scan_ledger() -> Scan:
 class Config(NamedTuple):
     tier2: bool
     tier3: bool
+    p2p_guard: bool  # person-payees queue instead of model-auto-applying
     plaid_min: str  # "high" | "very_high"
     model_min: Decimal  # 0-1, the apply threshold every backend defaults to
     model: str  # the haiku rung's Messages API model id
@@ -332,7 +403,7 @@ def _backend_ladder(raw: object) -> tuple[str, ...]:
     return tuple(names)
 
 
-def _config() -> Config:
+def load_config() -> Config:
     c = as_dict(rules().get("classification"))
     plaid_min = str(c.get("plaid_min_confidence") or "high").lower()
     if plaid_min not in CONF_RANK:
@@ -345,6 +416,7 @@ def _config() -> Config:
     return Config(
         tier2=bool(c.get("tier2", True)),
         tier3=bool(c.get("tier3", True)),
+        p2p_guard=bool(c.get("p2p_guard", True)),
         plaid_min=plaid_min,
         model_min=model_min,
         model=str(c.get("model") or DEFAULT_MODEL),
@@ -480,7 +552,9 @@ def model_categories(chart: set[str]) -> list[str]:
     return cats
 
 
-def _rule_examples() -> list[str]:
+def rule_examples() -> list[str]:
+    """'REGEX -> account' lines from rules.toml — model briefing material
+    (shared with the app's live-suggest endpoint)."""
     out: list[str] = []
     for r in payee_rules():
         account = r.get("account")
@@ -601,11 +675,12 @@ class ModelBackend(Protocol):
     """One rung of the tier-3 ladder.
 
     `name` tags provenance ("apple:0.92") and the report; `detail` is report
-    color (a model id, "on-device"); probe() says why the rung can't run
-    right now (None = it can); classify_batch() judges one batch, one answer
-    per txn in order (None = no answer for that txn), raising BatchRefused
-    when a reply forfeits trust and anything else when the backend itself
-    has died for the rest of the run.
+    color (a model id, "on-device"); `batch_size` is how many txns one call
+    may carry (small for context-window-bound rungs); probe() says why the
+    rung can't run right now (None = it can); classify_batch() judges one
+    batch, one answer per txn in order (None = no answer for that txn),
+    raising BatchRefused when a reply forfeits trust and anything else when
+    the backend itself has died for the rest of the run.
     """
 
     @property
@@ -613,6 +688,9 @@ class ModelBackend(Protocol):
 
     @property
     def detail(self) -> str: ...
+
+    @property
+    def batch_size(self) -> int: ...
 
     def probe(self) -> str | None: ...
 
@@ -632,6 +710,7 @@ class HaikuBackend:
     rungs weren't sure about."""
 
     name = "haiku"
+    batch_size = MODEL_BATCH_SIZE
 
     def __init__(self, model: str, api_key: str | None,
                  call: ModelCall | None = None) -> None:
@@ -689,6 +768,7 @@ class OllamaBackend:
     as ollama_url points at it."""
 
     name = "ollama"
+    batch_size = MODEL_BATCH_SIZE
 
     def __init__(self, url: str, model: str,
                  transport: Transport | None = None) -> None:
@@ -738,6 +818,23 @@ class OllamaBackend:
         return _judgments(parsed, len(txns))
 
 
+# Generation errors the shim reports that are provoked by the CONTENT of one
+# batch (a huge chart, digit-soup payees tripping the language guardrail) —
+# these refuse the batch and keep the rung alive; anything else is rung-fatal.
+APPLE_CONTENT_ERRORS = ("exceededcontextwindowsize", "unsupportedlanguageorlocale",
+                        "guardrailviolation")
+# Long id/number runs ("VENMO PAYMENT 10342… WEB ID: 32646…") read
+# as no-language noise to the on-device model and can trip its language
+# guardrail — strip them from what the apple rung SHOWS the model (the txn
+# itself is untouched).
+_DIGIT_RUNS = re.compile(r"[#*]?\b[\d*#-]{5,}\b")
+
+
+def apple_payee(payee: str) -> str:
+    cleaned = " ".join(_DIGIT_RUNS.sub(" ", payee).split()).strip()
+    return cleaned or payee
+
+
 ShimRunner = Callable[[list[str], str], tuple[int, str, str]]
 """(argv tail, stdin text) -> (returncode, stdout, stderr) for the shim.
 
@@ -772,6 +869,7 @@ class AppleBackend:
 
     name = "apple"
     detail = "on-device"
+    batch_size = APPLE_BATCH_SIZE  # the 4096-token window can't take 40
 
     def __init__(self, runner: ShimRunner | None = None) -> None:
         self._runner = runner
@@ -818,14 +916,24 @@ class AppleBackend:
                        context: BatchContext) -> list[Judgment | None]:
         if self._runner is None:
             raise RuntimeError("probe() must arm the shim before classify_batch()")
+        rows = _txn_rows(txns)
+        for row in rows:
+            row["payee"] = apple_payee(str(row["payee"]))
         request = json.dumps({
             "categories": list(context.categories),
-            "examples": [*context.rule_examples, *context.history_examples],
-            "txns": _txn_rows(txns),
+            # the briefing shares the model's 4096-token window with the txns
+            # AND the reply, so it stays short here
+            "examples": [*context.rule_examples[:APPLE_MAX_RULE_EXAMPLES],
+                         *context.history_examples[:APPLE_MAX_HISTORY_EXAMPLES]],
+            "txns": rows,
         }, ensure_ascii=False)
         rc, out, errtxt = self._runner([], request)
         if rc != 0:  # went unavailable mid-run, guardrails, context overflow…
-            raise RuntimeError(_last_line(errtxt, out) or f"shim exited {rc}")
+            reason = _last_line(errtxt, out) or f"shim exited {rc}"
+            if any(mark in reason.lower() for mark in APPLE_CONTENT_ERRORS):
+                # provoked by THIS batch's content — refuse it, keep the rung
+                raise BatchRefused(f"the on-device model refused the batch ({reason})")
+            raise RuntimeError(reason)
         parsed = parse_model_reply(out, len(txns), id_key="index")
         if isinstance(parsed, str):
             raise BatchRefused(parsed)
@@ -861,6 +969,7 @@ class RungStats:
     applied: int = 0
     unsure: int = 0  # below the floor -> escalated (or queued at the end)
     refused: int = 0  # malformed batches, unknown categories, no answer, died
+    held: int = 0  # confident but p2p-guarded -> queued with the suggestion
 
 
 def _plaid_hint(t: ReviewTxn) -> str:
@@ -877,6 +986,7 @@ class _Work:
 
     txn: ReviewTxn
     reason: str = NO_SIGNAL
+    guard: str = ""  # non-empty = p2p-guarded; models may suggest, never apply
     suggestions: list[tuple[Decimal, str, str]] = field(
         default_factory=list[tuple[Decimal, str, str]])
 
@@ -912,14 +1022,18 @@ def run_ladder(residue: list[ReviewTxn], cfg: Config, chart: set[str],
     """Tier 3: each rung takes everything still undecided, batch by batch;
     what it can't decide (below its floor, refused, unanswered, or the rung
     died) escalates to the next rung; whatever survives the whole ladder
-    queues with the best suggestions attached."""
+    queues with the best suggestions attached. A p2p-guarded txn that draws
+    a confident answer leaves the ladder held — queued with that suggestion,
+    never applied, because a person needs the owner's word."""
     to_send = residue if limit is None else residue[:limit]
     overflow = [] if limit is None else residue[limit:]
     context = BatchContext(tuple(model_categories(chart)),
-                           tuple(_rule_examples()),
+                           tuple(rule_examples()),
                            tuple(_history_examples(history)))
     allowed = set(context.categories)
-    work = [_Work(t) for t in to_send]
+    work = [_Work(t, guard=(guard_reason(t.payee) or "" if cfg.p2p_guard else ""))
+            for t in to_send]
+    held: list[_Work] = []
     decisions: list[Decision] = []
     notes: list[str] = []
     stats: list[RungStats] = []
@@ -935,8 +1049,9 @@ def run_ladder(residue: list[ReviewTxn], cfg: Config, chart: set[str],
             continue
         passed: list[_Work] = []
         dead = False
-        for at in range(0, len(work), MODEL_BATCH_SIZE):
-            batch = work[at:at + MODEL_BATCH_SIZE]
+        size = backend.batch_size
+        for at in range(0, len(work), size):
+            batch = work[at:at + size]
             if dead:
                 for w in batch:
                     w.reason = f"{backend.name} call aborted earlier in this run"
@@ -945,7 +1060,7 @@ def run_ladder(residue: list[ReviewTxn], cfg: Config, chart: set[str],
             try:
                 answers = backend.classify_batch([w.txn for w in batch], context)
             except BatchRefused as e:
-                notes.append(f"{backend.name}: batch {at // MODEL_BATCH_SIZE + 1} "
+                notes.append(f"{backend.name}: batch {at // size + 1} "
                              f"refused — {e}; its {len(batch)} txns move on")
                 st.judged += len(batch)
                 st.refused += len(batch)
@@ -986,13 +1101,20 @@ def run_ladder(residue: list[ReviewTxn], cfg: Config, chart: set[str],
                     w.reason = f"{backend.name} unsure ({answer.confidence:.2f} < {floor})"
                     w.suggest(backend.name, answer)
                     passed.append(w)
+                elif w.guard:
+                    # confident, but the payee is a person/P2P: the verdict
+                    # becomes the queue's preloaded suggestion, never a write
+                    st.held += 1
+                    w.reason = f"{w.guard} — a person needs your word"
+                    w.suggest(backend.name, answer)
+                    held.append(w)
                 else:
                     st.applied += 1
                     decisions.append(Decision(
                         w.txn, answer.category, "model",
                         f"{backend.name}:{answer.confidence:.2f}", note=answer.reason))
         work = passed
-    queued = [w.queued() for w in work]
+    queued = [w.queued() for w in (*held, *work)]
     queued.extend(Queued(t, f"past --model-limit {limit}") for t in overflow)
     return LadderRun(decisions, queued, len(to_send), stats, notes)
 
@@ -1078,7 +1200,7 @@ def run_classification(write: bool, skip_model: bool = False,
     rung's API seam — both test seams, neither touches the network.
     """
     require_vault()
-    cfg = _config()
+    cfg = load_config()
     chart = opened_accounts()
     scan = scan_ledger()
     mode = "WRITE" if write else "DRY RUN (re-run with --write to apply)"
@@ -1121,6 +1243,8 @@ def run_classification(write: bool, skip_model: bool = False,
             later = any(not s.skipped for s in run.stats[i + 1:])
             line = (f"    {st.name} ({st.detail}): judged {st.judged} — "
                     f"{verb} {st.applied} (>= {st.floor})")
+            if st.held:
+                line += f", held {st.held} (p2p guard)"
             if st.unsure:
                 line += f", {'escalated' if later else 'unsure'} {st.unsure}"
             if st.refused:

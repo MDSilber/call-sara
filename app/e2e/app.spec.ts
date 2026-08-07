@@ -82,8 +82,8 @@ test('activity search narrows the feed server-side', async ({ page }) => {
   await page.goto('/#activity')
   await page.waitForSelector('.feed', { timeout: 30_000 })
   await page.fill('.searchbox input', 'planted')
-  await expect(page.locator('.feed li')).toHaveCount(3, { timeout: 15_000 })
-  await expect(page.locator('.feedcount')).toContainText('3 rows')
+  await expect(page.locator('.feed li')).toHaveCount(6, { timeout: 15_000 })
+  await expect(page.locator('.feedcount')).toContainText('6 rows')
   await page.fill('.searchbox input', '')
   await expect(page.locator('.feed li').first()).toBeVisible()
 })
@@ -95,12 +95,14 @@ test('the Activity owner chip filters the feed on its own', async ({ page }) => 
   const chip = page.locator('.fchip[aria-label="owner filter"] select')
   await chip.selectOption('alex')
   await expect(page.locator('.feedcount')).not.toHaveText(before, { timeout: 15_000 })
-  await expect(page.locator('.feed li .ownerchip').first()).toHaveText('alex', {
-    timeout: 15_000,
-  })
-  const chips = await page.locator('.feed li .ownerchip').allTextContents()
-  expect(chips.length).toBeGreaterThan(0)
-  expect(chips.every((c) => c === 'alex')).toBe(true)
+  // poll until the LENS rows land (the count line re-prefixes instantly,
+  // ahead of the row swap) — then every visible chip must be alex's
+  await expect
+    .poll(async () => {
+      const chips = await page.locator('.feed li .ownerchip').allTextContents()
+      return chips.length > 0 && chips.every((c) => c === 'alex')
+    }, { timeout: 15_000 })
+    .toBe(true)
   await page.screenshot({ path: `${SHOTS}/e2e-activity-owner.png` })
   await chip.selectOption('all')
   await expect(page.locator('.feedcount')).toHaveText(before, { timeout: 15_000 })
@@ -311,4 +313,122 @@ test('phone: activity filters fold behind one disclosure', async ({ page }) => {
   await disclose.click()
   await expect(page.locator('.fmore .fchip').first()).toBeVisible()
   await page.screenshot({ path: `${SHOTS}/e2e-phone-filters.png` })
+})
+
+test('teach popover opens instantly; the suggestion lands async and preselects', async ({ page }) => {
+  await page.goto('/#activity')
+  await page.waitForSelector('.feed', { timeout: 30_000 })
+  // a real account to suggest, read off the category filter the server sent
+  const account = await page
+    .locator('.fchip[aria-label="category filter"] select option')
+    .nth(1)
+    .getAttribute('value')
+  expect(account).toBeTruthy()
+  await page.route('**/api/suggest*', async (route) => {
+    await new Promise((r) => setTimeout(r, 800)) // the model "thinking"
+    await route.fulfill({
+      json: {
+        posting_id: 1, payee: 'PLANTED JUICE 007', guarded: false, guard: null,
+        suggestion: { account, source: 'apple', confidence: 0.91, reason: 'juice bar', preselect: true },
+      },
+    })
+  })
+  await page.fill('.searchbox input', 'planted juice')
+  const row = page.locator('.feed li', { hasText: 'PLANTED JUICE' }).first()
+  await row.locator('.catchip.uncat').click()
+  const teach = page.locator('.teach')
+  // instantly open, nothing preselected yet — the suggest call is still out
+  await expect(teach).toBeVisible()
+  await expect(teach.locator('select')).toHaveValue('')
+  await expect(teach.locator('.saraline')).toBeHidden({ timeout: 300 })
+  // …then the verdict lands: the line appears and the picker preselects
+  await expect(teach.locator('.saraline')).toContainText('Sara thinks', { timeout: 5_000 })
+  await expect(teach.locator('.saraline')).toContainText('on-device')
+  await expect(teach.locator('select')).toHaveValue(account ?? '')
+  await teach.locator('.btn.quiet').click() // leave the row for the later test
+})
+
+test('a person-payee shows the suggestion but never preselects', async ({ page }) => {
+  await page.goto('/#activity')
+  await page.waitForSelector('.feed', { timeout: 30_000 })
+  const account = await page
+    .locator('.fchip[aria-label="category filter"] select option')
+    .nth(1)
+    .getAttribute('value')
+  await page.route('**/api/suggest*', (route) =>
+    route.fulfill({
+      json: {
+        posting_id: 2, payee: 'Zelle to Alicia Weiss', guarded: true, guard: 'P2P rail',
+        suggestion: { account, source: 'apple', confidence: 0.9, reason: 'a person', preselect: false },
+      },
+    }))
+  await page.fill('.searchbox input', 'alicia')
+  const row = page.locator('.feed li', { hasText: 'Alicia Weiss' }).first()
+  await row.locator('.catchip.uncat').click()
+  const teach = page.locator('.teach')
+  await expect(teach.locator('.saraline')).toContainText('a person needs your word', {
+    timeout: 5_000,
+  })
+  await expect(teach.locator('select')).toHaveValue('') // her word, not the model's
+  await teach.locator('.btn.quiet').click()
+})
+
+test('new category: the inline input opens the account and teaches the rule', async ({ page }) => {
+  await page.goto('/#activity')
+  await page.waitForSelector('.feed', { timeout: 30_000 })
+  await page.fill('.searchbox input', 'planted juice')
+  const row = page.locator('.feed li', { hasText: 'PLANTED JUICE' }).first()
+  await row.locator('.catchip.uncat').click()
+  const teach = page.locator('.teach')
+  await expect(teach).toBeVisible()
+  await teach.locator('select').selectOption('__new__')
+  const input = teach.locator('.newcat input')
+  await expect(input).toBeVisible()
+  // an invalid name pins the button off and says why
+  await input.fill('Expenses:fresh juice')
+  await expect(teach.locator('.newcathint')).toBeVisible()
+  await expect(teach.locator('.btn.primary')).toBeDisabled()
+  // the real name passes and lands: open directive + rule + rewrite
+  await input.fill('Expenses:Fresh:Juice')
+  await expect(teach.locator('.newcathint')).toHaveCount(0)
+  await teach.locator('.btn.primary').click()
+  await expect(page.locator('.toast')).toContainText('Opened a new category', {
+    timeout: 30_000,
+  })
+  await expect(row.locator('.catchip:not(.uncat)')).toBeVisible({ timeout: 15_000 })
+  // the newcomer joined the pickers immediately
+  await expect(page.locator('.fchip[aria-label="category filter"] select option', {
+    hasText: 'Fresh · Juice',
+  })).toHaveCount(1)
+  await page.screenshot({ path: `${SHOTS}/e2e-new-category.png` })
+})
+
+test('bulk teach preselects from one suggest call, same guard', async ({ page }) => {
+  await page.goto('/#activity')
+  await page.waitForSelector('.feed', { timeout: 30_000 })
+  const account = await page
+    .locator('.fchip[aria-label="category filter"] select option')
+    .nth(1)
+    .getAttribute('value')
+  await page.route('**/api/suggest*', (route) =>
+    route.fulfill({
+      json: {
+        posting_id: 3, payee: 'PLANTED SODA 011', guarded: false, guard: null,
+        suggestion: { account, source: 'apple', confidence: 0.88, reason: 'soda', preselect: true },
+      },
+    }))
+  await page.fill('.searchbox input', 'planted soda')
+  await expect(page.locator('.feed li')).toHaveCount(2, { timeout: 15_000 })
+  for (const box of await page.locator('.feed li .fcheck').all()) {
+    await box.check()
+  }
+  const bar = page.locator('.bulkbar')
+  await expect(bar).toBeVisible()
+  await expect(bar.locator('.saraline')).toContainText('Sara thinks', { timeout: 5_000 })
+  await expect(bar.locator('select')).toHaveValue(account ?? '')
+  await bar.locator('.btn.primary').click()
+  await expect(page.locator('.toast')).toContainText('Taught Sara a rule for 2 rows', {
+    timeout: 30_000,
+  })
+  await expect(page.locator('.feed li .catchip.uncat')).toHaveCount(0)
 })

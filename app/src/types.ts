@@ -533,9 +533,31 @@ export interface Autopilot {
 // ------------------------------------------------------------- actions
 export interface CategorizeResult {
   rule: { match: string; account: string }
+  /** The rule's target — the just-opened account on the new-category path. */
+  account: string
+  /** True when this teach opened a brand-new account in the chart. */
+  opened: boolean
   applied: boolean
   changed: number
   report: string
+}
+
+// ------------------------------------------------------------- suggest
+export interface Suggestion {
+  account: string
+  source: 'rule' | 'plaid' | 'apple'
+  confidence: number | null
+  reason: string
+  /** False on guarded (person/P2P) rows — display the line, never preselect. */
+  preselect: boolean
+}
+
+export interface Suggest {
+  posting_id: number
+  payee: string
+  guarded: boolean
+  guard: string | null
+  suggestion: Suggestion | null
 }
 
 export interface SetGoalResult {

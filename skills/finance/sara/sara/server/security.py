@@ -7,8 +7,9 @@ browser holes:
 - Host validation (every request): a DNS-rebinding page reaches this port
   with its own hostname in Host; only 127.0.0.1/localhost/[::1] pass. This
   is what makes the read surface private, not a promise.
-- Write token (every /api/actions/* POST): a per-launch random token rides
-  the served index.html and must come back in an X-Sara-Token header.
+- Write token (every /api/actions/* POST, plus GET /api/suggest — the one
+  read that can start an on-device model call): a per-launch random token
+  rides the served index.html and must come back in an X-Sara-Token header.
   Cross-site HTML forms cannot set custom headers, and a cross-origin fetch
   carrying one triggers a CORS preflight this server never approves (no
   CORS headers are ever emitted). An Origin header, when present, must also
@@ -74,10 +75,16 @@ def install(app: FastAPI, port: int) -> None:
                 "Access-Control-Allow-Headers": "content-type, x-sara-token",
                 "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
                 "Vary": "Origin"})
-        if request.url.path.startswith("/api/actions/") and not from_dev:
+        # /api/suggest is a GET but earns the write-door treatment: it can
+        # spin up an on-device model call, so the caller must hold the token.
+        path = request.url.path
+        token_gated = (path.startswith("/api/actions/") and request.method == "POST") \
+            or path == "/api/suggest"
+        if (path.startswith("/api/actions/") or path == "/api/suggest") \
+                and not from_dev:
             if origin is not None and origin not in own_origins:
                 return Response("bad Origin", status_code=403)
-            if request.method == "POST":
+            if token_gated:
                 token = request.headers.get("x-sara-token") or ""
                 if not secrets.compare_digest(token, TOKEN):
                     return Response("missing or stale token — reload the app",

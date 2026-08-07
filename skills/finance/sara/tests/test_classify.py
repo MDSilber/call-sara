@@ -23,6 +23,9 @@ from pathlib import Path
 import pytest
 
 from sara.classify import (
+    APPLE_BATCH_SIZE,
+    APPLE_MAX_HISTORY_EXAMPLES,
+    APPLE_MAX_RULE_EXAMPLES,
     RESPONSE_SCHEMA,
     AppleBackend,
     BatchContext,
@@ -34,7 +37,9 @@ from sara.classify import (
     ReviewTxn,
     Summary,
     _backend_flag,  # pyright: ignore[reportPrivateUsage]
-    _config,  # pyright: ignore[reportPrivateUsage]
+    apple_payee,
+    guard_reason,
+    load_config,
     main,
     parse_model_reply,
     run_classification,
@@ -186,7 +191,7 @@ def row(i: int, category: str, conf: str, reason: str = "looks right") -> str:
 
 def test_model_applies_at_threshold_and_queues_below(vault: Path) -> None:
     f = seed(vault,
-             txn("MYSTERY SANDWICHES", "-18.00"),
+             txn("MYSTERY SANDWICHES #4", "-18.00"),
              txn("UNKNOWABLE LLC", "-99.00", when="2026-07-04"))
     fake = FakeModel(reply(row(0, "Expenses:Food:Dining", "0.93"),
                            row(1, "Expenses:Food:Groceries", "0.55")))
@@ -201,12 +206,12 @@ def test_model_applies_at_threshold_and_queues_below(vault: Path) -> None:
     assert model == "claude-haiku-4-5"
     assert "Expenses:Food:Dining" in system and "WHOLE FOODS" in system
     sent = json.loads(user)["transactions"]
-    assert [t["payee"] for t in sent] == ["MYSTERY SANDWICHES", "UNKNOWABLE LLC"]
+    assert [t["payee"] for t in sent] == ["MYSTERY SANDWICHES #4", "UNKNOWABLE LLC"]
     assert sent[0]["amount"] == "-18.00"
 
 
 def test_model_never_invents_categories(vault: Path) -> None:
-    f = seed(vault, txn("MYSTERY SANDWICHES", "-18.00"))
+    f = seed(vault, txn("MYSTERY SANDWICHES #4", "-18.00"))
     before = f.read_text()
     fake = FakeModel(reply(row(0, "Expenses:Made:Up", "0.99")))
     s = run_classification(write=True, model_call=fake)
@@ -216,7 +221,7 @@ def test_model_never_invents_categories(vault: Path) -> None:
 
 def test_malformed_model_reply_refuses_whole_batch(vault: Path) -> None:
     f = seed(vault,
-             txn("MYSTERY SANDWICHES", "-18.00"),
+             txn("MYSTERY SANDWICHES #4", "-18.00"),
              txn("UNKNOWABLE LLC", "-99.00", when="2026-07-04"))
     before = f.read_text()
     fake = FakeModel("I think these are probably groceries!")
@@ -227,7 +232,7 @@ def test_malformed_model_reply_refuses_whole_batch(vault: Path) -> None:
 
 def test_model_limit_caps_what_is_sent(vault: Path) -> None:
     seed(vault,
-         txn("MYSTERY SANDWICHES", "-18.00"),
+         txn("MYSTERY SANDWICHES #4", "-18.00"),
          txn("UNKNOWABLE LLC", "-99.00", when="2026-07-04"))
     fake = FakeModel(reply(row(0, "Expenses:Food:Dining", "0.91")))
     s = run_classification(write=True, model_call=fake, model_limit=1)
@@ -239,7 +244,7 @@ def test_model_limit_caps_what_is_sent(vault: Path) -> None:
 def test_no_key_and_no_injection_skips_model_tier(vault: Path,
                                                   monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    seed(vault, txn("MYSTERY SANDWICHES", "-18.00"))
+    seed(vault, txn("MYSTERY SANDWICHES #4", "-18.00"))
     s = run_classification(write=True)  # no model_call injected, no key file
     assert (s.applied, s.queued) == (0, 1)
 
@@ -261,6 +266,7 @@ class FakeBackend:
     probe skip, an optional mid-run explosion — and a record of every batch."""
 
     detail = "fake"
+    batch_size = 40
 
     def __init__(self, name: str,
                  judgments: dict[str, Judgment | None] | None = None,
@@ -293,10 +299,10 @@ def J(category: str, conf: str, reason: str = "looks right") -> Judgment:
 
 def test_ladder_only_low_confidence_residue_escalates(vault: Path) -> None:
     f = seed(vault,
-             txn("MYSTERY SANDWICHES", "-18.00"),
+             txn("MYSTERY SANDWICHES #4", "-18.00"),
              txn("UNKNOWABLE LLC", "-99.00", when="2026-07-04"))
     apple = FakeBackend("apple", {
-        "MYSTERY SANDWICHES": J("Expenses:Food:Dining", "0.91", "clearly lunch"),
+        "MYSTERY SANDWICHES #4": J("Expenses:Food:Dining", "0.91", "clearly lunch"),
         "UNKNOWABLE LLC": J("Expenses:Food:Groceries", "0.40", "shrug"),
     })
     haiku = FakeBackend("haiku", {"UNKNOWABLE LLC": J("Expenses:Food:Groceries", "0.88")})
@@ -305,7 +311,7 @@ def test_ladder_only_low_confidence_residue_escalates(vault: Path) -> None:
     text = f.read_text()
     assert '  classifier: "apple:0.91"\n' in text
     assert '  classifier: "haiku:0.88"\n' in text
-    assert apple.batches == [["MYSTERY SANDWICHES", "UNKNOWABLE LLC"]]
+    assert apple.batches == [["MYSTERY SANDWICHES #4", "UNKNOWABLE LLC"]]
     assert haiku.batches == [["UNKNOWABLE LLC"]]  # the sure one never left rung 1
 
 
@@ -328,9 +334,9 @@ def test_ladder_both_unsure_queues_with_both_suggestions(
 
 def test_unavailable_rung_skips_to_next_with_note(
         vault: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    f = seed(vault, txn("MYSTERY SANDWICHES", "-18.00"))
+    f = seed(vault, txn("MYSTERY SANDWICHES #4", "-18.00"))
     apple = FakeBackend("apple", skip="Apple Intelligence is off")
-    haiku = FakeBackend("haiku", {"MYSTERY SANDWICHES": J("Expenses:Food:Dining", "0.90")})
+    haiku = FakeBackend("haiku", {"MYSTERY SANDWICHES #4": J("Expenses:Food:Dining", "0.90")})
     s = run_classification(write=True, backends=_rungs(apple, haiku))
     assert (s.applied_model, s.queued) == (1, 0)
     assert apple.batches == []  # a skipped rung is never asked
@@ -340,9 +346,9 @@ def test_unavailable_rung_skips_to_next_with_note(
 
 def test_rung_failure_escalates_and_notes(
         vault: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    seed(vault, txn("MYSTERY SANDWICHES", "-18.00"))
+    seed(vault, txn("MYSTERY SANDWICHES #4", "-18.00"))
     apple = FakeBackend("apple", boom="shim exploded")
-    haiku = FakeBackend("haiku", {"MYSTERY SANDWICHES": J("Expenses:Food:Dining", "0.90")})
+    haiku = FakeBackend("haiku", {"MYSTERY SANDWICHES #4": J("Expenses:Food:Dining", "0.90")})
     s = run_classification(write=True, backends=_rungs(apple, haiku))
     assert (s.applied_model, s.queued) == (1, 0)
     assert "! apple: call failed — shim exploded" in capsys.readouterr().out
@@ -357,7 +363,7 @@ def review_txn(payee: str) -> ReviewTxn:
 
 
 def test_apple_backend_end_to_end_via_fake_shim(vault: Path) -> None:
-    f = seed(vault, txn("MYSTERY SANDWICHES", "-18.00"))
+    f = seed(vault, txn("MYSTERY SANDWICHES #4", "-18.00"))
     requests: list[str] = []
 
     def runner(args: list[str], stdin: str) -> tuple[int, str, str]:
@@ -373,7 +379,7 @@ def test_apple_backend_end_to_end_via_fake_shim(vault: Path) -> None:
     sent = json.loads(requests[0])
     assert "Expenses:Food:Dining" in sent["categories"]
     assert "Expenses:Uncategorized" not in sent["categories"]  # review buckets never offered
-    assert [t["payee"] for t in sent["txns"]] == ["MYSTERY SANDWICHES"]
+    assert [t["payee"] for t in sent["txns"]] == ["MYSTERY SANDWICHES #4"]
     assert any("WHOLE FOODS" in e for e in sent["examples"])  # taught rules ride along
 
 
@@ -385,8 +391,8 @@ def test_apple_probe_unavailable_skips_onward(
         assert args == ["--probe"]  # an unavailable shim must never be asked to classify
         return 1, "", msg + "\n"
 
-    haiku = FakeBackend("haiku", {"MYSTERY SANDWICHES": J("Expenses:Food:Dining", "0.90")})
-    seed(vault, txn("MYSTERY SANDWICHES", "-18.00"))
+    haiku = FakeBackend("haiku", {"MYSTERY SANDWICHES #4": J("Expenses:Food:Dining", "0.90")})
+    seed(vault, txn("MYSTERY SANDWICHES #4", "-18.00"))
     s = run_classification(write=True, backends=_rungs(AppleBackend(runner=runner), haiku))
     assert (s.applied_model, s.queued) == (1, 0)
     assert f"apple: skipped — {msg}" in capsys.readouterr().out
@@ -394,7 +400,7 @@ def test_apple_probe_unavailable_skips_onward(
 
 def test_apple_malformed_shim_output_refuses_batch_loudly(
         vault: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    f = seed(vault, txn("MYSTERY SANDWICHES", "-18.00"))
+    f = seed(vault, txn("MYSTERY SANDWICHES #4", "-18.00"))
     before = f.read_text()
 
     def runner(args: list[str], stdin: str) -> tuple[int, str, str]:
@@ -411,7 +417,7 @@ def test_apple_malformed_shim_output_refuses_batch_loudly(
 
 
 def test_ollama_backend_end_to_end_via_fake_transport(vault: Path) -> None:
-    f = seed(vault, txn("MYSTERY SANDWICHES", "-18.00"))
+    f = seed(vault, txn("MYSTERY SANDWICHES #4", "-18.00"))
     calls: list[tuple[str, bytes | None]] = []
 
     def transport(url: str, body: bytes | None, timeout: float) -> str:
@@ -438,13 +444,13 @@ def test_ollama_backend_end_to_end_via_fake_transport(vault: Path) -> None:
 
 def test_ollama_connection_refused_skips_with_note(
         vault: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    seed(vault, txn("MYSTERY SANDWICHES", "-18.00"))
+    seed(vault, txn("MYSTERY SANDWICHES #4", "-18.00"))
 
     def transport(url: str, body: bytes | None, timeout: float) -> str:
         raise OSError(61, "Connection refused")
 
     ollama = OllamaBackend("http://127.0.0.1:11434", "llama3.2:3b", transport=transport)
-    haiku = FakeBackend("haiku", {"MYSTERY SANDWICHES": J("Expenses:Food:Dining", "0.90")})
+    haiku = FakeBackend("haiku", {"MYSTERY SANDWICHES #4": J("Expenses:Food:Dining", "0.90")})
     s = run_classification(write=True, backends=_rungs(ollama, haiku))
     assert (s.applied_model, s.queued) == (1, 0)
     assert ("ollama: skipped — nothing listening at http://127.0.0.1:11434"
@@ -458,15 +464,196 @@ def test_haiku_backend_direct_probe_and_batch(monkeypatch: pytest.MonkeyPatch) -
     fake = FakeModel(reply(row(0, "Expenses:Food:Dining", "0.93")))
     armed = HaikuBackend("claude-haiku-4-5", None, call=fake)
     assert armed.probe() is None
-    got = armed.classify_batch([review_txn("MYSTERY SANDWICHES")],
+    got = armed.classify_batch([review_txn("MYSTERY SANDWICHES #4")],
                                BatchContext(("Expenses:Food:Dining",), (), ()))
     assert got == [Judgment("Expenses:Food:Dining", Decimal("0.93"), "looks right")]
     assert armed.usage == ModelUsage(1_000, 200)
 
 
+
+def test_apple_batches_bite_small_with_a_trimmed_briefing(vault: Path) -> None:
+    """The on-device window is 4096 tokens total, so the apple rung takes
+    APPLE_BATCH_SIZE txns per call and shortens the example lists."""
+    (vault / "rules.toml").write_text(RULES_TOML + "".join(
+        f'\n[[payee_rules]]\nmatch = "SHOP{i}"\naccount = "Expenses:Food:Dining"\n'
+        for i in range(20)))
+    reset_rules_cache()
+    seed(vault, *[txn(f"MYSTERY SANDWICHES #{i}", "-18.00", when="2026-07-02")
+                  for i in range(APPLE_BATCH_SIZE + 1)])
+    sizes: list[int] = []
+    example_counts: list[int] = []
+
+    def runner(args: list[str], stdin: str) -> tuple[int, str, str]:
+        if args == ["--probe"]:
+            return 0, "available\n", ""
+        req = json.loads(stdin)
+        sizes.append(len(req["txns"]))
+        example_counts.append(len(req["examples"]))
+        results = [{"index": t["id"], "category": "Expenses:Food:Dining",
+                    "confidence": 0.9, "reason": "ok"} for t in req["txns"]]
+        return 0, json.dumps({"results": results}), ""
+
+    s = run_classification(write=True, backends=_rungs(AppleBackend(runner=runner)))
+    assert s.applied_model == APPLE_BATCH_SIZE + 1
+    assert sizes == [APPLE_BATCH_SIZE, 1]
+    assert all(n <= APPLE_MAX_RULE_EXAMPLES + APPLE_MAX_HISTORY_EXAMPLES
+               for n in example_counts)
+
+
+def test_apple_context_overflow_refuses_batch_not_rung(vault: Path) -> None:
+    """A too-big request must not kill the rung: the overflowing batch moves
+    on down the ladder and the NEXT batch still runs (the pre-fix behavior
+    marked the whole rung dead on the first overflow)."""
+    seed(vault, *[txn(f"MYSTERY SANDWICHES #{i}", "-18.00", when="2026-07-02")
+                  for i in range(APPLE_BATCH_SIZE + 1)])
+    calls: list[int] = []
+
+    def runner(args: list[str], stdin: str) -> tuple[int, str, str]:
+        if args == ["--probe"]:
+            return 0, "available\n", ""
+        req = json.loads(stdin)
+        calls.append(len(req["txns"]))
+        if len(calls) == 1:
+            return 1, "", ("generation failed: exceededContextWindowSize"
+                           "(maximum allowed is 4,096)")
+        results = [{"index": t["id"], "category": "Expenses:Food:Dining",
+                    "confidence": 0.9, "reason": "ok"} for t in req["txns"]]
+        return 0, json.dumps({"results": results}), ""
+
+    s = run_classification(write=True, backends=_rungs(AppleBackend(runner=runner)))
+    assert calls == [APPLE_BATCH_SIZE, 1]  # the second batch still ran
+    assert (s.applied_model, s.queued) == (1, APPLE_BATCH_SIZE)
+
+
+def test_apple_language_guardrail_refuses_batch_and_payees_are_sanitized(
+        vault: Path) -> None:
+    """Digit-soup payees ("VENMO PAYMENT 1034278654754 WEB ID: 3264681992")
+    trip the on-device language guardrail: the id runs are stripped from what
+    the model SEES, and a guardrail hit refuses only that batch."""
+    seed(vault, txn("NETFLIX.COM", "-15.49"))
+    seen: list[str] = []
+
+    def runner(args: list[str], stdin: str) -> tuple[int, str, str]:
+        if args == ["--probe"]:
+            return 0, "available\n", ""
+        req = json.loads(stdin)
+        seen.extend(t["payee"] for t in req["txns"])
+        return 1, "", ("generation failed: unsupportedLanguageOrLocale("
+                       "debugDescription: \"Unsupported language.\")")
+
+    s = run_classification(write=True, backends=_rungs(AppleBackend(runner=runner)))
+    assert (s.applied_model, s.queued) == (0, 1)  # refused, not rung-dead
+    assert seen == ["NETFLIX.COM"]
+    assert apple_payee("VENMO PAYMENT 1034278654754 WEB ID: 3264681992") == \
+        "VENMO PAYMENT WEB ID:"
+    assert apple_payee("WHOLE FOODS MKT #123") == "WHOLE FOODS MKT #123"
+
+
+# --------------------------------------------------------------- p2p guard
+def test_guard_reason_layers_and_curation() -> None:
+    # layer (a) — the rails, including the real miss that taught the law
+    assert guard_reason("Zelle to Alicia") == "P2P rail"
+    assert guard_reason("VENMO PAYMENT 1034396132515 WEB ID: 3264681992") == "P2P rail"
+    assert guard_reason("Zelle payment to DARA L PHILLIPS JPM99bep4jma") == "P2P rail"
+    assert guard_reason("PAYPAL INST XFER~ Tran: ACHDW") == "P2P rail"
+    assert guard_reason("APPLE CASH SENT MONEY") == "P2P rail"
+    assert guard_reason("CASHAPP*JOHN") == "P2P rail"
+    assert guard_reason("Payment to WISE") == "P2P rail"
+    # PayPal CHECKOUT at a merchant is a merchant; WISEACRE is a brewery
+    assert guard_reason("PAYPAL *NETFLIX") is None
+    assert guard_reason("PAYPAL*SPOTIFY") is None
+    assert guard_reason("WISEACRE BREWING CO") is None
+    # layer (b) — person-shaped payees; "SQ *NAME" counts despite the star
+    assert guard_reason("Alicia Weiss") == "person-shaped payee"
+    assert guard_reason("DARA L PHILLIPS") == "person-shaped payee"
+    assert guard_reason("SQ *JANE DOE") == "person-shaped payee"
+    assert guard_reason("O'Brien Smith-Jones") == "person-shaped payee"
+    # business markers disarm the shape test
+    assert guard_reason("NETFLIX.COM") is None
+    assert guard_reason("WHOLE FOODS MKT #123") is None
+    assert guard_reason("UNKNOWABLE LLC") is None
+    assert guard_reason("AT&T") is None
+    assert guard_reason("TARGET 00023") is None
+    assert guard_reason("Brians Ice Cream Inc.") is None
+    assert guard_reason("") is None
+
+
+def test_guard_default_is_on() -> None:
+    assert load_config().p2p_guard is True
+
+
+def test_guard_holds_rail_payee_at_high_confidence(vault: Path) -> None:
+    f = seed(vault, txn("VENMO PAYMENT 1034396132515 WEB", "-120.00"))
+    before = f.read_text()
+    rung = FakeBackend("apple", {
+        "VENMO PAYMENT 1034396132515 WEB": J("Expenses:Food:Dining", "0.95")})
+    s = run_classification(write=True, backends=_rungs(rung))
+    assert (s.applied_model, s.queued) == (0, 1)
+    assert f.read_text() == before  # a write run, and still nothing moved
+
+
+def test_guard_holds_person_shaped_payee_and_displays_suggestion(
+        vault: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    seed(vault, txn("Alicia Weiss", "-90.00"))
+    rung = FakeBackend("apple", {
+        "Alicia Weiss": J("Expenses:Food:Dining", "0.95", "probably a caterer")})
+    s = run_classification(write=True, backends=_rungs(rung))
+    assert (s.applied_model, s.queued) == (0, 1)
+    out = capsys.readouterr().out
+    assert "held 1 (p2p guard)" in out
+    assert "person-shaped payee — a person needs your word" in out
+    assert "suggest Expenses:Food:Dining (apple 0.95) — probably a caterer" in out
+
+
+def test_the_alicia_zelle_string_never_auto_applies(vault: Path) -> None:
+    """The 2026-08-06 miss, pinned as a fixture: the model booked "Zelle to
+    Alicia" as Childcare:Nanny at 0.90 — she is the household's
+    acupuncturist. A person-payee verdict is a guess at ANY confidence."""
+    f = seed(vault,
+             "2000-01-02 open Expenses:Childcare:Nanny  USD",
+             txn("Zelle to Alicia", "-150.00"))
+    rung = FakeBackend("apple", {
+        "Zelle to Alicia": J("Expenses:Childcare:Nanny", "0.90",
+                             "recurring payment, likely childcare")})
+    s = run_classification(write=True, backends=_rungs(rung))
+    assert (s.applied_model, s.queued) == (0, 1)
+    text = f.read_text()
+    assert text.count("Expenses:Uncategorized\n") == 1  # the txn leg stayed put
+    assert "classifier:" not in text
+
+
+def test_guard_off_lets_the_model_apply(vault: Path) -> None:
+    (vault / "rules.toml").write_text(
+        RULES_TOML + "\n[classification]\np2p_guard = false\n")
+    reset_rules_cache()
+    f = seed(vault, txn("Alicia Weiss", "-90.00"))
+    rung = FakeBackend("apple", {"Alicia Weiss": J("Expenses:Food:Dining", "0.95")})
+    s = run_classification(write=True, backends=_rungs(rung))
+    assert (s.applied_model, s.queued) == (1, 0)
+    assert '  classifier: "apple:0.95"\n' in f.read_text()
+
+
+def test_business_payee_applies_straight_through_the_guard(vault: Path) -> None:
+    f = seed(vault, txn("NETFLIX.COM", "-15.49"))
+    rung = FakeBackend("apple", {"NETFLIX.COM": J("Expenses:Food:Dining", "0.95")})
+    s = run_classification(write=True, backends=_rungs(rung))
+    assert (s.applied_model, s.queued) == (1, 0)
+    assert '  classifier: "apple:0.95"\n' in f.read_text()
+
+
+def test_guarded_below_floor_still_escalates_for_a_better_suggestion(
+        vault: Path) -> None:
+    seed(vault, txn("Alicia Weiss", "-90.00"))
+    a = FakeBackend("apple", {"Alicia Weiss": J("Expenses:Food:Dining", "0.30")})
+    b = FakeBackend("ollama", {"Alicia Weiss": J("Expenses:Food:Groceries", "0.95")})
+    s = run_classification(write=True, backends=_rungs(a, b))
+    assert (s.applied_model, s.queued) == (0, 1)
+    assert b.batches == [["Alicia Weiss"]]  # unsure rung 1 escalated; rung 2 held
+
+
 # ------------------------------------------------------------ ladder config
 def test_config_defaults_keep_todays_behavior(vault: Path) -> None:
-    cfg = _config()
+    cfg = load_config()
     assert cfg.backends == ("haiku",)  # no config -> exactly the old single rung
     assert cfg.floor("apple") == cfg.floor("haiku") == Decimal("0.8")
     assert (cfg.ollama_url, cfg.ollama_model) == ("http://127.0.0.1:11434", "llama3.2:3b")
@@ -483,7 +670,7 @@ ollama_url = "http://127.0.0.1:11435/"
 ollama_model = "qwen3:4b"
 ''')
     reset_rules_cache()
-    cfg = _config()
+    cfg = load_config()
     assert cfg.backends == ("ollama", "apple")  # order kept; dupes and unknowns dropped
     assert '"grok" ignored' in capsys.readouterr().err
     assert cfg.floor("apple") == Decimal("0.9")  # per-backend floor wins
@@ -495,7 +682,7 @@ ollama_model = "qwen3:4b"
 def test_empty_configured_ladder_queues_residue(vault: Path) -> None:
     (vault / "rules.toml").write_text(
         RULES_TOML + "\n[classification]\nmodel_backends = []\n")
-    seed(vault, txn("MYSTERY SANDWICHES", "-18.00"))
+    seed(vault, txn("MYSTERY SANDWICHES #4", "-18.00"))
     s = run_classification(write=True)
     assert (s.applied, s.queued) == (0, 1)
 

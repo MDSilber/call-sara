@@ -7,6 +7,36 @@ the upgrade.
 
 ## 2026-08-07
 
+**A person needs your word.** The classifier learns the one thing a
+model can never know: who a person is. Anything on a P2P rail
+(Venmo/Zelle/Cash App/PayPal/Wise/Apple Cash) or shaped like a bare
+human name is never auto-booked by a model backend at any confidence —
+it queues with the suggestion attached, and the teach popover shows it
+("Sara thinks: Health · Acupuncture — a person needs your word")
+without preselecting. Kills the acupuncturist booked as the nanny at
+0.90. Default on; `p2p_guard = false` if you insist.
+
+**The popover answers back.** Opening teach-a-rule now asks
+`/api/suggest` on the side: your own rules first, the banked bank hint
+next, one on-device Apple Intelligence call last (4-second budget, one
+call per payee per visit) — the popover opens instantly and the
+verdict lands async, preselecting only for businesses. Bulk teach
+preselects the whole batch from one call, same guard.
+
+**"What if it doesn't match one of these?"** The category dropdown
+grows a "New category…" escape hatch: an inline input that
+autocompletes against your existing chart, validates the beancount
+grammar as you type, opens the account through the gated writer
+(dated open, bean-check, rollback), then teaches the rule and rewrites
+history in the same breath. Kills leaving the popover to go edit the
+chart by hand.
+
+**The on-device rung survives a real backlog.** The 4096-token window
+gets respected: eight-transaction bites, a trimmed briefing, digit-run
+ids stripped from what the model sees (they read as "unsupported
+language" and killed whole runs), and content-provoked refusals now
+skip the batch instead of abandoning the rung.
+
 **Five tools on the phone (was fourteen).** The MCP connector's nine
 no-input lookups collapsed into one `finance_detail(topic)`, and
 `finance_freshness` retired because every answer already carries its
