@@ -73,6 +73,10 @@ def main(argv: list[str] | None = None) -> None:
         for note in stmt.notes:
             err(note)
     flags = set(args[1:])
+    unknown = flags - {"--prices", "--table"}
+    if unknown:
+        raise SystemExit(f"unknown flag(s): {', '.join(sorted(unknown))} — this "
+                         f"importer only prints (append its output by hand)\n{__doc__}")
     if "--table" not in flags:
         prices(statements)
     if "--prices" not in flags:

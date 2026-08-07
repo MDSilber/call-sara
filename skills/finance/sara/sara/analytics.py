@@ -481,7 +481,10 @@ def build() -> BuildResult:
             print("ANALYTICS CROSS-CHECK MISMATCH — refusing to emit.\n  "
                   + "\n  ".join(failures)
                   + "\nA derived figure could not be independently reproduced — "
-                    "fix the ledger/tools, then rebuild.", file=sys.stderr)
+                    "fix the ledger/tools, then rebuild. (Most common cause: "
+                    "holdings with no price directives — append the lines "
+                    "importers/holdings_ofx.py prints, or tag commodities for "
+                    "scripts/update_prices.sh.)", file=sys.stderr)
             raise SystemExit(2)
         _export_parquet(con, tmp_exports)
     except BaseException:

@@ -96,6 +96,23 @@ extension makes statement-pulling magical but is optional. Fair warning:
 driving a logged-in bank session may not be kosher with your bank's
 terms of use. Your call, your account.
 
+## Already running her? (updating an older clone)
+
+`git pull`, `./install.sh` again (it only fills gaps), then
+`scripts/doctor.sh` and do the one thing it says — the importers grew
+into a real package (`sara`), and doctor prints the exact pip line
+that puts it in your vault's venv. That's the whole migration. Your
+ledger doesn't change, and every import command you already know
+prints the same entries it always did.
+
+Want the new app? First `dashboard.sh --app` installs its own server,
+then one `tools/run reports.py` fills in the app's read model and the
+SQL shadow (`reports/analytics.duckdb`) — the page itself tells you if
+it's waiting on that. Everything else stays opt-in and silent until
+you ask: `owner:` tags for the household lens, your own Plaid keys,
+the classifier's model tier. If anything looks off, doctor.sh again —
+it always knows how far you got.
+
 ## Where your data actually goes
 
 Your disk and your private git remote. That's the design. The eight

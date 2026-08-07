@@ -172,8 +172,9 @@ def analytics():
     try:
         from sara.analytics import build  # lazy: duckdb is the optional [analytics] extra
     except ModuleNotFoundError as e:
+        sara_dir = Path(__file__).resolve().parent.parent / "sara"
         print(f"skip analytics: {e.name} not installed "
-              f"(vault venv: pip install 'sara[analytics]')")
+              f"(vault venv: pip install -e '{sara_dir}[analytics]')")
         return
     build()
 

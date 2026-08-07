@@ -128,7 +128,7 @@ if [ -f "$VAULT/ledger/main.beancount" ] && [ -f "$VAULT/CLAUDE.md" ] && [ -f "$
   if "$VENV_PY" -c 'import sara, plaid' >/dev/null 2>&1; then
     pass "vault .venv has the sara package + plaid-python (importers, ingest daemon)"
   else
-    warn "sara package not importable from the vault venv — importers/ingest fall back to system python" \
+    warn "sara package not importable from the vault venv — importers/ingest will ask for this one-time install" \
          "$VAULT/.venv/bin/pip install -e $SKILL_DIR/sara"
   fi
 
