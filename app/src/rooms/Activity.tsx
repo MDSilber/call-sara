@@ -53,7 +53,10 @@ export function ActivityRoom(props: { initialQ?: string }) {
   }, [q])
   useEffect(() => {
     const t = window.setTimeout(
-      () => setDebouncedAmounts([amountMin, amountMax]), AMOUNT_DEBOUNCE)
+      () => setDebouncedAmounts((prev) =>
+        prev[0] === amountMin && prev[1] === amountMax
+          ? prev
+          : [amountMin, amountMax]), AMOUNT_DEBOUNCE)
     return () => window.clearTimeout(t)
   }, [amountMin, amountMax])
 
@@ -67,7 +70,7 @@ export function ActivityRoom(props: { initialQ?: string }) {
 
   const load = useCallback((cursor: string | null) => {
     const my = ++seq.current
-    setFeed((f) => cursor
+    setFeed((f) => cursor || f.rows.length
       ? { ...f, loading: true }
       : { ...EMPTY_FEED, categories: f.categories, owners: f.owners })
     api.activity(filters, owner, cursor)
@@ -155,14 +158,7 @@ export function ActivityRoom(props: { initialQ?: string }) {
           ? `${uncatHere} row${uncatHere === 1 ? '' : 's'} still need a category (${feed.uncat?.amount ?? ''}) — click a chip, or select a merchant's rows and teach one rule.`
           : 'Every booked transaction, searchable to the first import. Chips are categories; tiny dots say who categorized.'}
       >
-        {firstLoad ? (
-          <div aria-hidden="true">
-            {Array.from({ length: 9 }, (_, i) => (
-              <Skeleton key={i} h={18} w={i % 3 ? '100%' : '72%'} />
-            ))}
-          </div>
-        ) : null}
-        <div className="searchbar" style={firstLoad ? { display: 'none' } : undefined}>
+        <div className="searchbar">
           <label className="searchbox">
             <SearchIcon />
             <input
@@ -217,7 +213,14 @@ export function ActivityRoom(props: { initialQ?: string }) {
           </span>
         </div>
 
-        {days.map((day) => (
+        {firstLoad ? (
+          <div aria-hidden="true" className="feedin">
+            {Array.from({ length: 9 }, (_, i) => (
+              <Skeleton key={i} h={30} w={i % 3 ? '100%' : '72%'} />
+            ))}
+          </div>
+        ) : null}
+        {!firstLoad && days.map((day) => (
           <div key={day.date}>
             <div className="dayhead">{day.label}</div>
             <ul className={`feed${selected.size > 0 ? ' selecting' : ''}`}>

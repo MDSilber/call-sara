@@ -752,3 +752,10 @@ footer p + p { margin-top:4px; }
   .regtable .rother { display:none; }
   .bulkbar { flex-wrap:wrap; }
 }
+
+/* feed content softens in after the skeleton — no pop */
+.feedin { display:flex; flex-direction:column; gap:10px; padding:8px 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .dayhead, .feed { animation: fadein .3s ease backwards; }
+}
+@keyframes fadein { from { opacity: 0; } }
