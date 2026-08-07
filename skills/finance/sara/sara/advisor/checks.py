@@ -22,13 +22,10 @@ THE VOICE GATE — every user-visible string (titles, details, queue fixes):
 """
 import calendar
 import re
-import sys
 from collections import Counter
 from datetime import date, datetime, timedelta
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vault import (VAULT, amount, dated_bullets, illiquid_currency_regex,  # noqa: E402
+from sara.vault import (VAULT, amount, dated_bullets, illiquid_currency_regex,
                    money, query, rules, shadow_currency)
 
 
@@ -1013,7 +1010,7 @@ def projected_shortfall():
     big projected outflow IS the plan, and the plan funds it (settlement
     cash, money-market sweeps) in ways cadence inference can't see.
     """
-    from forecast import DEFAULT_DAYS, build_forecast  # deferred: forecast
+    from sara.advisor.forecast import DEFAULT_DAYS, build_forecast  # deferred: forecast
     # imports this module's helpers, so a top-level import would be circular
     warns = build_forecast()["household"]["warns"]
     lane_funded = {str(lane.get("account")) for lane in rules().get("lanes", [])
@@ -1217,7 +1214,7 @@ def catch_all_lumps(rows=None):
     round-trip (a treasury buy and its payback, an advance and its refund)
     is already telling a complete story and never fires.
     """
-    from vault import amount, query
+    from sara.vault import amount, query
     LIMIT = 10_000
     q = ("SELECT date, account, payee, number AS amt "
          "WHERE account ~ 'Income:US:Other|Expenses:Uncategorized'")

@@ -17,23 +17,20 @@ fragments are built with Markup.format, which escapes their arguments.
 """
 import math
 import re
-import sys
 from calendar import monthrange
 from dataclasses import dataclass
 from datetime import date, timedelta
-from pathlib import Path
 from statistics import median
 from typing import NamedTuple
 
 from markupsafe import Markup, escape
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vault import (REPORTS, VAULT, account_owners, amount, dated_bullets,  # noqa: E402
+from sara.vault import (REPORTS, VAULT, account_owners, amount, dated_bullets,
                    illiquid_currency_regex, owner_label, query)
-from webview import (MONTH_ABBR, _units, action_queue, code_spans,  # noqa: E402
+from sara.advisor.webview import (MONTH_ABBR, _units, action_queue, code_spans,
                      deadline_items, month_label, nice_ticks, parse_findings,
                      price_history, queue_lane)
-from checks import LANE_REINVEST, goals as goals_config  # noqa: E402
+from sara.advisor.checks import LANE_REINVEST, goals as goals_config
 
 MONTH_FULL = ["", "January", "February", "March", "April", "May", "June",
               "July", "August", "September", "October", "November", "December"]

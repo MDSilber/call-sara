@@ -29,17 +29,15 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import cast
 
-from checks import goals as goals_config
-from dismissals import DISMISSALS_FILE, load_dismissals
+from sara.advisor.checks import goals as goals_config
+from sara.advisor.dismissals import DISMISSALS_FILE, load_dismissals
 from sara.ledger.queries import opened_accounts
 from sara.ledger.writer import rewrite_ledger_files
-from vault import (
+from sara.vault import (
     RULES_FILE,
     VAULT,
     query,
 )
-
-from . import TOOLS_DIR
 
 # One writer at a time: every action is a read-modify-write over a small
 # file, and the lock is what makes the pair of requests last-writer-wins
@@ -204,7 +202,7 @@ def categorize(payee_pattern: str, account: str | None,
         _atomic_write(RULES_FILE, new_text)
         _reset_rules_caches()  # the running process must see the new rule
 
-        argv = [sys.executable, str(TOOLS_DIR / "recategorize.py")]
+        argv = [sys.executable, "-m", "sara.advisor.recategorize"]
         if apply_history:
             argv.append("--write")
         proc = subprocess.run(argv, capture_output=True, text=True,

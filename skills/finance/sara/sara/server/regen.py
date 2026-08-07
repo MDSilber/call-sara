@@ -20,8 +20,6 @@ from datetime import datetime
 
 from sara.vault import VAULT
 
-from . import TOOLS_DIR
-
 
 @dataclass
 class _State:
@@ -34,7 +32,7 @@ class _State:
 
 
 _STATE = _State()
-_TOOLS = ("run_checks.py", "reports.py")
+_TOOLS = ("run_checks", "reports")  # sara.advisor modules, run as -m
 # One regeneration at a time IN THIS PROCESS: concurrent reports.py runs on
 # the same vault would race each other's analytics tmp files.
 _RUN_LOCK = threading.Lock()
@@ -44,7 +42,7 @@ def _execute() -> tuple[bool, str]:
     with _RUN_LOCK:
         for tool in _TOOLS:
             proc = subprocess.run(
-                [sys.executable, str(TOOLS_DIR / tool)],
+                [sys.executable, "-m", f"sara.advisor.{tool}"],
                 capture_output=True, text=True, cwd=str(VAULT),
                 env={**os.environ, "FINANCE_VAULT": str(VAULT)},
             )

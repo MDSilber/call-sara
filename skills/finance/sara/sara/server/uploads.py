@@ -39,7 +39,7 @@ from typing import Any, cast
 
 from sara.vault import VAULT
 
-from . import TOOLS_DIR, regen
+from . import regen
 from .actions import ActionError
 
 MAX_BYTES = 15 * 1024 * 1024
@@ -136,14 +136,21 @@ def _sweep() -> None:
 
 
 def _inbox_mod() -> Any:
-    """tools/inbox.py, imported lazily (its import wires scripts/ paths)."""
-    import inbox  # TOOLS_DIR rides sys.path via sara.server's bootstrap
+    """sara.advisor.inbox, imported lazily (heavier module)."""
+    from sara.advisor import inbox
     return inbox
+
+
+def _importer_module(importer: str) -> str:
+    """inbox names importers by their historical CLI path
+    ("importers/ofx.py"); the implementations live in sara.cli."""
+    stem = importer.rsplit("/", 1)[-1].removesuffix(".py")
+    return f"sara.cli.{stem}"
 
 
 def _run_importer(importer: str, args: tuple[str, ...], target: Path,
                   write: bool) -> tuple[int, str]:
-    argv = [sys.executable, str(TOOLS_DIR / importer), str(target), *args]
+    argv = [sys.executable, "-m", _importer_module(importer), str(target), *args]
     if write:
         argv.append("--write")
     proc = subprocess.run(argv, capture_output=True, text=True, cwd=str(VAULT),

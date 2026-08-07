@@ -21,7 +21,7 @@ def main() -> None:
         os.environ["FINANCE_VAULT"] = str(args.vault.expanduser().resolve())
 
     # tools/vault.py resolves the vault when first imported — env is set now
-    from vault import LEDGER, VAULT
+    from sara.vault import LEDGER, VAULT
     if not LEDGER.exists():
         sys.exit(f"no ledger at {LEDGER} — set FINANCE_VAULT or pass --vault "
                  f"(scaffold one with scripts/init_vault.sh)")

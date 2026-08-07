@@ -437,15 +437,15 @@ def main():
 
         # escape() hardening: statement text can never break out of a
         # Beancount string (quotes, backslash-escape tricks, newline injection)
-        sys.path.insert(0, str(TOOLS))
+        sys.path.insert(0, str(SARA_SRC))  # harness-only: import the package source in-process
         os.environ["FINANCE_VAULT"] = str(vault)
-        from importers.common import escape  # noqa: E402
+        from sara.sources.model import escape  # noqa: E402
         evil = 'EVIL"\n2026-01-01 open Assets:Oops\\'
         check("escape() neutralizes quote/newline/backslash injection",
               escape(evil) == "EVIL' 2026-01-01 open Assets:Oops/", escape(evil))
 
         # M12: amount() never reads non-USD units as dollars
-        from vault import amount  # noqa: E402
+        from sara.vault import amount  # noqa: E402
         table = [(("1,234.56 USD",), 1234.56),
                  (("12.000 VTSAX",), 0.0),
                  (("1,234.56 USD, 12.000 VTSAX",), 1234.56),

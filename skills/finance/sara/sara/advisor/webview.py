@@ -20,16 +20,13 @@ cost basis for lack of a dated price are flagged est, and the final point
 IS the headline number so hero and curve always agree.
 """
 import re
-import sys
 from calendar import monthrange
 from datetime import date, datetime
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vault import (REPORTS, VAULT, amount, dated_bullets,  # noqa: E402
+from sara.vault import (REPORTS, VAULT, amount, dated_bullets,
                    illiquid_currency_regex, query)
-from dismissals import filter_findings  # noqa: E402
-from checks import goals as goals_config  # noqa: E402
+from sara.advisor.dismissals import filter_findings
+from sara.advisor.checks import goals as goals_config
 
 MAX_CURVE_POINTS = 24      # two years of month-ends is a curve; more is wallpaper
 PRICE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\s+price\s+(\S+)\s+([\d.,]+)\s+USD\b", re.M)

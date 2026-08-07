@@ -24,11 +24,11 @@ import re
 from datetime import date, datetime, timedelta
 from typing import cast
 
-from allocation import allocation_view
-from checks import goals as goals_config
-from checks import lane_status
-from dismissals import active_ids, finding_id, load_dismissals
-from home import (
+from sara.advisor.allocation import allocation_view
+from sara.advisor.checks import goals as goals_config
+from sara.advisor.checks import lane_status
+from sara.advisor.dismissals import active_ids, finding_id, load_dismissals
+from sara.advisor.home import (
     MINUS,
     MONTH_FULL,
     Card,
@@ -61,9 +61,8 @@ from home import (
     spending_data,
     under_streak,
 )
-from reports import liquid_balances, paper_value
-from vault import REPORTS, VAULT, amount, household, illiquid_currency_regex, query, shadow_currency
-from webview import (
+from sara.advisor.reports import liquid_balances, paper_value
+from sara.advisor.webview import (
     MONTH_ABBR,
     _units,
     action_queue,
@@ -72,6 +71,15 @@ from webview import (
     networth_series,
     parse_findings,
     price_history,
+)
+from sara.vault import (
+    REPORTS,
+    VAULT,
+    amount,
+    household,
+    illiquid_currency_regex,
+    query,
+    shadow_currency,
 )
 
 ACTIVITY_UNCAT = ("Expenses:Uncategorized", "Expenses:FIXME")

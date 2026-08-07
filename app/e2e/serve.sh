@@ -77,7 +77,7 @@ fi
 # planted rows the same way the write side would.
 export FINANCE_VAULT="$WORK"
 "$SRC/.venv/bin/python" -m sara.analytics >/dev/null
-"$SRC/.venv/bin/python" "$REPO/skills/finance/tools/summary.py" >/dev/null
+"$SRC/.venv/bin/python" -m sara.advisor.summary >/dev/null
 
 # Plaid "sync now" rides the offline fixture seam (alias `demo` maps to
 # tests/fixtures/demo.sync.json) — a real pipeline run, no network.

@@ -30,12 +30,9 @@ A metadata class maps onto a declared class by exact name, else by prefix
 "other" are reserved: they are never drift-scored.
 """
 import re
-import sys
 from dataclasses import dataclass
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vault import VAULT, amount, illiquid_currency_regex, query, rules  # noqa: E402
+from sara.vault import VAULT, amount, illiquid_currency_regex, query, rules
 
 RESERVED_CLASSES = ("cash", "other")
 DEFAULT_BAND_PTS = 5.0

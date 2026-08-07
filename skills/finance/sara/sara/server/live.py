@@ -17,9 +17,9 @@ import re
 from datetime import date, datetime
 from typing import cast
 
-from checks import goals as goals_config
-from dismissals import active_ids, finding_id, load_dismissals
-from home import (
+from sara.advisor.checks import goals as goals_config
+from sara.advisor.dismissals import active_ids, finding_id, load_dismissals
+from sara.advisor.home import (
     SMALL_NUMS,
     EduAccount,
     _education_ctx,
@@ -28,8 +28,8 @@ from home import (
     must_move,
     needs_you,
 )
-from vault import household
-from webview import action_queue, milestone_state, parse_findings
+from sara.advisor.webview import action_queue, milestone_state, parse_findings
+from sara.vault import household
 
 from .assemble import (
     GOAL_KEYS,

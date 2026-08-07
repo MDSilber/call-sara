@@ -20,7 +20,7 @@ import json
 import re
 from datetime import date, datetime
 
-from vault import REPORTS, VAULT
+from sara.vault import REPORTS, VAULT
 
 DISMISSALS_FILE = REPORTS / "dismissals.json"
 GOALS_FILE = VAULT / "facts" / "goals" / "index.md"

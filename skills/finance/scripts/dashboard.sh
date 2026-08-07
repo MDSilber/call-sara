@@ -11,7 +11,7 @@
 #              write behind a per-launch token, so a guessable URL exposes
 #              nothing); --port overrides.
 #   --home     the one-viewport PRINT GLANCE (reports/home.html, via
-#              tools/home.py) — a self-contained sheet you can print or mail.
+#              sara.advisor.home) — a self-contained sheet you can print or mail.
 #   --digest   Sara's weekly letter (reports/digest.html + digest.txt, via
 #              tools/digest.py) — the email-shaped 20-second read.
 #   --fava     the nerd drill-down (fava): raw ledger, query console.
@@ -93,7 +93,7 @@ if [ "$HOME_PAGE" = 1 ] || [ "$DIGEST" = 1 ]; then
     PAGE="$VAULT/reports/digest.html"
     echo "✓ weekly letter at $PAGE  (text twin: $VAULT/reports/digest.txt — delivery is yours: email, text, print)"
   else
-    FINANCE_VAULT="$VAULT" "$PY" "$HERE/../tools/home.py"
+    FINANCE_VAULT="$VAULT" "$PY" -m sara.advisor.home
     PAGE="$VAULT/reports/home.html"
     echo "✓ print glance at $PAGE  (one self-contained sheet; the app is the live view, --fava the drill-down)"
   fi

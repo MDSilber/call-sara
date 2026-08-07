@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 const SHOTS = process.env.SARA_SHOTS ?? 'e2e/shots'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const UPLOAD_FIXTURE = path.resolve(
-  HERE, '../../skills/finance/sara/tests/fixtures/upload.checking4321.qfx')
+  HERE, '../../skills/finance/sara/tests_server/fixtures/upload.checking4321.qfx')
 
 const ROOMS: [string, string, string][] = [
   ['spending', 'Spending', '.phero'],

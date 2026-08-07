@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import (
-    TOOLS_DIR,
+    SKILL_DIR,
     connections,
     dbq,
     live,
@@ -44,7 +44,7 @@ from .actions import ActionError, categorize, dismiss, set_goal
 from .readmodel import SUMMARY, ReadModelMissing, contribution_limits
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-REFERENCES_DIR = TOOLS_DIR.parent / "references"
+REFERENCES_DIR = SKILL_DIR / "references"
 
 
 class CategorizeBody(BaseModel):
