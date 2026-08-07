@@ -4,17 +4,19 @@ import sys
 from datetime import date
 
 from sara.advisor.checks import run_all
-from sara.advisor.dismissals import filter_findings
+from sara.advisor.dismissals import Finding, filter_findings
 from sara.vault import REPORTS
 
 ORDER = {"alert": 0, "watch": 1, "info": 2}
 ICON = {"alert": "🔴", "watch": "🟡", "info": "⚪"}
 
 
-def main():
+def main() -> None:
     findings, errors = run_all()
     findings = filter_findings(findings)  # dismissed = silenced on every surface, this one included
-    findings.sort(key=lambda f: ORDER.get(f["severity"], 9))
+    def rank(f: Finding) -> int:
+        return ORDER.get(str(f["severity"]), 9)
+    findings.sort(key=rank)
     counts = {s: sum(1 for f in findings if f["severity"] == s) for s in ORDER}
     lines = ["# Findings\n",
              f"_Generated {date.today().isoformat()} by tools/run_checks.py — regenerable, do not hand-edit._\n",

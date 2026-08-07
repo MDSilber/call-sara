@@ -26,33 +26,37 @@ PROBE = re.compile(
     r"vesting commencement|policy number|payer|1099|w-2", re.I)
 
 
-def pdfs(d):
-    return sorted(Path(d).glob("*.pdf"), key=lambda p: p.stat().st_mtime, reverse=True)
+def pdfs(d: str | Path) -> list[Path]:
+    def mtime(p: Path) -> float:
+        return p.stat().st_mtime
+    return sorted(Path(d).glob("*.pdf"), key=mtime, reverse=True)
 
 
-def fingerprint(p):
+def fingerprint(p: str | Path) -> str:
     try:
         txt = subprocess.run(["pdftotext", "-l", "1", str(p), "-"],
-                             capture_output=True, text=True).stdout
+                             capture_output=True, text=True, check=False).stdout
     except FileNotFoundError:
         return "(pdftotext not installed)"
     lines = [line.strip() for line in txt.splitlines() if PROBE.search(line)]
     return " | ".join(lines[:4]) or (txt.strip()[:120].replace("\n", " ") or "(no text)")
 
 
-def md5(p):
+def md5(p: str | Path) -> str:
     return hashlib.md5(Path(p).read_bytes()).hexdigest()
 
 
-def inspect(d):
+def inspect(d: str | Path) -> None:
     for p in pdfs(d):
         print(f"{md5(p)[:8]}  {p.name}\n          -> {fingerprint(p)}")
 
 
-def dedupe(d):
-    seen = {}
+def dedupe(d: str | Path) -> None:
+    seen: dict[str, Path] = {}
     # shortest name first, so "statement.pdf" is kept over "statement (1).pdf"
-    for p in sorted(pdfs(d), key=lambda x: (len(x.name), x.name)):
+    def shortest_first(x: Path) -> tuple[int, str]:
+        return (len(x.name), x.name)
+    for p in sorted(pdfs(d), key=shortest_first):
         h = md5(p)
         if h in seen:
             print(f"dup  {p.name}  (== {seen[h].name}) -> deleted")
@@ -62,7 +66,7 @@ def dedupe(d):
     print(f"{len(seen)} unique remain")
 
 
-def file_document(src, dest_dir, name):
+def file_document(src: str | Path, dest_dir: str | Path, name: str) -> Path:
     """Rename src to <name><suffix> under dest_dir and return the target.
     The shared filing primitive (this CLI and tools/inbox.py): date-prefixed
     name enforced, destination created, existing files never overwritten."""
@@ -78,7 +82,7 @@ def file_document(src, dest_dir, name):
     return target
 
 
-def move(src, dest_dir, name):
+def move(src: str, dest_dir: str, name: str) -> None:
     try:
         print(f"filed {file_document(src, dest_dir, name)}")
     except (ValueError, FileExistsError) as e:
