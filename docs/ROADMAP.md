@@ -113,4 +113,6 @@ precision theater, envelope/zero-based budgeting (a documented churn
 engine; pace-plus-watch-categories wins for non-budgeters), concierge
 bill negotiation for a cut of "savings" (keep 100% — the scripts and the
 browser-driving are yours), and streaks or daily-engagement pressure
-(celebrate real milestones; never manufacture guilt).
+(celebrate real milestones; never manufacture guilt). The full
+decision records — reasoning and each one's escape hatch — live in
+`.out-of-scope/`.

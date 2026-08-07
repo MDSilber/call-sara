@@ -2,12 +2,16 @@
  * Finance domain — the design rule is: computed answers are tools, owner
  * documents are resources, method rides in the domain's ask tool.
  *
- * TOOLS (14, all read-only) answer questions with verified numbers computed
+ * TOOLS (5, all read-only) answer questions with verified numbers computed
  * from the vault's reports/summary.json — the machine-readable twin
- * reports.py emits. Every tool answers with a human-readable block first
- * (window labels and the snapshot stamp always included, staleness called
- * out) and a compact JSON block second. The one exception to summary-backed:
- * finance_calc, pure decimal arithmetic that touches no vault data at all.
+ * reports.py emits: finance_overview (the whole picture), finance_ask_sara
+ * (the advisory briefing), finance_spend (a month's spending), and
+ * finance_detail (nine topics behind one enum — networth, balances,
+ * positions, cashflow, findings, forecast, autopilot, goals_529, calendar).
+ * Every tool answers with a human-readable block first (window labels and
+ * the snapshot stamp always included, staleness called out) and a compact
+ * JSON block second. The one exception to summary-backed: finance_calc,
+ * pure decimal arithmetic that touches no vault data at all.
  *
  * RESOURCES serve the owner's documents verbatim: the written thesis, the
  * findings/summary reports, and fact files under facts/ (allowlisted via
@@ -24,6 +28,20 @@ import type { Env, Summary } from "../types";
 
 const STALE_DAYS = 7;
 const DOC_MAX_CHARS = 40_000;
+/** finance_detail's topic vocabulary — nine summary sections behind one enum. */
+const DETAIL_TOPICS = [
+  "networth",
+  "balances",
+  "positions",
+  "cashflow",
+  "findings",
+  "forecast",
+  "autopilot",
+  "goals_529",
+  "calendar",
+] as const;
+type DetailTopic = (typeof DETAIL_TOPICS)[number];
+
 /** Allowlist for template-served vault paths: simple paths under facts/ only. */
 const FACT_PATH = /^facts\/[A-Za-z0-9][A-Za-z0-9._/-]*$/;
 
@@ -112,8 +130,8 @@ export function registerFinanceDomain(server: McpServer, env: Env): void {
       "doing', 'what's our financial situation', 'anything I should know?'. " +
       "Returns the whole picture in one call: Sara's one-line verdict, spending " +
       "pace, net worth, autopilot health, 529 status, and the single next " +
-      "action. Reach for the specific finance_* tools only when the question " +
-      "names a topic this summary doesn't settle.",
+      "action. Reach for finance_detail or finance_spend only when the " +
+      "question names a topic this summary doesn't settle.",
     (s) => {
       const g = s.glance;
       return reply(
@@ -262,8 +280,9 @@ export function registerFinanceDomain(server: McpServer, env: Env): void {
             "say so when the stakes are big, and recommend a professional for tax",
             "filings and large irreversible moves. Use ONLY the figures in this",
             "briefing, each with its window; if the question needs data that is",
-            "not here, name what is missing (or call the specific finance_* tool,",
-            "or read the finance:// resources) rather than estimating. When the",
+            "not here, name what is missing (or call finance_detail with the",
+            "right topic, or read the finance:// resources) rather than",
+            "estimating. When the",
             "question is about one owner's account, equity, or decision (the",
             "'Whose is whose' line below maps it), address that owner by name;",
             "joint money gets the household voice.",
@@ -318,55 +337,6 @@ export function registerFinanceDomain(server: McpServer, env: Env): void {
   );
 
   // ------------------------------------------------------- the specifics
-  tool(
-    "finance_networth",
-    "Household net worth: liquid headline (assets · liabilities), illiquid paper shadow, " +
-      "and the month-end series. Liquid-only counting per the thesis.",
-    (s) => {
-      const n = s.networth;
-      const human = [
-        ...stampLines(s, env),
-        `Liquid net worth: ${usd(n.liquid)} (assets ${usd(n.assets)} · liabilities ${usd(n.liabilities)}) — ${n.window}`,
-        n.paper
-          ? `Illiquid paper (NOT counted): ${usd(n.paper)} · combined if it converts: ${usd(n.combined)}`
-          : null,
-        s.glance.networth.delta ? `Change: ${s.glance.networth.delta}` : null,
-        n.unpriced_accounts.length
-          ? `Unpriced (excluded, no USD price on file): ${n.unpriced_accounts.map((u) => u.account).join(", ")}`
-          : null,
-        footer(s),
-      ];
-      return reply(human, n);
-    }
-  );
-
-  tool(
-    "finance_balances",
-    "Per-account liquid balances in USD, as of the ledger's last posting.",
-    (s) => {
-      const rows = s.balances.accounts.map((a) => `${usd(a.usd).padStart(14)}  ${a.account}`);
-      return reply(
-        [...stampLines(s, env), `Balances — ${s.balances.window}`, ...rows, footer(s)],
-        s.balances
-      );
-    }
-  );
-
-  tool(
-    "finance_positions",
-    "Investment holdings by symbol: units held and USD value at the latest prices on file.",
-    (s) => {
-      const rows = s.positions.holdings.map((h) => {
-        const val = h.usd === null ? "(no USD price)" : usd(h.usd);
-        return `${val.padStart(16)}  ${h.symbol}  ${h.units} units`;
-      });
-      return reply(
-        [...stampLines(s, env), `Positions — ${s.positions.window}`, ...rows, footer(s)],
-        s.positions
-      );
-    }
-  );
-
   server.registerTool(
     "finance_spend",
     {
@@ -443,10 +413,42 @@ export function registerFinanceDomain(server: McpServer, env: Env): void {
     }
   );
 
-  tool(
-    "finance_cashflow",
-    "Income vs expenses by month (trailing window): what came in, what went out, net.",
-    (s) => {
+  /** finance_detail — one summary-backed builder per topic. */
+  const DETAIL: Record<DetailTopic, (s: Summary) => ToolResult> = {
+    networth: (s) => {
+      const n = s.networth;
+      const human = [
+        ...stampLines(s, env),
+        `Liquid net worth: ${usd(n.liquid)} (assets ${usd(n.assets)} · liabilities ${usd(n.liabilities)}) — ${n.window}`,
+        n.paper
+          ? `Illiquid paper (NOT counted): ${usd(n.paper)} · combined if it converts: ${usd(n.combined)}`
+          : null,
+        s.glance.networth.delta ? `Change: ${s.glance.networth.delta}` : null,
+        n.unpriced_accounts.length
+          ? `Unpriced (excluded, no USD price on file): ${n.unpriced_accounts.map((u) => u.account).join(", ")}`
+          : null,
+        footer(s),
+      ];
+      return reply(human, n);
+    },
+    balances: (s) => {
+      const rows = s.balances.accounts.map((a) => `${usd(a.usd).padStart(14)}  ${a.account}`);
+      return reply(
+        [...stampLines(s, env), `Balances — ${s.balances.window}`, ...rows, footer(s)],
+        s.balances
+      );
+    },
+    positions: (s) => {
+      const rows = s.positions.holdings.map((h) => {
+        const val = h.usd === null ? "(no USD price)" : usd(h.usd);
+        return `${val.padStart(16)}  ${h.symbol}  ${h.units} units`;
+      });
+      return reply(
+        [...stampLines(s, env), `Positions — ${s.positions.window}`, ...rows, footer(s)],
+        s.positions
+      );
+    },
+    cashflow: (s) => {
       const rows = s.cashflow.months.map(
         (m) =>
           `${m.month}  in ${usd(m.income).padStart(10)} · out ${usd(m.expenses).padStart(10)} · net ${signed(m.net)}`
@@ -455,13 +457,8 @@ export function registerFinanceDomain(server: McpServer, env: Env): void {
         [...stampLines(s, env), `Cash flow — ${s.cashflow.window}`, ...rows, footer(s)],
         s.cashflow
       );
-    }
-  );
-
-  tool(
-    "finance_findings",
-    "What the vault's checks flagged: alerts, watches, and info items, with full texts.",
-    (s) => {
+    },
+    findings: (s) => {
       const f = s.findings;
       const bySev = (sev: string) =>
         f.items.filter((i) => i.severity === sev).map((i) => `- [${sev}] ${i.title} — ${i.detail}`);
@@ -477,14 +474,8 @@ export function registerFinanceDomain(server: McpServer, env: Env): void {
         ],
         f
       );
-    }
-  );
-
-  tool(
-    "finance_forecast",
-    "Cash-flow projection (~60 days): household totals, dated one-offs, and each " +
-      "account's projected minimum. Projections, not statements.",
-    (s) => {
+    },
+    forecast: (s) => {
       const fc = s.forecast;
       const h = fc.household;
       const mins = fc.accounts.map(
@@ -510,14 +501,8 @@ export function registerFinanceDomain(server: McpServer, env: Env): void {
         ],
         fc
       );
-    }
-  );
-
-  tool(
-    "finance_autopilot",
-    "The machine: paychecks, auto-invests, and balance floors declared in rules.toml, " +
-      "each checked against the ledger (ok / pending / overdue / below).",
-    (s) => {
+    },
+    autopilot: (s) => {
       const a = s.autopilot;
       return reply(
         [
@@ -528,14 +513,8 @@ export function registerFinanceDomain(server: McpServer, env: Env): void {
         ],
         a
       );
-    }
-  );
-
-  tool(
-    "finance_goals_529",
-    "Education savings (529s): balances per kid, contribution pace, target progress — " +
-      "plus the vault's declared goal thresholds.",
-    (s) => {
+    },
+    goals_529: (s) => {
       const e = s.education_529;
       return reply(
         [
@@ -556,14 +535,8 @@ export function registerFinanceDomain(server: McpServer, env: Env): void {
         ],
         { education_529: e, goals_config: s.goals.config }
       );
-    }
-  );
-
-  tool(
-    "finance_calendar",
-    "Every dated obligation and reminder from the vault's facts, soonest first, " +
-      "with days-until — plus the last few recently passed.",
-    (s) => {
+    },
+    calendar: (s) => {
       const c = s.goals.calendar;
       return reply(
         [
@@ -577,35 +550,37 @@ export function registerFinanceDomain(server: McpServer, env: Env): void {
         ],
         c
       );
-    }
-  );
+    },
+  };
 
-  tool(
-    "finance_freshness",
-    "How fresh the numbers are: when the snapshot was generated, the ledger's last " +
-      "posting date, and when the checks last ran.",
-    (s) => {
-      const ageDays = Math.floor((Date.now() - Date.parse(s.generated_at)) / 86_400_000);
-      const data = {
-        generated_at: s.generated_at,
-        age_days: ageDays,
-        ledger_through: s.ledger_through,
-        checks_from: s.findings.generated,
-        stale: ageDays > STALE_DAYS,
-        source: fixtureMode(env) ? "dev-fixture" : "github",
-      };
-      return reply(
-        [
-          ...stampLines(s, env),
-          `Snapshot generated ${s.generated_at} (${ageDays} day${ageDays === 1 ? "" : "s"} ago)`,
-          `Ledger through ${s.ledger_through ?? "— (empty)"}`,
-          `Checks from ${s.findings.generated ?? "— (never ran)"}`,
-          data.stale
-            ? "Verdict: STALE — regenerate reports in the vault and push."
-            : "Verdict: fresh.",
-        ],
-        data
-      );
+  server.registerTool(
+    "finance_detail",
+    {
+      description:
+        "The full numbers behind ONE named topic — reach for it when the " +
+        "question names something finance_overview didn't settle. topic is one " +
+        "of: 'networth' (liquid headline, paper shadow, month-end series), " +
+        "'balances' (per-account USD), 'positions' (holdings by symbol), " +
+        "'cashflow' (income vs expenses by month), 'findings' (what the " +
+        "vault's checks flagged, full texts), 'forecast' (~60-day projection, " +
+        "per-account minima), 'autopilot' (paychecks, auto-invests, and " +
+        "floors checked against the ledger), 'goals_529' (education savings " +
+        "per kid, pace, target), 'calendar' (dated obligations and " +
+        "reminders, soonest first).",
+      inputSchema: z.object({
+        topic: z.enum(DETAIL_TOPICS).describe("Which topic to expand."),
+      }),
+    },
+    async ({ topic }) => {
+      try {
+        return DETAIL[topic](await loadSummary(env));
+      } catch (err) {
+        if (err instanceof VaultFetchError) return fail(err.message);
+        if (err instanceof SyntaxError) {
+          return fail(`${SUMMARY_PATH} is not valid JSON — regenerate the vault's reports.`);
+        }
+        throw err;
+      }
     }
   );
 

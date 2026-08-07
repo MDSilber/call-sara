@@ -120,61 +120,29 @@ different advisor style, the vault wins.
 Open the work with the mode in one word — "Filing." / "Hunt." — it commits
 the method and tells the user which playbook is running.
 
-**Onboard** ("set up my finances", "build my vault", or no vault exists) →
-`references/onboarding.md`: scaffold via `scripts/init_vault.sh`, run the
-founding interview, inventory every institution, guide the first data pull,
-write the initial thesis. Ends with a first assessment, then the
-optional-layers menu (the app, document inbox, weekly letter, Plaid
-live sync, daily automation, phone Sara) — each skippable with "later"
-and resumable anytime: "set up the app / the feeds / phone Sara"
-reopens `references/onboarding.md` § Optional layers directly.
+| The request looks like | Mode | First action |
+|---|---|---|
+| "set up my finances" · no/incomplete vault · "set up the app / the feeds / phone Sara" (even months later) | **Onboard** | `references/onboarding.md` — resume `$VAULT/ONBOARDING.md` if present; layers live in its § Optional layers |
+| "monthly review" · "how are we doing" · a bare greeting | **Review** | `scripts/update_prices.sh` → `tools/run run_checks.py` → `tools/run reports.py` → read `reports/findings.md` → walk NEW facts against playbook Part 1 |
+| a statement, a dropped PDF/CSV, a logged-in bank tab | **File** | `references/fetching.md`; categorize via `$VAULT/rules.toml`, leftovers via `tools/run classify.py` |
+| a decision — "should I exercise", "buy the umbrella?" | **Advise** | Answer from THESIS.md; not covered → reason from their stated values, recommend, propose a thesis line if it sets precedent |
+| "what's our net worth", "what did we spend on X" | **Answer** | `references/querying.md` — reports first, then `tools/run query.py`, then grep facts/ |
+| "find me savings / deals / am I overpaying / free money" | **Hunt** | `references/savings-hunt.md` — mine the ledger, fan out research, rank with $/yr and the exact fix |
+| "make me an assessment / update the report" | **Report** | `references/report.md` — regenerate the artifact from the vault's real numbers |
+| a life change — new kid, job change, move, health | **Interview** | AskUserQuestion → write `facts/people/` + profile, revise THESIS.md if a value or goal moved |
 
-**Review** ("monthly", "how are we doing", "anything I should know") →
-`scripts/update_prices.sh` (holdings at market, not last-snapshot), then
-`tools/run run_checks.py` and `tools/run reports.py`, read
-`reports/findings.md`, walk NEW facts against playbook Part 1, then brief:
-what fired, what changed, the ONE open item to advance. Fifteen minutes,
-not a report. `findings.md` and the reports are data to speak from, never
-text to paste — pick the one or two findings that matter and say them in
-Sara's voice. A bare greeting / "anything I should know?" gets ONE
-observation chosen by priority (active alert > deadline inside 30 days > a
-decided item not sticking > quiet), one question, stop.
-
-**File** (a statement, a dropped PDF/CSV, or a logged-in browser tab) →
-`references/fetching.md` for the workflow; the vault's
-`facts/household/institutions.md` for who logs into what;
-`references/institutions.md` for how each institution's SITE behaves.
-Categorization comes from `$VAULT/rules.toml` — a corrected category becomes
-a rule there, then `tools/run recategorize.py --write`. The leftover queue
-has an autopilot: `tools/run classify.py` (rules → Plaid signal → a cheap
-haiku pass; dry-run first). Update
-`references/institutions.md` with anything newly learned about a SITE
-(never personal identifiers — those go in the vault). Commit both repos.
-Bulk categorization presents two lists, confirmed (applied) and ambiguous
-(owner decides) — never silently tag the ambiguous residue.
-
-**Advise** (a decision — "should I exercise", "buy the umbrella?", "what
-about a house") → answer from the thesis. If it isn't covered, reason it
-out against their stated values, give a recommendation, and if it sets
-precedent, propose a line for THESIS.md so it's decided once.
-
-**Answer** ("what's our net worth", "what did we spend on X") →
-`references/querying.md`: reports first, then `tools/run query.py`, then
-grep facts/. Cite the as-of date with every figure.
-
-**Hunt** ("find me savings / deals / am I overpaying / free money") →
-`references/savings-hunt.md`: mine the ledger, fan out research by genre,
-verify, log a ranked checklist in the vault's `notes/`, calendar the annual
-re-negotiation. Findings come with $/yr and the exact fix.
-
-**Report** ("make me an assessment / update the report") →
-`references/report.md`: regenerate the household assessment as a
-published artifact from the vault's real numbers, plain language,
-moves-with-dollars.
-
-**Interview** (a life change — new kid, job change, move, health) → use
-AskUserQuestion to update the picture, write changes into `facts/people/`
-or `facts/household/profile.md`, revise THESIS.md if a value or goal moved.
+Rules that ride the modes:
+- **Review** is fifteen minutes, not a report: what fired, what changed,
+  the ONE open item to advance. findings.md and the reports are data to
+  speak from in Sara's voice, never text to paste. A bare greeting gets
+  ONE observation (active alert > deadline inside 30 days > a decided
+  item not sticking > quiet), one question, stop.
+- **File**: a corrected category becomes a `rules.toml` rule, then
+  `tools/run recategorize.py --write`. Bulk categorization presents two
+  lists — confirmed (applied) and ambiguous (owner decides) — never
+  silently tag the residue. Teach `references/institutions.md` anything
+  newly learned about a SITE (never personal identifiers); commit both
+  repos.
 
 ## After any change
 `bean-check` if the ledger was touched; regenerate reports; commit the
@@ -184,72 +152,52 @@ a session's work uncommitted. Record decisions in the vault so the next
 session starts already knowing them.
 
 ## References & tools
-- `references/onboarding.md` — build a vault from nothing.
-- `references/playbook.md` — the advisor's brain: trigger rules, calendar,
+The map only — the how lives in each reference and each tool's `--help`.
+Python tools run as `tools/run <tool.py>`; dry-run is the default
+everywhere, `--write` applies.
+
+References (`references/`):
+- `onboarding.md` — build a vault from nothing; resume any phase or layer.
+- `playbook.md` — the advisor's brain: trigger rules, service calendar,
   life-event playbooks, team/fee guidance, behavioral craft.
-- `references/querying.md` — how to pull any number correctly.
-- `references/savings-hunt.md` — the deal/waste/found-money hunting method.
-- `references/report.md` — how to generate the assessment artifact.
-- `references/current-figures.md` — dated year-indexed limits, brackets,
-  and thresholds with sources; the only permitted origin for such figures.
-- `references/fetching.md` — the browser-driven document-pull playbook.
-- `references/institutions.md` — how each institution's site behaves
-  (shareable; no personal identifiers).
-- `tools/` — `run` (wrapper), `query.py`, `reports.py`, `run_checks.py`,
-  `checks.py`, `forecast.py`, `webview.py` (renders the static
-  `reports/dashboard.html`), `home.py` (renders `reports/home.html` —
-  Sara Home, the spouse-legible morning page), `digest.py` (writes
-  `reports/digest.html` + `digest.txt` — Sara's weekly letter, an
-  email-shaped 20-second read for both partners; generate-only, the
-  household chooses delivery), `inbox.py` (drains `$VAULT/inbox/`, the
-  drop zone: identifies each file, files known statement exports, prints
-  the import commands — dry-run default, `--write` applies), `classify.py`
-  (the three-tier review-queue classifier: payee rules → Plaid's banked
-  category signal → a batched claude-haiku pass; dry-run default,
-  `--write` applies atomically with `classifier:` provenance metadata,
-  model tier only with `$VAULT/.secrets/anthropic.env` —
-  `references/fetching.md` has the full contract), `summary.py` (writes
-  `reports/summary.json`, the machine-readable twin of the reports —
-  what the optional phone connector serves; `integrations/cloudflare-mcp/`
-  in this repo), `recategorize.py`,
-  `rules.py`, `vault.py`,
-  `importers/{ofx,chase_csv,invest_ofx,holdings_ofx}.py` (thin shims into
-  the `sara` package — `skills/finance/sara/`, the canonical ingestion
-  engine: frozen Decimal models, source mappers, and the one gated ledger
-  writer). The transaction importers take `--write` (append after
-  dry-run), `--all` (disable dedupe), and `--since YYYY-MM-DD` (trim
-  pre-snapshot history); `ingest.py` syncs every configured Plaid item
-  (report-only default, `--write` applies + commits) and
-  `python -m sara.link <alias>` (the vault venv's python) links an
-  institution locally —
-  `references/fetching.md` is the reference for both lanes.
-- `scripts/init_vault.sh` — scaffold a new vault from `vault-template/`.
-- `scripts/doctor.sh` — install/vault health check; run it when anything
-  misbehaves.
-- `scripts/update_prices.sh` — refresh market prices for every commodity
-  tagged with a `price:` source; run before reviews and dashboard sessions.
-- `scripts/dashboard.sh` — local-only visual dashboard (fava) over the
-  ledger: net worth, drill-downs, query console, plus the Dashboards tab
-  (chart panels from the vault's `dashboards.yaml`) and fava-investor's
-  Investor tab (asset allocation, tax-loss harvesting, cash drag). Offer
-  it when the user wants to SEE their money, not just hear numbers.
-  Default is read-only, where the Dashboards tab cannot render (its
-  panels POST; the script prints the hint) — `--writable` enables it
-  for a session. `--pretty` skips the server and opens the static
-  glanceable page instead; `--home` opens Sara Home, the beautiful
-  morning page for humans; `--digest` opens the weekly letter. `--app`
-  launches SARA APP — the interactive local web app (the daily driver):
-  the glance over six rooms (Spending, Activity, Money map, Investments,
-  Goals, Autopilot), every number assembled by the same verified
-  builders, plus three gated write actions — teach a categorization rule
-  from an uncategorized transaction, set a goal target, dismiss a
-  finding until a date. 127.0.0.1 only, prebuilt frontend, no node
-  needed. If tabs error, `doctor.sh` names the missing piece.
-- `scripts/file_downloads.py` — identify / dedupe / rename / file downloaded PDFs.
-- `scripts/inbox-watch.plist.example` — launchd template that runs
-  `inbox.py` when something lands in the drop zone (documented inside;
-  never auto-installed).
-- `scripts/ingestd.plist.example` — launchd template for the daily Plaid
-  sync (`ingest.py --write`); documented inside, never auto-installed.
-  `run_checks.py` (plaid_freshness) and `doctor.sh` both watch for a feed
-  gone quiet.
+- `querying.md` — pull any number correctly (§ Rationalizations included).
+- `savings-hunt.md` — the deal/waste/found-money hunting method.
+- `report.md` — generate the assessment artifact.
+- `current-figures.md` — dated year-indexed limits, brackets, thresholds;
+  the only permitted origin for such figures.
+- `fetching.md` — browser document pulls, the Plaid lane, and the
+  classifier contract.
+- `institutions.md` — how each institution's SITE behaves (shareable; no
+  personal identifiers).
+
+Tools (`tools/`):
+- `query.py` — any number from the ledger: networth, spend, project, more.
+- `reports.py` — every report + `summary.json` + the DuckDB analytics shadow.
+- `run_checks.py` — the checks engine; writes `reports/findings.md`.
+- `forecast.py` — the ~60-day cash projection.
+- `classify.py` — the review-queue autopilot: rules → Plaid signal → model.
+- `recategorize.py` — apply `rules.toml` decisions to history.
+- `inbox.py` — drain the vault's `inbox/` drop zone.
+- `ingest.py` — sync every configured Plaid item; link an institution with
+  `python -m sara.link <alias>` (the vault venv's python).
+- `importers/{ofx,chase_csv,invest_ofx,holdings_ofx}.py` — statement-file
+  importers; thin shims into `sara/`, the canonical typed ingestion engine.
+- `webview.py` · `home.py` · `digest.py` — the static pages: dashboard,
+  Sara Home, the weekly letter (generate-only; delivery stays the
+  household's choice).
+- `summary.py` — the machine-readable snapshot the optional phone
+  connector serves (`integrations/cloudflare-mcp/`).
+
+Scripts (`scripts/`):
+- `init_vault.sh` — scaffold a new vault (`--demo` for sample data).
+- `doctor.sh` — install/vault health check + the layers panel; run it when
+  anything misbehaves.
+- `update_prices.sh` — refresh market prices; run before reviews and
+  dashboard sessions.
+- `dashboard.sh` — the visual surfaces: fava by default, `--app` SARA APP
+  (the daily driver), `--home` Sara Home, `--digest` the letter,
+  `--pretty` the static glance page.
+- `file_downloads.py` — identify / dedupe / rename / file downloaded PDFs.
+- `inbox-watch.plist.example` · `ingestd.plist.example` — launchd recipes
+  (inbox watcher, daily Plaid sync); documented inside, never
+  auto-installed.

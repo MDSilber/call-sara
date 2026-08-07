@@ -103,7 +103,8 @@ terms of use. Your call, your account.
 into a real package (`sara`), and doctor prints the exact pip line
 that puts it in your vault's venv. That's the whole migration. Your
 ledger doesn't change, and every import command you already know
-prints the same entries it always did.
+prints the same entries it always did. (`CHANGELOG.md` says what's
+new, newest first.)
 
 Want the new app? First `dashboard.sh --app` installs its own server,
 then one `tools/run reports.py` fills in the app's read model and the

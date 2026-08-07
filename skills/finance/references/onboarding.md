@@ -60,6 +60,8 @@ first data pull → first assessment), and the two hard boundaries:
 anything that moves money or changes an account** — read/download only.
 Downloads need their OK once per session.
 
+**Done when:** the user has heard both boundaries and today's plan, and said go.
+
 ## 1. Scaffold the vault (2 min)
 **Decide where it lives FIRST — as a picker, not a paragraph.** Use
 AskUserQuestion (arrow-key TUI) with two questions, so the choice feels
@@ -100,6 +102,8 @@ Offer to create the private GitHub repo now (`gh repo create <name>
 Pushing to a remote this session didn't create? Verify it's private
 first: `gh repo view --json visibility`.
 
+**Done when:** `bean-check` passes on the fresh ledger and hosting is settled — repo created and pushed, or "local only" recorded as a deferred item.
+
 ## 2. Inventory institutions & services (10 min) — DO THIS BEFORE THE INTERVIEW
 People forget accounts; a checklist beats memory. Use AskUserQuestion in
 batches. Walk the categories and capture EVERY yes into
@@ -122,6 +126,8 @@ account numbers as last-4 only):
 For each institution note: which spouse logs in, what it holds, roughly
 how much (a guess is fine — real numbers come from the pull), and how
 often it changes (fast: checking/cards → automate; slow: 401k → quarterly).
+
+**Done when:** every "yes" is in `facts/household/institutions.md` (who logs in, what it holds, rough size, change speed) and the file is committed.
 
 ## 3. The founding interview (20 min)
 Load `references/playbook.md` Part 5 (behavioral craft) first — it tells
@@ -174,6 +180,8 @@ filing status into the profile (the playbook's state-specific rules key
 off it). As accounts get named, add a `[[accounts]]` routing entry per
 account to `rules.toml` (last-4 → ledger account).
 
+**Done when:** the user has said "yes, that's me" to THESIS.md read back, and thesis + profile + people files are committed.
+
 ## 3b. Set up guided browser export (5 min) — teach it once
 Most users have never had software drive their bank site, so explain the
 mechanism the first time and demonstrate it live on the FIRST account:
@@ -191,6 +199,8 @@ mechanism the first time and demonstrate it live on the FIRST account:
 - For any site the extension can't reach (some admin surfaces block it),
   say so and fall back to the user clicking with the agent reading over
   their shoulder via screenshots — don't burn time fighting it.
+
+**Done when:** one export has run end-to-end in front of them — page opened, file downloaded, filed — with the boundaries restated.
 
 ## 3c. Hunt down data they already have (10 min)
 Before pulling anything live, sweep for data that already exists — it's
@@ -214,6 +224,8 @@ Only THEN move to live pulls for what's missing or recent.
 Run the sweep as one multi-select picker ("which of these exist?") —
 checking boxes beats recalling.
 
+**Done when:** every checked source is filed or sits in the pull queue — nothing found is left loose in Downloads.
+
 ## 4. First live data pull (30 min) — biggest and fastest first
 Order by (value × ease) — mirror the order in the progress file's
 pull-queue table and keep Status current as each pull lands. Typically:
@@ -234,6 +246,8 @@ Record what each site taught you in `references/institutions.md` (site
 behavior only — no personal identifiers), so the next household's pull
 is one-shot.
 
+**Done when:** the top 2–3 accounts have real numbers in facts, the pull queue's Status column is current, and `bean-check` still passes.
+
 ## 5. Close the loop — the first assessment
 Run the checks and reports, then produce the assessment artifact per
 `references/report.md`, even if numbers are partial — mark what's
@@ -245,6 +259,8 @@ facts instead of starting cold.
 Then the victory lap: launch `scripts/dashboard.sh` and let them SEE
 their whole financial life as a page — the moment the vault stops being
 homework and starts being theirs.
+
+**Done when:** the assessment is published, the vault committed and pushed, and next session's ONE thing is written in `ONBOARDING.md`.
 
 ## 6. Optional layers — how far she goes
 
@@ -320,6 +336,8 @@ lesson, the page writes to the vault.
 - [ ] verified — the write landed in the vault (rules.toml or the goal fact)
 ```
 
+**Done when:** the page serves on 127.0.0.1 and one taught rule (or set goal) shows up in the vault's diff.
+
 ### Document inbox (~1 min)
 
 `inbox/` already exists at the vault root (gitignored, like
@@ -343,6 +361,8 @@ edits, read it before loading, never auto-installed.
 - [ ] watcher installed and loaded (optional — [~] is fine)
 ```
 
+**Done when:** the test drop was named by `inbox.py`, the `inbox` finding fired, and the test file is filed or removed.
+
 ### Weekly letter (~2 min)
 
 Generate it: `scripts/dashboard.sh --digest` writes
@@ -361,6 +381,8 @@ session honors it.
 - [ ] delivery chosen by the household · recorded in THESIS.md
 - [ ] verified — read the letter together; its verdict matches the assessment
 ```
+
+**Done when:** both files exist, the delivery choice is on THESIS.md's cadence line, and the letter has been read together.
 
 ### Live sync — Plaid, your own keys (~20 min one-time)
 
@@ -421,6 +443,8 @@ use-case paragraph to paste.
 - [ ] verified — doctor.sh shows the plaid rows green
 ```
 
+**Done when:** a `--write` run has reconciled to the cent and `doctor.sh` shows the plaid rows green (or the block is parked `[→] waiting on Plaid's ID check`).
+
 ### Daily automation (~5 min — only after live sync has earned it)
 
 The framing matters more than the plist: nothing in this system
@@ -442,6 +466,8 @@ daemon cannot go silent.
 - [ ] loaded — launchctl list shows com.callsara.ingestd
 - [ ] verified — started one run now; its report is in /tmp/sara-ingestd.log
 ```
+
+**Done when:** `launchctl list` shows the job and one started-now run wrote its report to `/tmp/sara-ingestd.log`.
 
 ### Phone Sara (~25 min)
 
@@ -484,6 +510,8 @@ snapshot date.
 - [ ] phone connected · sara-lite uploaded
 - [ ] verified — asked the phone "how are we doing?", she answered with the date
 ```
+
+**Done when:** the phone answered "how are we doing?" with their real numbers and the snapshot date.
 
 ## What "done" means for onboarding
 Vault scaffolded and private-repo hosted (or explicitly deferred);
